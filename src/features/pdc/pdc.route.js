@@ -45,7 +45,7 @@ router.post("/login", login);
 
 // Protected PDC routes
 router.use(authenticate);
-router.use(authorize(["pdc"]));
+// router.use(authorize(["pdc"]));
 
 router.get("/submit-doc", submitdocuments);
 router.get("/inner-registered/:pdcid", pdc_inner_form);

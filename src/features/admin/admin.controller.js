@@ -462,8 +462,8 @@ export const postUpdateDeliverCharge = async (req, res, next) => {
 
 export const postUpdateDpCharge = async (req, res, next) => {
   try {
-    const { dp_base_charge, dp_per_km_charge } = validate(adminValidation.dpChargeSchema, req.body);
-    const result = await adminService.updateDpCharge(dp_base_charge, dp_per_km_charge);
+    const { commission } = validate(adminValidation.dpChargeSchema, req.body);
+    const result = await adminService.updateDpCharge(0, commission);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -472,8 +472,8 @@ export const postUpdateDpCharge = async (req, res, next) => {
 
 export const postUpdatePdcPackageCharge = async (req, res, next) => {
   try {
-    const { pdc_package_rate } = validate(adminValidation.pdcPackageChargeSchema, req.body);
-    const result = await adminService.updatePdcPackageCharge(pdc_package_rate);
+    const { commission } = validate(adminValidation.pdcPackageChargeSchema, req.body);
+    const result = await adminService.updatePdcPackageCharge(commission);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);

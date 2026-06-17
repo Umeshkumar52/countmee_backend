@@ -22,10 +22,11 @@ import trackingRouter from "./features/tracking/tracking.route.js";
 import smsRouter from "./features/notifications/sms.route.js";
 
 // Import Legacy Routers & Middlewares (For Backward Compatibility)
-import {
-  customerAuthRouter,
-  dpAuthRouter,
-} from "./features/auth/auth.route.js";
+// import {
+//   customerAuthRouter,
+//   dpAuthRouter,
+// } from "./features/auth/auth.route.js";
+import authRoute from "./features/auth/auth.route.js";
 import ordersRouter from "./features/orders/orders.route.js";
 import {
   walletRouter,
@@ -127,11 +128,10 @@ const authLimiter = rateLimit({
   },
 });
 
-app.use("/api/customer", authLimiter, customerAuthRouter);
+app.use("/api/auth", authRoute);
 app.use("/api/customer", authenticate, userRouter); // profile/address endpoints
 app.use("/api/customer", authenticate, ordersRouter); // order endpoints
 app.use("/api/customer", authenticate, customerPaymentRouter); // razorpay checkout
-app.use("/api/dp", authLimiter, dpAuthRouter);
 app.use("/api/dp", authenticate, dpRouter);
 app.use("/api/wallet", authenticate, walletRouter);
 app.use("/api", smsRouter);

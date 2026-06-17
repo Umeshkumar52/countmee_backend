@@ -71,7 +71,7 @@ export const loginCustomer = async (phone) => {
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
   user.otp = otp;
-  await user.save();
+  await authRepository.updateUserOtp(user._id, otp);
 
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
   await sendOTPViaSMS(phone, message);
@@ -89,8 +89,8 @@ export const verifyOtp = async (userId, otp) => {
     const token = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
     user.refreshToken = refreshToken;
-    await user.save();
-    return { token, refreshToken, user };
+    await authRepository.updateUserTokens(user._id, refreshToken);
+    return { user, token };
   } else {
     throw new Error("Invalid OTP try again!");
   }
@@ -101,11 +101,9 @@ export const resendOtp = async (phone) => {
   if (!user) {
     throw new Error("User not found");
   }
-
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-  // check if created_at and updated_at are the same (new registration check)
-  const isNewRegister = user.created_at.getTime() === user.updated_at.getTime();
+  const isNewRegister = user.createdAt.getTime() === user.updatedAt.getTime();
   const message = isNewRegister
     ? `Your CountMee Courier verification code is ${otp}`
     : `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
@@ -179,7 +177,7 @@ export const loginDp = async (phone) => {
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
   dp.otp = otp;
-  await dp.save();
+  await authRepository.updateUserOtp(dp._id, otp);
 
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
   await sendOTPViaSMS(dp.phone, message);
@@ -220,7 +218,7 @@ export const dpOtpVerification = async (userId, otp) => {
     const token = generateAccessToken(dp);
     const refreshToken = generateRefreshToken(dp);
     dp.refreshToken = refreshToken;
-    await dp.save();
+    await authRepository.updateUserTokens(dp._id, refreshToken);
     return {
       dp,
       argumnet1: true,

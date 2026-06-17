@@ -34,15 +34,13 @@ export const register = asyncHandler(async (req, res) => {
 
   const data = {
     token,
-    refreshToken,
     user: {
       id: user._id,
       name: user.name,
       email: user.email,
       phone: user.phone,
-      role: "pdc",
+      role: user.role,
     },
-    pdcDocument: pdc,
   };
   return res.json(ApiResponse.success(data, "Registration successful."));
 });
@@ -65,15 +63,13 @@ export const login = asyncHandler(async (req, res) => {
 
   const data = {
     token,
-    refreshToken,
     user: {
       id: user._id,
       name: user.name,
       email: user.email,
       phone: user.phone,
-      role: "pdc",
+      role: user.role,
     },
-    pdcDocument: user.pdcDocument || null,
   };
 
   return res.json(ApiResponse.success(data, "Login successful."));
@@ -96,8 +92,17 @@ export const register_inner_form = asyncHandler(async (req, res) => {
   const { name, phone, email, city, address } = req.body;
 
   try {
-    const document = await pdcService.updateInnerForm(userId, name, email, phone, city, address);
-    return res.json(ApiResponse.success({ document }, "Records Updated Successfully"));
+    const document = await pdcService.updateInnerForm(
+      userId,
+      name,
+      email,
+      phone,
+      city,
+      address,
+    );
+    return res.json(
+      ApiResponse.success({ document }, "Records Updated Successfully"),
+    );
   } catch (error) {
     throw new ApiError(400, "Update failed: " + error.message);
   }

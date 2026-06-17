@@ -195,7 +195,7 @@ export const findOrders = async (query) => {
 };
 
 export const findOrderById = async (id) => {
-  return await Order.findById(id).populate('user_id').populate('pickup_dp_id').populate('delivery_dp_id');
+  return await Order.findById(id).populate('user_id').populate('pickup_dp_id').populate('delivery_dp_id').populate('package_id');
 };
 
 export const updateOrder = async (id, updateData) => {

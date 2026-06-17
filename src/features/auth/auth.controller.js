@@ -29,19 +29,19 @@ export const registerCustomer = asyncHandler(async (req, res) => {
 export const loginCustomer = asyncHandler(async (req, res) => {
   const { phone } = validate(authValidation.loginCustomerSchema, req.body);
   const result = await authService.loginCustomer(phone);
+  console.log("result", result);
   const data = {
     user: {
-      id: result.user._id,
-      name: result.user.name,
-      email: result.user.email,
-      phone: result.user.phone,
-      role: "customer",
-      user_type: "customer",
+      id: result._id,
+      name: result.name,
+      email: result.email,
+      phone: result.phone,
+      role: result.role,
     },
     token: result.token,
   };
   return res.json(
-    ApiResponse.success(data, `Welcome to CountMee, ${result.user.name}`),
+    ApiResponse.success(data, `Welcome to CountMee, ${result.name}`),
   );
 });
 
