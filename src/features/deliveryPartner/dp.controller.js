@@ -1,0 +1,813 @@
+import * as dpService from './dp.service.js';
+import { asyncHandler } from '../../common/utils/asyncHandler.js';
+import { ApiResponse } from '../../common/utils/responseFormatter.js';
+import { validate } from '../../common/utils/validationHelper.js';
+import * as dpValidation from './dp.validation.js';
+import { ApiError } from '../../common/utils/ApiError.js';
+import { Order } from '../orders/order.model.js';
+import { DpDocument } from './dpDocument.model.js';
+import { DpDetail } from './dpDetail.model.js';
+import { Broadcast } from '../orders/broadcast.model.js';
+import { Notification } from '../notifications/notification.model.js';
+import * as mapsService from '../tracking/maps.service.js';
+import { PdcDocument } from '../pdc/pdcDocument.model.js';
+import { User } from '../users/user.model.js';
+import mongoose from 'mongoose';
+import { OrderRequest } from '../orders/orderRequest.model.js';
+
+export const dpDetails = asyncHandler(async (req, res) => {
+  const { user_id, dob, gender, address } = validate(dpValidation.dpDetailsSchema, req.body);
+  const profileImgPath = req.file ? req.file.path : null;
+
+  if (!profileImgPath) {
+    throw new ApiError(400, 'Profile image is required');
+  }
+
+  await dpService.saveDetails(user_id, dob, gender, address, profileImgPath);
+  return res.json(ApiResponse.success({ argumnet1: true }, 'Dp Details submited'));
+});
+
+export const dpDocuments = asyncHandler(async (req, res) => {
+  const { user_id } = req.body;
+  await dpService.saveDocuments(user_id, req.body, req.files);
+  return res.json(ApiResponse.success({ argumnet2: true }, 'document submited'));
+});
+
+export const dpReference = asyncHandler(async (req, res) => {
+  const { user_id } = validate(dpValidation.dpReferenceSchema, req.body);
+  await dpService.saveReference(user_id, req.body);
+  return res.json(ApiResponse.success({ argumnet3: true }, 'document submited'));
+});
+
+export const dpDocumentStatus = asyncHandler(async (req, res) => {
+  const { user_id } = validate(dpValidation.dpDocumentStatusSchema, req.body);
+  const documentStatus = await dpService.getDocuments(user_id);
+  return res.json(ApiResponse.success({ documentStatus }, 'document status'));
+});
+
+export const documents = asyncHandler(async (req, res) => {
+  const { user_id } = req.params;
+  const documents = await dpService.getDocuments(user_id);
+  return res.json(ApiResponse.success({ documents }, 'documents of the dp'));
+});
+
+export const documentsReupload = asyncHandler(async (req, res) => {
+  const { user_id } = req.body;
+  const success = await dpService.documentsReupload(user_id, req.files);
+  if (success) {
+    return res.json(ApiResponse.success(null, 'documents uploaded'));
+  }
+  throw new ApiError(400, 'session invalid');
+});
+
+export const new_order = asyncHandler(async (req, res) => {
+  const { user_id } = req.params;
+  const data = await dpService.getNewOrders(user_id);
+  return res.json(ApiResponse.success(data, 'New Orders'));
+});
+
+export const order_accept = asyncHandler(async (req, res) => {
+  const { order_id, status, user_id } = req.params;
+  const result = await dpService.orderAccept(order_id, Number(status), user_id);
+  return res.json(ApiResponse.success(null, result.message));
+});
+
+export const acceptedOrders = asyncHandler(async (req, res) => {
+  const { user_id } = req.params;
+  const acceptedOrders = await dpService.acceptedOrders(user_id);
+  return res.json(ApiResponse.success({ acceptedOrders }, 'Accepted Orders'));
+});
+
+export const pickupOtp = asyncHandler(async (req, res) => {
+  const { order_id, user_id, otp } = validate(dpValidation.pickupOtpSchema, req.body);
+  const result = await dpService.pickupOtp(order_id, user_id, otp);
+  return res.json(ApiResponse.success({ otp_match: result.otp_match }, 'otp Matched'));
+});
+
+export const pickupOrderImageUpload = asyncHandler(async (req, res) => {
+  const { order_id, user_id } = validate(dpValidation.pickupOrderImagesSchema, req.body);
+  const result = await dpService.pickupOrderImageUpload(order_id, user_id, req.files);
+  return res.json(ApiResponse.success(result, 'Image Uploaded Successfully now You can start you delivery'));
+});
+
+export const minBroadcast = asyncHandler(async (req, res) => {
+  const { order, lat, lon } = req.params;
+  const orderObj = await Order.findById(order);
+
+  if (orderObj) {
+    const chkDistance = await mapsService.distanceBetween(
+      orderObj.sender_latitude,
+      orderObj.sender_longitude,
+      Number(lat),
+      Number(lon)
+    );
+
+    const distanceValue = parseFloat(chkDistance) || 0;
+
+    return res.json(ApiResponse.success({
+      result: 1,
+      distance_km: distanceValue,
+      distance_str: chkDistance
+    }));
+  }
+
+  throw new ApiError(400, "this order doesn't exist", { result: 0 });
+});
+
+export const brodcastForFindDp = asyncHandler(async (req, res) => {
+  const { order_id, user_id, radius, location, latitude, longitude, broadcast_id } = validate(dpValidation.broadcastFindDpSchema, req.body);
+
+  if (broadcast_id) {
+    const orderRequestCheck = await OrderRequest.findOne({
+      order_id: order_id,
+      broadcast_id: broadcast_id,
+      status: 1
+    });
+
+    if (orderRequestCheck) {
+      const dp = orderRequestCheck.accepted_by ? await User.findById(orderRequestCheck.accepted_by) : null;
+      const dpLocation = orderRequestCheck.accepted_by ? await DpDetail.findOne({ user_id: orderRequestCheck.accepted_by }) : null;
+      const broadcastObj = await Broadcast.findById(broadcast_id);
+      const avgRating = await dpService.getDpAverageRating(orderRequestCheck.accepted_by);
+
+      const data = {
+        dp_detail: {
+          latitude: dpLocation?.latitude || null,
+          longitude: dpLocation?.longitude || null,
+          profile_img: dpLocation?.profile_img || ''
+        },
+        dp: {
+          name: dp?.name || '',
+          phone: dp?.phone || ''
+        },
+        otp: broadcastObj?.pickup_otp || null,
+        ratings: avgRating,
+        status: 1
+      };
+
+      return res.json(ApiResponse.success(data, 'Nearby delivery partner found'));
+    } else {
+      return res.json(ApiResponse.success({ status: 0 }, 'No drivers have accepted yet. Please wait...'));
+    }
+  }
+
+  throw new ApiError(400, 'Something went wrong');
+});
+
+export const saveBroadcastPoint = asyncHandler(async (req, res) => {
+  const { order_id, user_id, radius, location, latitude, longitude } = validate(dpValidation.saveBroadcastSchema, req.body);
+
+  const order = await Order.findById(order_id);
+  if (!order) throw new ApiError(404, 'Order not found');
+
+  if (order.status_completed === 'delivered to pdc') {
+    throw new ApiError(400, 'Already Delivered to PDC');
+  }
+
+  const travel = await dpService.findTravelByOrderAndUser(order_id, user_id);
+
+  let broadcastObj = await Broadcast.findOne({ order_id: order_id }).sort({ created_at: -1 });
+
+  if (!broadcastObj) {
+    const distance = await mapsService.haversineGreatCircleDistance(
+      Number(latitude),
+      Number(longitude),
+      order.receiver_latitude,
+      order.receiver_longitude
+    ) / 1000;
+
+    broadcastObj = await Broadcast.create({
+      order_id,
+      broadcasted_by: user_id,
+      pickup_location: location,
+      pickup_latitude: Number(latitude),
+      pickup_longitude: Number(longitude),
+      distance,
+      pickup_otp: Math.floor(1000 + Math.random() * 9000),
+      drop_otp: Math.floor(1000 + Math.random() * 9000)
+    });
+  }
+
+  const minBroadcast = await mongoose.model('MinBroadcastDist').findOne();
+  const searchRadius = minBroadcast ? (minBroadcast.minimum_broadcast_distance * 1000) : (Number(radius) || 1000);
+
+  const nearestDps = await dpService.checkNearbyDps(searchRadius, broadcastObj._id, user_id);
+
+  if (!nearestDps.length) {
+    return res.json(ApiResponse.success({ status: 0 }, 'no dp found in this area'));
+  }
+
+  let orderReq = await OrderRequest.findOne({
+    order_id: order_id,
+    request_type: 'broadcast_dp',
+    broadcast_id: broadcastObj._id,
+    notified_ids: { $all: nearestDps }
+  });
+
+  if (!orderReq) {
+    orderReq = await OrderRequest.create({
+      order_id: order_id,
+      requested_by: user_id,
+      notified_ids: nearestDps,
+      request_type: 'broadcast_dp',
+      broadcast_id: broadcastObj._id
+    });
+
+    order.delivery_type = 'broadcast';
+    order.broadcast_id = broadcastObj._id;
+    order.status_completed = 'broadcasted';
+    await order.save();
+  }
+
+  const dps = await DpDetail.find({ user_id: { $in: nearestDps } });
+
+  const data = {
+    dp: dps,
+    broadcast_id: broadcastObj._id,
+    broadcast: broadcastObj,
+    orderRequest: orderReq,
+    status: 0
+  };
+
+  return res.json(ApiResponse.success(data, 'dp'));
+});
+
+export const getMinBroadcastPoint = asyncHandler(async (req, res) => {
+  const result = await dpService.getMinBroadcastPoint();
+  return res.json(ApiResponse.success(result));
+});
+
+export const broadcastDeliver = asyncHandler(async (req, res) => {
+  const { broadcastId } = req.params;
+  const broadcast = await Broadcast.findById(broadcastId);
+  if (broadcast) {
+    if (broadcast.status === '1') {
+      return res.json(ApiResponse.success({ status: 1 }, 'Order Delivered'));
+    } else {
+      return res.json(ApiResponse.success({ status: 0 }, 'Order not delivered yet.'));
+    }
+  }
+  throw new ApiError(500, 'Something went wrong');
+});
+
+export const showNearbyPdc = asyncHandler(async (req, res) => {
+  const { user_id, order_id, location, latitude, longitude, max_distance } = validate(dpValidation.showNearbyPdcSchema, req.body);
+
+  const dp = await DpDetail.findOne({ user_id: user_id });
+  if (!dp) throw new ApiError(404, 'DP details not found');
+
+  const order = await Order.findById(order_id);
+  if (!order) throw new ApiError(404, 'Order not found');
+
+  await dp.updateOne({
+    location,
+    latitude: Number(latitude),
+    longitude: Number(longitude)
+  });
+
+  const nearestPdcs = await dpService.findNearestPdc(
+    Number(latitude),
+    Number(longitude),
+    order,
+    Number(max_distance) || 10
+  );
+
+  return res.json(ApiResponse.success(nearestPdcs));
+});
+
+export const activeOrder = asyncHandler(async (req, res) => {
+  const { user_id } = req.params;
+  const orders = await dpService.getActiveOrders(user_id);
+  return res.json(ApiResponse.success(orders));
+});
+
+export const historyOrder = asyncHandler(async (req, res) => {
+  const { user_id } = req.params;
+  const orders = await dpService.getHistoryOrders(user_id);
+  return res.json(ApiResponse.success(orders));
+});
+
+export const dropOrderToPdc = asyncHandler(async (req, res) => {
+  const { order_id, user_id, pdc_id } = validate(dpValidation.dropPdcSchema, req.body);
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const order = await Order.findById(order_id).session(session);
+    if (!order) throw new ApiError(404, 'Order not found');
+
+    const travel = await dpService.findTravelByOrderAndUser(order_id, user_id);
+    if (!travel) throw new ApiError(404, 'Travel record not found');
+
+    const dpCharges = await mongoose.model('DeliverCharge').findOne({ vehicle_type: 'dp_charges' }).session(session);
+    const percentage = dpCharges ? (dpCharges.per_km_price / 100) : 0.7;
+    const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
+
+    const previousPayouts = await dpService.findPayoutsByDp(user_id);
+    const sumPrev = previousPayouts
+      .filter(p => String(p.order_id) === String(order._id) && String(p.travel_id) !== String(travel._id))
+      .reduce((acc, curr) => acc + curr.earnings, 0);
+
+    const share = Math.round((totalDpPot / 2) * 100) / 100;
+    const earning = Math.max(0, Math.round((share - sumPrev) * 100) / 100);
+
+    const pdcObj = await PdcDocument.findOne({ user_id: pdc_id }).session(session);
+
+    const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
+    const distance = await mapsService.distanceBetween(
+      travel.pickup_latitude,
+      travel.pickup_longitude,
+      pdcObj.latitude,
+      pdcObj.longitude,
+      mode
+    );
+    const distanceValue = parseFloat(distance) || 0;
+
+    travel.drop_location = pdcObj.address;
+    travel.drop_latitude = pdcObj.latitude;
+    travel.drop_longitude = pdcObj.longitude;
+    travel.distance = Math.round(distanceValue * 1000) / 1000;
+    travel.earnings = earning;
+    await travel.save({ session });
+
+    await dpService.createPayout({
+      dp_auth_id: user_id,
+      order_id: order._id,
+      broadcast_id: order.broadcast_id || null,
+      travel_id: travel._id,
+      earnings: earning
+    });
+
+    const admin = await User.findOne({ role: 'admin' }).session(session);
+    const dpUser = await User.findById(user_id).session(session);
+
+    await Notification.create([{
+      notifiable_type: 'admin',
+      notifiable_id: admin._id,
+      title: 'Order Status Update',
+      message: `The order of ID : ${order_id} is reached at PDC`,
+      order_id
+    }], { session });
+
+    await Notification.create([{
+      notifiable_type: 'dp',
+      notifiable_id: user_id,
+      title: 'Order Delivered',
+      message: `Successfully delivered the order of ID : ${order_id} to PDC`,
+      order_id
+    }], { session });
+
+    await Notification.create([{
+      notifiable_type: 'customer',
+      notifiable_id: order.user_id,
+      title: 'Order Status Update',
+      message: `Your order of ID : ${order_id} is reached at PDC`,
+      order_id
+    }], { session });
+
+    await Notification.create([{
+      notifiable_type: 'pdc',
+      notifiable_id: pdc_id,
+      title: 'New Package Received',
+      message: `You received package for Order #${order_id}`,
+      order_id
+    }], { session });
+
+    await DpDetail.findOneAndUpdate(
+      { user_id },
+      {
+        location: pdcObj.address,
+        latitude: pdcObj.latitude,
+        longitude: pdcObj.longitude
+      },
+      { session }
+    );
+
+    const orderRequest = await OrderRequest.findOne({ order_id, status: 1 }).sort({ created_at: -1 }).session(session);
+    orderRequest.complete_status = 1;
+    await orderRequest.save({ session });
+
+    const nextBroadcast = await Broadcast.create([{
+      order_id,
+      broadcasted_by: pdc_id,
+      pickup_location: pdcObj.address,
+      pickup_latitude: pdcObj.latitude,
+      pickup_longitude: pdcObj.longitude,
+      distance: 0,
+      pickup_otp: Math.floor(1000 + Math.random() * 9000),
+      drop_otp: Math.floor(1000 + Math.random() * 9000)
+    }], { session });
+
+    order.broadcast_id = nextBroadcast[0]._id;
+    order.delivery_type = 'broadcast_pdc';
+    order.status_completed = 'delivered to pdc';
+    await order.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.json(ApiResponse.success(null, 'Parcel Delivered to PDC'));
+
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
+  }
+});
+
+export const dropOrderToCustomer = asyncHandler(async (req, res) => {
+  const { order_id, user_id, drop_otp } = req.params;
+  const result = await dpService.dropOrderToCustomer(order_id, user_id, drop_otp);
+  return res.json(ApiResponse.success(null, result.message));
+});
+
+export const order_history = asyncHandler(async (req, res) => {
+  const { user_id } = req.params;
+  const orders = await dpService.getOrderHistory(user_id);
+  return res.json(ApiResponse.success({ orders_history: orders }, 'all orders that are delivered'));
+});
+
+export const totalorder = asyncHandler(async (req, res) => {
+  const { user_id } = req.params;
+  const result = await dpService.getTotalOrdersCount(user_id);
+  return res.json(ApiResponse.success(result, 'for home cards acceptorder rejectorder totalorder totalearning'));
+});
+
+export const earning_history = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const result = await dpService.getEarningHistory(userId);
+  return res.json(ApiResponse.success(result, 'Earnings loaded'));
+});
+
+export const online = asyncHandler(async (req, res) => {
+  const { user_id, online, location, latitude, longitude } = validate(dpValidation.dpOnlineToggleSchema, req.body);
+  await dpService.toggleOnlineStatus(user_id, Number(online), location, Number(latitude), Number(longitude));
+
+  const message = Number(online) === 1 ? 'You Are Now Online' : 'You Are Offline Now';
+  return res.json(ApiResponse.success(null, message));
+});
+
+export const updateBankDetail = asyncHandler(async (req, res) => {
+  const { user_id } = validate(dpValidation.dpBankDetailsSchema, req.body);
+  await dpService.updateBankDetail(user_id, req.body, req.files);
+  return res.json(ApiResponse.success(null, 'bank details updated'));
+});
+
+export const customerLocation = asyncHandler(async (req, res) => {
+  const { order_id } = req.params;
+  const orderDetail = await Order.findById(order_id);
+
+  const data = {
+    sender_latitude: orderDetail?.sender_latitude || null,
+    sender_longitude: orderDetail?.sender_longitude || null,
+    receiver_latitude: orderDetail?.receiver_latitude || null,
+    receiver_longitude: orderDetail?.receiver_longitude || null
+  };
+
+  return res.json(ApiResponse.success(data, 'customer lat and long'));
+});
+
+export const findPdcInRoute = asyncHandler(async (req, res) => {
+  const { pickup_lat, pickup_lng, drop_lat, drop_lng } = req.body;
+
+  const warehouses = await PdcDocument.find({ online: 1 });
+  const warehousesInRoute = [];
+
+  for (const pdc of warehouses) {
+    const distanceToPickup = mapsService.haversineGreatCircleDistance(
+      Number(pickup_lat),
+      Number(pickup_lng),
+      pdc.latitude,
+      pdc.longitude
+    ) / 1000;
+
+    const distanceToDrop = mapsService.haversineGreatCircleDistance(
+      Number(drop_lat),
+      Number(drop_lng),
+      pdc.latitude,
+      pdc.longitude
+    ) / 1000;
+
+    const totalRouteDistance = mapsService.haversineGreatCircleDistance(
+      Number(pickup_lat),
+      Number(pickup_lng),
+      Number(drop_lat),
+      Number(drop_lng)
+    ) / 1000;
+
+    const threshold = 1.0; // 1km threshold
+    if (Math.abs(distanceToPickup + distanceToDrop - totalRouteDistance) < threshold) {
+      warehousesInRoute.push(pdc);
+    }
+  }
+
+  return res.json(ApiResponse.success(warehousesInRoute));
+});
+
+export const editProfile = asyncHandler(async (req, res) => {
+  const { user_id, address } = req.body;
+  const profileImgPath = req.file ? req.file.path : null;
+
+  const profile = await dpService.editDpProfile(user_id, address, profileImgPath);
+
+  return res.json(ApiResponse.success({ profile }, 'Profile Updated Successfully'));
+});
+
+export const myRatings = asyncHandler(async (req, res) => {
+  const { user_id } = req.params;
+  const ratings = await dpService.findRatingsForDp(user_id);
+  const avgRating = await dpService.getDpAverageRating(user_id);
+
+  return res.json(ApiResponse.success({ avarageRating: avgRating, ratings }, 'Dp Ratings'));
+});
+
+export const myNotifications = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const notifications = await Notification.find({ notifiable_id: userId, read_at: null }).sort({ created_at: -1 });
+
+  return res.json(ApiResponse.success({ notifications }, 'Delivery Partner notifications'));
+});
+
+export const rateUser = asyncHandler(async (req, res) => {
+  const { order_id, from_dp, to_user, stars, message } = validate(dpValidation.rateUserSchema, req.body);
+  const result = await dpService.rateUser(order_id, from_dp, to_user, Number(stars), message);
+  return res.json(ApiResponse.success(result));
+});
+
+export const documentVerificationStatus = asyncHandler(async (req, res) => {
+  const { dp_id } = req.params;
+  const result = await dpService.getDocumentVerificationStatus(dp_id);
+  return res.json(ApiResponse.success(result));
+});
+
+export const cancelBroadcast = asyncHandler(async (req, res) => {
+  return res.json(ApiResponse.success(null, 'Broadcast cancelled successfully'));
+});
+
+export const resendPickupOtp = asyncHandler(async (req, res) => {
+  const { orderId } = req.params;
+  const result = await dpService.resendPickupOtp(orderId);
+  return res.json(ApiResponse.success(null, result.message));
+});
+
+export const resendReceiverOtp = asyncHandler(async (req, res) => {
+  const { orderId } = req.params;
+  const result = await dpService.resendReceiverOtp(orderId);
+  return res.json(ApiResponse.success(null, result.message));
+});
+
+export const requestType = asyncHandler(async (req, res) => {
+  return res.json(ApiResponse.success(null, 'request_type route called'));
+});
+
+export const deliverPdc = asyncHandler(async (req, res) => {
+  const { pdcAuthId, orderId, dpAuthId } = validate(dpValidation.deliverPdcSchema, req.body);
+
+  const user = await User.findById(dpAuthId);
+  if (!user) throw new ApiError(404, 'Delivery partner not found');
+  const dpObj = user.toObject();
+  dpObj.dpDetail = await DpDetail.findOne({ user_id: dpAuthId });
+  if (!dpObj.dpDetail) throw new ApiError(404, 'Delivery partner details not found');
+
+  let pdc = await PdcDocument.findOne({ user_id: pdcAuthId });
+  if (!pdc) {
+    pdc = await PdcDocument.findById(pdcAuthId);
+  }
+  if (!pdc || !pdc.latitude) throw new ApiError(404, 'PDC details/location missing');
+
+  const order = await Order.findById(orderId);
+  if (!order) throw new ApiError(404, 'Order not found');
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    let orderRequest = await OrderRequest.findOne({
+      order_id: order._id,
+      notified_ids: pdcAuthId,
+      status: 1,
+      request_type: 'deliver to pdc',
+      complete_status: null
+    }).session(session);
+
+    if (!orderRequest) {
+      orderRequest = await OrderRequest.create([{
+        order_id: order._id,
+        requested_by: dpAuthId,
+        notified_ids: [pdc.user_id],
+        request_type: 'deliver to pdc',
+        accepted_by: pdc.user_id
+      }], { session });
+
+      const distance = await mapsService.distanceBetween(
+        dpObj.dpDetail.latitude,
+        dpObj.dpDetail.longitude,
+        pdc.latitude,
+        pdc.longitude
+      );
+      const distanceValue = parseFloat(distance) || 0;
+
+      const broadcast = await Broadcast.create([{
+        order_id: order._id,
+        broadcasted_by: dpAuthId,
+        pickup_location: dpObj.dpDetail.location,
+        pickup_latitude: dpObj.dpDetail.latitude,
+        pickup_longitude: dpObj.dpDetail.longitude,
+        drop_location: pdc.address,
+        drop_latitude: pdc.latitude,
+        drop_longitude: pdc.longitude,
+        distance: `${distanceValue} km`,
+        pickup_otp: Math.floor(1000 + Math.random() * 9000),
+        drop_otp: Math.floor(1000 + Math.random() * 9000)
+      }], { session });
+
+      order.broadcast_id = broadcast[0]._id;
+      order.delivery_type = 'pdc';
+      order.status_completed = 'delivering to pdc';
+      await order.save({ session });
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.json(ApiResponse.success({ pdc, orderId: order._id }, 'request success'));
+
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
+  }
+});
+
+export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
+  const { otp, order_id } = validate(dpValidation.pdcDeliveryOtpSchema, req.body);
+  const order = await Order.findById(order_id);
+  if (!order) throw new ApiError(404, 'Order not found');
+
+  const broadcast = await Broadcast.findById(order.broadcast_id);
+  if (!broadcast) throw new ApiError(404, 'Broadcast record not found');
+
+  if (Number(otp) !== broadcast.drop_otp) {
+    throw new ApiError(400, 'OTP does not match');
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    broadcast.status = '1';
+    await broadcast.save({ session });
+
+    const orderRequests = await OrderRequest.find({ order_id: order._id })
+      .sort({ created_at: -1 })
+      .session(session);
+
+    const pdcOrderRequest = orderRequests[0];
+    const orderRequest = orderRequests[1];
+
+    if (orderRequest && pdcOrderRequest) {
+      orderRequest.complete_status = 1;
+      await orderRequest.save({ session });
+
+      pdcOrderRequest.status = 1;
+      await pdcOrderRequest.save({ session });
+
+      const newOrderRequest = await OrderRequest.findOne({ order_id: order._id })
+        .sort({ created_at: -1 })
+        .session(session);
+
+      const pdc = await PdcDocument.findOne({ user_id: newOrderRequest.accepted_by }).session(session);
+
+      const dpDetail = await DpDetail.findOne({ user_id: orderRequest.accepted_by }).session(session);
+      if (dpDetail && pdc) {
+        dpDetail.location = pdc.address;
+        dpDetail.latitude = pdc.latitude;
+        dpDetail.longitude = pdc.longitude;
+        await dpDetail.save({ session });
+      }
+
+      const travel = await mongoose.model('Travel').findOne({ order_id: order._id })
+        .sort({ created_at: -1 })
+        .session(session);
+
+      if (travel && pdc) {
+        const distanceMeters = mapsService.haversineGreatCircleDistance(
+          travel.pickup_latitude,
+          travel.pickup_longitude,
+          pdc.latitude,
+          pdc.longitude
+        );
+        const distanceKm = distanceMeters / 1000;
+
+        const deliveryCharge = await mongoose.model('DeliverCharge').findOne({ vehicle_type: 'dp_charges' }).session(session);
+        const vehicleCharge = await mongoose.model('DeliverCharge').findOne({ vehicle_type: order.mode_of_transport }).session(session);
+
+        const deliveryChargePerKm = deliveryCharge ? deliveryCharge.per_km_price : 0;
+        const vehicleChargePerKm = vehicleCharge ? vehicleCharge.per_km_price : 0;
+
+        const earning = Math.round(
+          (Math.round(distanceKm * 1000) / 1000) *
+          vehicleChargePerKm *
+          (deliveryChargePerKm / 100) *
+          100
+        ) / 100;
+
+        travel.drop_location = pdc.address;
+        travel.drop_latitude = pdc.latitude;
+        travel.drop_longitude = pdc.longitude;
+        travel.distance = Math.round(distanceKm * 1000) / 1000;
+        travel.earnings = earning;
+        await travel.save({ session });
+
+        await mongoose.model('DpPayout').create([{
+          dp_auth_id: travel.user_id,
+          order_id: order._id,
+          broadcast_id: order.broadcast_id,
+          travel_id: travel._id,
+          earnings: earning
+        }], { session });
+
+        const packageDetail = await mongoose.model('PackageDetail').findById(order.package_id).session(session);
+        const noOfItems = packageDetail ? packageDetail.no_of_items : 0;
+
+        await mongoose.model('PdcPackage').create([{
+          pdc_id: pdc.user_id,
+          order_id: order._id,
+          package_id: order.package_id,
+          package_count: noOfItems,
+          date_of_order: order.created_at
+        }], { session });
+
+        let nextBroadcast = await Broadcast.findOne({
+          order_id: order._id,
+          broadcasted_by: pdc.user_id,
+          status: '0'
+        }).session(session);
+
+        if (!nextBroadcast) {
+          const broadcastDistance = await mapsService.distanceBetween(
+            pdc.latitude,
+            pdc.longitude,
+            order.receiver_latitude,
+            order.receiver_longitude
+          );
+          const broadcastDistanceVal = parseFloat(broadcastDistance) || 0;
+
+          const createdBroadcast = await Broadcast.create([{
+            order_id: order._id,
+            broadcasted_by: pdc.user_id,
+            pickup_location: pdc.address,
+            pickup_latitude: pdc.latitude,
+            pickup_longitude: pdc.longitude,
+            drop_location: order.drop_location,
+            drop_latitude: order.receiver_latitude,
+            drop_longitude: order.receiver_longitude,
+            distance: `${broadcastDistanceVal} km`,
+            pickup_otp: Math.floor(1000 + Math.random() * 9000),
+            drop_otp: Math.floor(1000 + Math.random() * 9000)
+          }], { session });
+          nextBroadcast = createdBroadcast[0];
+        }
+
+        let radius = 500;
+        let nearByDps = [];
+        do {
+          nearByDps = await dpService.checkNearbyDps(radius, nextBroadcast._id, pdc.user_id);
+          radius += 500;
+          if (nearByDps.length > 0 && orderRequest.accepted_by) {
+            nearByDps = nearByDps.filter(dpId => dpId.toString() !== orderRequest.accepted_by.toString());
+          }
+        } while (nearByDps.length === 0 && radius <= 10000);
+
+        let pdcBroadcastOrderRequest = await OrderRequest.findOne({
+          order_id: order._id,
+          broadcast_id: nextBroadcast._id,
+          notified_ids: { $all: nearByDps }
+        }).session(session);
+
+        if (!pdcBroadcastOrderRequest && nearByDps.length > 0) {
+          await OrderRequest.create([{
+            order_id: order._id,
+            requested_by: pdc.user_id,
+            notified_ids: nearByDps,
+            request_type: 'broadcast_pdc',
+            broadcast_id: nextBroadcast._id
+          }], { session });
+        }
+
+        order.broadcast_id = nextBroadcast._id;
+        order.delivery_type = 'broadcast_pdc';
+        order.status_completed = 'delivered to pdc';
+        await order.save({ session });
+      }
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.json(ApiResponse.success(null, 'Parcel Delivered to PDC'));
+
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
+  }
+});

@@ -1,0 +1,47 @@
+import mongoose from "mongoose";
+
+const pdcDocumentSchema = new mongoose.Schema(
+  {
+    user_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      ref: "User",
+    },
+    name: { type: String, required: true },
+    phone: { type: String, required: true },
+    registration_date: { type: Date, default: Date.now },
+    gst_no: { type: String, default: null },
+    gst_status: { type: String, default: null },
+    gst_doc: { type: String, default: null },
+    aadhar_card_no: { type: String, default: null },
+    aadhar_status: { type: String, default: null },
+    aadhar_front_image: { type: String, default: null },
+    aadhar_back_image: { type: String, default: null },
+    pan_card_no: { type: String, default: null },
+    pancard_status: { type: String, default: null },
+    pan_status: { type: String, default: null },
+    pancard_image: { type: String, default: null },
+    account_no: { type: String, default: null },
+    ifsc: { type: String, default: null },
+    bank_status: { type: String, default: null },
+    passbook_image: { type: String, default: null },
+    pincode: { type: String, default: null },
+    city: { type: String, default: null },
+    district: { type: String, default: null },
+    state: { type: String, default: null },
+    address: { type: String, default: null },
+    latitude: { type: Number, default: null },
+    longitude: { type: Number, default: null },
+    profile_image: { type: String, default: null },
+    shop_image: { type: String, default: null },
+    status: { type: Number, default: 0 },
+    online: { type: Number, default: 0 },
+    aadhar_reject_reason: { type: String, default: null },
+    pan_reject_reason: { type: String, default: null },
+    gst_reject_reason: { type: String, default: null },
+    bank_reject_reason: { type: String, default: null },
+  },
+  { timestamps: true },
+);
+
+export const PdcDocument = mongoose.model("PdcDocument", pdcDocumentSchema);

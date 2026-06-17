@@ -1,0 +1,41 @@
+import mongoose from 'mongoose';
+
+const dpDocumentSchema = new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
+  vehicle_type: { type: String, default: null },
+  aadhar_number: { type: String, default: null },
+  aadhar_imgfront: { type: String, default: null },
+  aadhar_imgback: { type: String, default: null },
+  adhar_status: { type: String, default: null },
+  adhar_reject_reason: { type: String, default: null },
+  rc_number: { type: String, default: null },
+  rc_imgfront: { type: String, default: null },
+  rc_imgback: { type: String, default: null },
+  rc_status: { type: String, default: null },
+  rc_reject_reason: { type: String, default: null },
+  dl_number: { type: String, default: null },
+  dl_imgfront: { type: String, default: null },
+  dl_imgback: { type: String, default: null },
+  dl_status: { type: String, default: null },
+  dl_reject_reason: { type: String, default: null },
+  bank_name: { type: String, default: null },
+  bank_acc_number: { type: String, default: null },
+  bank_ifsc: { type: String, default: null },
+  bank_imagefront: { type: String, default: null },
+  bank_imgeback: { type: String, default: null },
+  bank_status: { type: String, default: null },
+  bank_reject_reason: { type: String, default: null },
+  vehicle_number: { type: String, default: null },
+  residence_img: { type: String, default: null },
+  vehicle_img: { type: String, default: null },
+  rv_status: { type: String, default: null },
+  rv_reject_reason: { type: String, default: null },
+  reference1_name: { type: String, default: null },
+  reference1_phone: { type: String, default: null },
+  reference2_name: { type: String, default: null },
+  reference2_phone: { type: String, default: null }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+export const DpDocument = mongoose.model('DpDocument', dpDocumentSchema);

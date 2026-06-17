@@ -1,0 +1,99 @@
+import Joi from 'joi';
+
+const objectIdRegex = /^[0-9a-fA-F]{24}$/;
+
+export const payOrderSchema = Joi.object({
+  user_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'User ID cannot be empty',
+      'string.pattern.base': 'Invalid User ID format',
+      'any.required': 'User ID is required'
+    }),
+  order_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'Order ID cannot be empty',
+      'string.pattern.base': 'Invalid Order ID format',
+      'any.required': 'Order ID is required'
+    }),
+  amount: Joi.number()
+    .min(1)
+    .required()
+    .messages({
+      'number.base': 'Amount must be a valid number',
+      'number.min': 'Amount must be at least 1',
+      'any.required': 'Amount is required'
+    })
+});
+
+export const rechargeSchema = Joi.object({
+  user_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'User ID cannot be empty',
+      'string.pattern.base': 'Invalid User ID format',
+      'any.required': 'User ID is required'
+    }),
+  amount: Joi.number()
+    .min(1)
+    .required()
+    .messages({
+      'number.base': 'Amount must be a valid number',
+      'number.min': 'Amount must be at least 1',
+      'any.required': 'Amount is required'
+    }),
+  transaction_id: Joi.string()
+    .trim()
+    .required()
+    .messages({
+      'string.empty': 'Transaction ID is required',
+      'any.required': 'Transaction ID is required'
+    }),
+  payment_method: Joi.string()
+    .trim()
+    .required()
+    .messages({
+      'string.empty': 'Payment method is required',
+      'any.required': 'Payment method is required'
+    }),
+  status: Joi.string()
+    .trim()
+    .required()
+    .messages({
+      'string.empty': 'Status is required',
+      'any.required': 'Status is required'
+    })
+});
+
+export const initiatePaymentSchema = Joi.object({
+  user_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'User ID cannot be empty',
+      'string.pattern.base': 'Invalid User ID format',
+      'any.required': 'User ID is required'
+    }),
+  amount: Joi.number()
+    .min(1)
+    .required()
+    .messages({
+      'number.base': 'Amount must be a valid number',
+      'number.min': 'Amount must be at least 1',
+      'any.required': 'Amount is required'
+    })
+});
+
+export const verifyPaymentSchema = Joi.object({
+  order_id: Joi.string()
+    .trim()
+    .required()
+    .messages({
+      'string.empty': 'Order ID is required',
+      'any.required': 'Order ID is required'
+    })
+});
