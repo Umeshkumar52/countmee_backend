@@ -41,7 +41,6 @@ export const loginAdmin = async (email, password) => {
         id: adminUser._id,
         name: adminUser.name,
         email: adminUser.email,
-        user_type: adminUser.role,
         role: adminUser.role
       }
     };
@@ -782,7 +781,7 @@ export const getPastPayments = async (userId, onlySpecificOrder = false) => {
   const formattedPayouts = payouts.map(p => ({
     id: p._id,
     user_name: p.user_id?.name || 'Unknown',
-    user_type: p.user_id?.role || 'dp',
+    role: p.user_id?.role || 'dp',
     settled_amount: p.settled_amount,
     order_id: p.order_id || [],
     created_at: p.created_at ? new Date(p.created_at).toISOString().split('T')[0] : 'N/A'

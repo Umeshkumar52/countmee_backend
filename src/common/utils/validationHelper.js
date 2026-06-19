@@ -31,8 +31,11 @@ export const validate = (schema, data) => {
       errorDetails[key].push(item.message);
     });
 
+    // Grab the first error message to display at the top level
+    const firstErrorMessage = error.details[0]?.message || 'Validation error';
+
     // Throw standard Joi validation bad request
-    throw new ApiError(400, 'Validation error', errorDetails);
+    throw new ApiError(400, firstErrorMessage, errorDetails);
   }
 
   return value;

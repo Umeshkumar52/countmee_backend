@@ -12,10 +12,4 @@ const massCreditLogSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-massCreditLogSchema.virtual('user_type').get(function() {
-  return this.role;
-}).set(function(val) {
-  this.role = val;
-});
-
 export const MassCreditLog = mongoose.model('MassCreditLog', massCreditLogSchema);

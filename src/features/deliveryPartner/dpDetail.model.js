@@ -7,7 +7,7 @@ const dpDetailSchema = new mongoose.Schema(
       required: true,
       ref: "User",
     },
-    dob: { type: Date, required: true },
+    dob: { type: Date },
     gender: { type: String, required: true },
     address: { type: String, default: null },
     profile_img: { type: String, required: true },

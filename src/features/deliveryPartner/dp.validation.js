@@ -11,12 +11,6 @@ export const dpDetailsSchema = Joi.object({
       'string.pattern.base': 'Invalid User ID format',
       'any.required': 'User ID is required'
     }),
-  dob: Joi.date()
-    .required()
-    .messages({
-      'date.base': 'Please enter a valid Date of Birth',
-      'any.required': 'Date of Birth is required'
-    }),
   gender: Joi.string()
     .trim()
     .required()
@@ -26,9 +20,10 @@ export const dpDetailsSchema = Joi.object({
     }),
   address: Joi.string()
     .trim()
-    .allow('', null)
+    .required()
     .messages({
-      'string.base': 'Address must be a string'
+      'string.empty': 'Address cannot be empty',
+      'any.required': 'Address is required'
     })
 });
 
