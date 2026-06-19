@@ -6,7 +6,7 @@ const router = Router();
 
 // Apply auth middleware to all payments/wallet endpoints
 router.use(authenticate);
-
+router.post("/", paymentsController.processRazorpayPayment);
 // Wallet endpoints under `/api/payment` prefix
 router.get("/wallet/balance/:user_id", paymentsController.getBalance);
 router.get("/wallet/history/:user_id", paymentsController.getHistory);
@@ -30,6 +30,3 @@ walletRouter.post("/pay-order", paymentsController.payOrder);
 walletRouter.post("/recharge", paymentsController.recharge);
 walletRouter.post("/initiate", paymentsController.initiateCashfreePayment);
 walletRouter.post("/verify", paymentsController.verifyCashfreePayment);
-
-export const customerPaymentRouter = Router();
-customerPaymentRouter.post("/payment", paymentsController.processRazorpayPayment);
