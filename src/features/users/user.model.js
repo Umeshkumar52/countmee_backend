@@ -7,11 +7,10 @@ const userSchema = new mongoose.Schema(
       enum: ["customer", "dp", "pdc", "admin"],
       default: "customer",
     },
-
     name: { type: String, required: true },
     phone: { type: String, default: "" },
     email: { type: String, default: "" },
-    DOB: { type: Date, default: null },
+    dob: { type: Date, default: null },
     password: { type: String, default: "" },
     otp: { type: String, default: "" },
     refreshToken: { type: String, default: null },

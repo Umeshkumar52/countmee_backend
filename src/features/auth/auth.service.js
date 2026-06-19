@@ -10,7 +10,7 @@ import {
 } from "../../common/middlewares/auth.middleware.js";
 import mongoose from "mongoose";
 
-export const registerCustomer = async (name, phone, email, DOB) => {
+export const registerCustomer = async (name, phone, email, dob) => {
   const existingUser = await authRepository.findUserByEmailPhoneAndType(
     email,
     phone,
@@ -26,7 +26,7 @@ export const registerCustomer = async (name, phone, email, DOB) => {
     name,
     phone,
     email,
-    DOB,
+    dob,
   });
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -115,7 +115,7 @@ export const resendOtp = async (phone) => {
   return user;
 };
 
-export const registerDp = async (name, phone, email, DOB) => {
+export const registerDp = async (name, phone, email, dob) => {
   const existingUser = await authRepository.findUserByEmailPhoneAndType(
     email,
     phone,
@@ -130,7 +130,7 @@ export const registerDp = async (name, phone, email, DOB) => {
     name,
     phone,
     email,
-    DOB,
+    dob,
   });
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();

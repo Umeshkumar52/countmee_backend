@@ -6,11 +6,11 @@ import * as authValidation from "./auth.validation.js";
 import { ApiError } from "../../common/utils/ApiError.js";
 
 export const registerCustomer = asyncHandler(async (req, res) => {
-  const { name, phone, email, DOB } = validate(
+  const { name, phone, email, dob } = validate(
     authValidation.registerCustomerSchema,
     req.body,
   );
-  const result = await authService.registerCustomer(name, phone, email, DOB);
+  const result = await authService.registerCustomer(name, phone, email, dob);
   const data = {
     user: {
       id: result.user._id,
@@ -57,11 +57,11 @@ export const resendOtp = asyncHandler(async (req, res) => {
 });
 
 export const registerDp = asyncHandler(async (req, res) => {
-  const { name, phone, email, DOB } = validate(
+  const { name, phone, email, dob } = validate(
     authValidation.registerDpSchema,
     req.body,
   );
-  const result = await authService.registerDp(name, phone, email, DOB);
+  const result = await authService.registerDp(name, phone, email, dob);
   return res.json(
     ApiResponse.success(result, "Dp Register Successfully... document page"),
   );
