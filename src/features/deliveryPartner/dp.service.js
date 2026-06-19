@@ -28,7 +28,7 @@ export const getDPById = async (id) => {
   return null;
 };
 
-export const saveDetails = async (user_id, dob, gender, address, profileImgLocalPath) => {
+export const saveDetails = async (user_id, gender, address, profileImgLocalPath) => {
   let profileImgUrl = null;
 
   if (profileImgLocalPath) {
@@ -43,7 +43,6 @@ export const saveDetails = async (user_id, dob, gender, address, profileImgLocal
   if (!dp) {
     await DpDetail.create({
       user_id,
-      dob,
       gender,
       address,
       profile_img: profileImgUrl
@@ -51,7 +50,6 @@ export const saveDetails = async (user_id, dob, gender, address, profileImgLocal
     // Initialize empty document
     await DpDocument.create({ user_id });
   } else {
-    dp.dob = dob;
     dp.gender = gender;
     dp.address = address;
     if (profileImgUrl) {
@@ -94,10 +92,6 @@ export const saveDocuments = async (user_id, docData, files) => {
       bank_acc_number: docData.bank_acc_number,
       bank_ifsc: docData.bank_ifsc,
       vehicle_number: docData.vehicle_number,
-      reference1_name: docData.reference1_name,
-      reference1_phone: docData.reference1_phone,
-      reference2_name: docData.reference2_name,
-      reference2_phone: docData.reference2_phone,
       ...uploadResults
     },
     { new: true }
@@ -293,20 +287,22 @@ export const orderAccept = async (order_id, status, user_id) => {
 
         let distance = 0;
 
-        if (travel && oldOrderRequest && oldOrderRequest.dpLocation) {
+        const oldDpDetail = oldOrderRequest ? await DpDetail.findOne({ user_id: oldOrderRequest.accepted_by }).session(session) : null;
+
+        if (travel && oldOrderRequest && oldDpDetail) {
           const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
           const chkDistance = await mapsService.distanceBetween(
             travel.pickup_latitude,
             travel.pickup_longitude,
-            oldOrderRequest.dpLocation.latitude,
-            oldOrderRequest.dpLocation.longitude,
+            oldDpDetail.latitude,
+            oldDpDetail.longitude,
             mode
           );
           distance = parseFloat(chkDistance) || 0;
 
           const distToReceiver = parseFloat(await mapsService.distanceBetween(
-            oldOrderRequest.dpLocation.latitude,
-            oldOrderRequest.dpLocation.longitude,
+            oldDpDetail.latitude,
+            oldDpDetail.longitude,
             order.receiver_latitude,
             order.receiver_longitude,
             mode
@@ -325,9 +321,9 @@ export const orderAccept = async (order_id, status, user_id) => {
           const remainingPot = Math.max(0, totalDpPot - sumEarnings);
           const earnings = Math.round(remainingPot * cappedFraction * 100) / 100;
 
-          travel.drop_location = oldOrderRequest.dpLocation.location;
-          travel.drop_latitude = oldOrderRequest.dpLocation.latitude;
-          travel.drop_longitude = oldOrderRequest.dpLocation.longitude;
+          travel.drop_location = oldDpDetail.location;
+          travel.drop_latitude = oldDpDetail.latitude;
+          travel.drop_longitude = oldDpDetail.longitude;
           travel.distance = Math.round(distance * 1000) / 1000;
           travel.earnings = earnings;
           await travel.save({ session });
@@ -748,7 +744,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       {
         location: order.drop_location,
         latitude: order.receiver_latitude,
-        longitude: order.longitude // receiver_longitude
+        longitude: order.receiver_longitude
       },
       { session }
     );
@@ -1088,10 +1084,40 @@ export const rateUser = async (order_id, from_dp, to_user, stars, message = '') 
   return { code: 200, message: 'You have already rated this customer.' };
 };
 
+export const getDocuments = async (user_id) => {
+  const doc = await DpDocument.findOne({ user_id }).lean();
+
+  if (!doc) {
+    return {
+      adhar_status: 'Pending', adhar_reject_reason: null,
+      rc_status: 'Pending', rc_reject_reason: null,
+      dl_status: 'Pending', dl_reject_reason: null,
+      bank_status: 'Pending', bank_reject_reason: null,
+      rv_status: 'Pending', rv_reject_reason: null
+    };
+  }
+
+  return {
+    adhar_status: doc.adhar_status || 'Pending',
+    adhar_reject_reason: doc.adhar_reject_reason || null,
+    rc_status: doc.rc_status || 'Pending',
+    rc_reject_reason: doc.rc_reject_reason || null,
+    dl_status: doc.dl_status || 'Pending',
+    dl_reject_reason: doc.dl_reject_reason || null,
+    bank_status: doc.bank_status || 'Pending',
+    bank_reject_reason: doc.bank_reject_reason || null,
+    rv_status: doc.rv_status || 'Pending',
+    rv_reject_reason: doc.rv_reject_reason || null
+  };
+};
+
 export const getDocumentVerificationStatus = async (dp_id) => {
   const dp = await User.findById(dp_id);
   const dpDetail = await DpDetail.findOne({ user_id: dp_id });
   const dpDocument = await DpDocument.findOne({ user_id: dp_id });
+
+  // Fetch detailed document statuses
+  const documentStatus = await getDocuments(dp_id);
 
   if (!dpDetail || !dpDocument) {
     return {
@@ -1101,7 +1127,8 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       argumnet2: false,
       argumnet3: false,
       argumnet4: false,
-      message: 'dp document or details are not submit yet'
+      message: 'dp document or details are not submit yet',
+      document_status: documentStatus
     };
   }
 
@@ -1113,7 +1140,8 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       argumnet2: true,
       argumnet3: true,
       argumnet4: true,
-      message: 'go to home page'
+      message: 'go to home page',
+      document_status: documentStatus
     };
   }
 
@@ -1142,7 +1170,8 @@ export const getDocumentVerificationStatus = async (dp_id) => {
     argumnet3,
     argumnet4,
     dp,
-    message: 'document verify page'
+    message: 'document verify page',
+    document_status: documentStatus
   };
 };
 

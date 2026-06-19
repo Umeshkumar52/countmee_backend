@@ -46,7 +46,8 @@ export const errorHandler = (err, req, res, next) => {
       errorDetails[key].push(item.message);
     });
 
-    return res.status(400).json(ApiResponse.error('Validation error', errorDetails));
+    const firstErrorMessage = err.details[0]?.message || 'Validation error';
+    return res.status(400).json(ApiResponse.error(firstErrorMessage, errorDetails));
   }
 
   // 4. Mongoose Duplicate Key Error

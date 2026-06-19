@@ -24,11 +24,6 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-// userSchema.virtual("user_type").get(function () {
-//   return this.role;
-// }).set(function (val) {
-//   this.role = val;
-// })
-// ;
+
 
 export const User = mongoose.model("User", userSchema);

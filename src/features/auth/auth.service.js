@@ -195,6 +195,12 @@ export const dpOtpVerification = async (userId, otp) => {
     throw new Error("Invalid Otp");
   }
 
+  // Generate tokens for all verified sessions so DPs can upload documents
+  const token = generateAccessToken(dp);
+  const refreshToken = generateRefreshToken(dp);
+  dp.refreshToken = refreshToken;
+  await authRepository.updateUserTokens(dp._id, refreshToken);
+
   let argumnet1 = false;
   let argumnet2 = false;
   let argumnet3 = false;
@@ -211,14 +217,12 @@ export const dpOtpVerification = async (userId, otp) => {
       argumnet3,
       argumnet4,
       message: "dp document or details are not submit yet",
+      token,
+      refreshToken,
     };
   }
 
   if (dpDetail.document_approval === "Approved") {
-    const token = generateAccessToken(dp);
-    const refreshToken = generateRefreshToken(dp);
-    dp.refreshToken = refreshToken;
-    await authRepository.updateUserTokens(dp._id, refreshToken);
     return {
       dp,
       argumnet1: true,
@@ -251,6 +255,8 @@ export const dpOtpVerification = async (userId, otp) => {
     argumnet4,
     dp,
     message: "document verify page",
+    token,
+    refreshToken,
   };
 };
 

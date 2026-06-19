@@ -17,7 +17,6 @@ export const generateAccessToken = (user) => {
       _id: user._id,
       email: user.email,
       role: user.role,
-      user_type: user.role,
     },
     JWT_SECRET,
     {
@@ -77,7 +76,7 @@ export const authorize = (roles = []) => {
     if (!req.user) {
       return next(new ApiError(401, "Unauthorized"));
     }
-    const userRole = req.user.role || req.user.user_type;
+    const userRole = req.user.role;
     if (roles.length && !roles.includes(userRole)) {
       return next(new ApiError(403, "Forbidden: Insufficient privileges"));
     }

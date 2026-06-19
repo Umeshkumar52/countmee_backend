@@ -16,14 +16,14 @@ import mongoose from 'mongoose';
 import { OrderRequest } from '../orders/orderRequest.model.js';
 
 export const dpDetails = asyncHandler(async (req, res) => {
-  const { user_id, dob, gender, address } = validate(dpValidation.dpDetailsSchema, req.body);
+  const { user_id, gender, address } = validate(dpValidation.dpDetailsSchema, req.body);
   const profileImgPath = req.file ? req.file.path : null;
 
   if (!profileImgPath) {
     throw new ApiError(400, 'Profile image is required');
   }
 
-  await dpService.saveDetails(user_id, dob, gender, address, profileImgPath);
+  await dpService.saveDetails(user_id, gender, address, profileImgPath);
   return res.json(ApiResponse.success({ argumnet1: true }, 'Dp Details submited'));
 });
 
@@ -537,7 +537,8 @@ export const rateUser = asyncHandler(async (req, res) => {
 export const documentVerificationStatus = asyncHandler(async (req, res) => {
   const { dp_id } = req.params;
   const result = await dpService.getDocumentVerificationStatus(dp_id);
-  return res.json(ApiResponse.success(result));
+  // Match legacy PHP flat response structure
+  return res.json(result);
 });
 
 export const cancelBroadcast = asyncHandler(async (req, res) => {

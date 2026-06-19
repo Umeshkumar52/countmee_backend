@@ -18,7 +18,6 @@ export const registerCustomer = asyncHandler(async (req, res) => {
       email: result.user.email,
       phone: result.user.phone,
       role: "customer",
-      user_type: "customer",
     },
     token: result.token,
     refreshToken: result.refreshToken,
