@@ -25,12 +25,12 @@ export const registerCustomerSchema = Joi.object({
       'string.email': 'Enter a valid Email Address',
       'any.required': 'Email Address is required'
     }),
-  DOB: Joi.date()
+  dob: Joi.date()
     .iso()
     .required()
     .messages({
-      'date.base': 'DOB must be a valid date',
-      'any.required': 'DOB is required'
+      'date.base': 'dob must be a valid date',
+      'any.required': 'dob is required'
     })
 });
 
@@ -88,12 +88,12 @@ export const registerDpSchema = Joi.object({
       'string.email': 'Enter a valid Email Address',
       'any.required': 'Email Address is required'
     }),
-  DOB: Joi.date()
+  dob: Joi.date()
     .iso()
     .required()
     .messages({
-      'date.base': 'DOB must be a valid date',
-      'any.required': 'DOB is required'
+      'date.base': 'dob must be a valid date',
+      'any.required': 'dob is required'
     })
 });
 
