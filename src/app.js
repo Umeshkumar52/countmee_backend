@@ -20,28 +20,15 @@ import userRouter from "./features/users/users.route.js";
 import paymentsRouter from "./features/payments/payments.route.js";
 import trackingRouter from "./features/tracking/tracking.route.js";
 import smsRouter from "./features/notifications/sms.route.js";
-
-// Import Legacy Routers & Middlewares (For Backward Compatibility)
-// import {
-//   customerAuthRouter,
-//   dpAuthRouter,
-// } from "./features/auth/auth.route.js";
 import authRoute from "./features/auth/auth.route.js";
 import ordersRouter from "./features/orders/orders.route.js";
-import {
-  walletRouter,
-  customerPaymentRouter,
-} from "./features/payments/payments.route.js";
+import { walletRouter } from "./features/payments/payments.route.js";
 import { authenticate } from "./common/middlewares/auth.middleware.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-
-// 1. Trust Proxy Setup
-// Essential for running behind reverse proxies (Nginx, AWS ALB, Heroku, Cloudflare)
-// to ensure req.ip and secure cookies work correctly.
 app.set("trust proxy", 1);
 
 // 2. Global Security Headers (Helmet)
@@ -109,30 +96,13 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // REST API routes under /api
 app.use("/api/auth", authRouter);
+app.use("/api/user", userRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/pdc", pdcRouter);
 app.use("/api/dp", dpRouter);
-app.use("/api/user", userRouter);
+app.use("/api/order", authenticate, ordersRouter);
 app.use("/api/payment", paymentsRouter);
 app.use("/api/tracking", trackingRouter);
-
-// 7.2. Backward Compatibility Aliases (Legacy Routes)
-// Ensures existing integrations, mobile apps, and scripts continue to function correctly.
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: {
-    status: 429,
-    message:
-      "Too many login or registration attempts, please try again after 15 minutes.",
-  },
-});
-
-app.use("/api/auth", authRoute);
-app.use("/api/customer", authenticate, userRouter); // profile/address endpoints
-app.use("/api/customer", authenticate, ordersRouter); // order endpoints
-app.use("/api/customer", authenticate, customerPaymentRouter); // razorpay checkout
-app.use("/api/dp", authenticate, dpRouter);
 app.use("/api/wallet", authenticate, walletRouter);
 app.use("/api", smsRouter);
 
@@ -143,8 +113,6 @@ app.use("*", (req, res) => {
     message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
-
-// 9. Global Centralized Error Handling Middleware
 app.use(errorHandler);
 
 export default app;
