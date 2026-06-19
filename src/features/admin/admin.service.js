@@ -545,6 +545,41 @@ export const getOrders = async (statusList) => {
   return { orders };
 };
 
+export const getPendingOrders = async () => {
+  const orders = await adminRepository.findPendingOrders();
+  return { orders };
+};
+
+export const getAssignedOrders = async () => {
+  const orders = await adminRepository.findAssignedOrders();
+  return { orders };
+};
+
+export const getInTransitOrders = async () => {
+  const orders = await adminRepository.findInTransitOrders();
+  return { orders };
+};
+
+export const getDeliveredOrders = async () => {
+  const orders = await adminRepository.findDeliveredOrders();
+  return { orders };
+};
+
+export const getBroadcastedOrders = async () => {
+  const orders = await adminRepository.findBroadcastedOrders();
+  return { orders };
+};
+
+export const getCustomerCancelledOrders = async () => {
+  const orders = await adminRepository.findCustomerCancelledOrders();
+  return { orders };
+};
+
+export const getDpCancelledOrders = async () => {
+  const orders = await adminRepository.findDpCancelledOrders();
+  return { orders };
+};
+
 export const getAssignOrdersSelect = async (orderId) => {
   const User = await import('../users/user.model.js');
   const dps = await User.User.find({ role: 'dp' });

@@ -62,6 +62,7 @@ export const authenticate = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log("token decode", decoded);
     req.user = decoded;
     next();
   } catch (error) {

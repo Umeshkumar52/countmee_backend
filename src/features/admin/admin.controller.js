@@ -256,7 +256,7 @@ export const getWalletConfigHistory = async (req, res, next) => {
 
 export const getOrdersPage = async (req, res, next) => {
   try {
-    const result = await adminService.getOrders(['Pending', 'Accepted']);
+    const result = await adminService.getPendingOrders();
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -265,7 +265,7 @@ export const getOrdersPage = async (req, res, next) => {
 
 export const getDeliveredOrdersPage = async (req, res, next) => {
   try {
-    const result = await adminService.getOrders(['Delivered']);
+    const result = await adminService.getDeliveredOrders();
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -274,7 +274,7 @@ export const getDeliveredOrdersPage = async (req, res, next) => {
 
 export const getBroadcastedOrdersPage = async (req, res, next) => {
   try {
-    const result = await adminService.getOrders(['Broadcasted']);
+    const result = await adminService.getBroadcastedOrders();
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -322,7 +322,7 @@ export const getParticularOrderPage = async (req, res, next) => {
 
 export const getPendingOrdersPage = async (req, res, next) => {
   try {
-    const result = await adminService.getOrders(['Pending']);
+    const result = await adminService.getPendingOrders();
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -331,7 +331,7 @@ export const getPendingOrdersPage = async (req, res, next) => {
 
 export const getAssignedOrdersPage = async (req, res, next) => {
   try {
-    const result = await adminService.getOrders(['Accepted']);
+    const result = await adminService.getAssignedOrders();
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -340,7 +340,7 @@ export const getAssignedOrdersPage = async (req, res, next) => {
 
 export const getIntransitOrdersPage = async (req, res, next) => {
   try {
-    const result = await adminService.getOrders(['InTransit']);
+    const result = await adminService.getInTransitOrders();
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -349,7 +349,7 @@ export const getIntransitOrdersPage = async (req, res, next) => {
 
 export const getCustomerCancelledOrdersPage = async (req, res, next) => {
   try {
-    const result = await adminService.getOrders(['CustomerCancelled']);
+    const result = await adminService.getCustomerCancelledOrders();
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -358,7 +358,7 @@ export const getCustomerCancelledOrdersPage = async (req, res, next) => {
 
 export const getDpCancelledOrdersPage = async (req, res, next) => {
   try {
-    const result = await adminService.getOrders(['DpCancelled']);
+    const result = await adminService.getDpCancelledOrders();
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);

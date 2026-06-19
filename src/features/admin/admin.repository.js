@@ -1,18 +1,22 @@
-import { User } from '../users/user.model.js';
-import { Customer } from '../users/customer.model.js';
-import { DpDetail } from '../deliveryPartner/dpDetail.model.js';
-import { DpDocument } from '../deliveryPartner/dpDocument.model.js';
-import { PdcDocument } from '../pdc/pdcDocument.model.js';
-import { Order } from '../orders/order.model.js';
-import { Rating } from '../deliveryPartner/rating.model.js';
-import { DeliverCharge } from '../orders/deliverCharge.model.js';
-import { MinBroadcastDist } from '../tracking/minBroadcast.model.js';
-import { BroadcastPoint } from '../tracking/broadcastPoint.model.js';
-import { Wallet } from '../payments/wallet.model.js';
-import { WalletTransaction } from '../payments/walletTransaction.model.js';
-import { WalletConfig, WalletConfigHistory } from '../payments/walletConfig.model.js';
-import { MassCreditLog } from '../payments/massCreditLog.model.js';
-import { AdminPayout } from '../payments/adminPayout.model.js';
+import { User } from "../users/user.model.js";
+import { Customer } from "../users/customer.model.js";
+import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
+import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
+import { PdcDocument } from "../pdc/pdcDocument.model.js";
+import { Order } from "../orders/order.model.js";
+import { OrderRequest } from "../orders/orderRequest.model.js";
+import { Rating } from "../deliveryPartner/rating.model.js";
+import { DeliverCharge } from "../orders/deliverCharge.model.js";
+import { MinBroadcastDist } from "../tracking/minBroadcast.model.js";
+import { BroadcastPoint } from "../tracking/broadcastPoint.model.js";
+import { Wallet } from "../payments/wallet.model.js";
+import { WalletTransaction } from "../payments/walletTransaction.model.js";
+import {
+  WalletConfig,
+  WalletConfigHistory,
+} from "../payments/walletConfig.model.js";
+import { MassCreditLog } from "../payments/massCreditLog.model.js";
+import { AdminPayout } from "../payments/adminPayout.model.js";
 
 export const findUserByEmailAndType = async (email, role) => {
   return await User.findOne({ email, role });
@@ -35,11 +39,11 @@ export const deleteUser = async (id) => {
 };
 
 export const countCustomers = async () => {
-  return await User.countDocuments({ role: 'customer' });
+  return await User.countDocuments({ role: "customer" });
 };
 
 export const countDeliveryPartners = async () => {
-  return await User.countDocuments({ role: 'dp' });
+  return await DpDetail.countDocuments();
 };
 
 export const countOrders = async () => {
@@ -55,8 +59,9 @@ export const findRecentOrders = async (limit) => {
 };
 
 export const findAllDpDetails = async () => {
-  const details = await DpDetail.find().populate('user_id');
-  return details.map(d => {
+  const details = await DpDetail.find().populate("user_id");
+
+  return details.map((d) => {
     const obj = d.toObject();
     obj.user = obj.user_id;
     return obj;
@@ -64,7 +69,7 @@ export const findAllDpDetails = async () => {
 };
 
 export const findDpDetailById = async (id) => {
-  const detail = await DpDetail.findById(id).populate('user_id');
+  const detail = await DpDetail.findById(id).populate("user_id");
   if (detail) {
     const obj = detail.toObject();
     obj.user = obj.user_id;
@@ -106,11 +111,13 @@ export const deleteDpDocumentByUserId = async (userId) => {
 };
 
 export const findAllCustomers = async () => {
-  const users = await User.find({ role: 'customer' });
+  const users = await User.find({ role: "customer" });
   const customers = await Customer.find({});
-  const customerMap = new Map(customers.map(c => [c.user_id ? c.user_id.toString() : '', c]));
-  
-  return users.map(user => {
+  const customerMap = new Map(
+    customers.map((c) => [c.user_id ? c.user_id.toString() : "", c]),
+  );
+
+  return users.map((user) => {
     const userObj = user.toObject();
     userObj.customer = customerMap.get(user._id.toString()) || null;
     return userObj;
@@ -134,8 +141,8 @@ export const deleteCustomerDetails = async (userId) => {
 };
 
 export const findAllPdcs = async () => {
-  const docs = await PdcDocument.find().populate('user_id');
-  return docs.map(d => {
+  const docs = await PdcDocument.find().populate("user_id");
+  return docs.map((d) => {
     const obj = d.toObject();
     obj.userDetails = obj.user_id;
     return obj;
@@ -143,7 +150,9 @@ export const findAllPdcs = async () => {
 };
 
 export const findPdcDocumentByUserId = async (userId) => {
-  const doc = await PdcDocument.findOne({ user_id: userId }).populate('user_id');
+  const doc = await PdcDocument.findOne({ user_id: userId }).populate(
+    "user_id",
+  );
   if (doc) {
     const obj = doc.toObject();
     obj.userDetails = obj.user_id;
@@ -153,7 +162,7 @@ export const findPdcDocumentByUserId = async (userId) => {
 };
 
 export const findPdcDocumentById = async (id) => {
-  const doc = await PdcDocument.findById(id).populate('user_id');
+  const doc = await PdcDocument.findById(id).populate("user_id");
   if (doc) {
     const obj = doc.toObject();
     obj.userDetails = obj.user_id;
@@ -179,7 +188,11 @@ export const findMinBroadcast = async () => {
 };
 
 export const updateMinBroadcast = async (distance) => {
-  return await MinBroadcastDist.updateOne({}, { minimum_broadcast_distance: distance }, { upsert: true });
+  return await MinBroadcastDist.updateOne(
+    {},
+    { minimum_broadcast_distance: distance },
+    { upsert: true },
+  );
 };
 
 export const findAllBroadcastPoints = async () => {
@@ -191,11 +204,72 @@ export const createBroadcastPoint = async (data) => {
 };
 
 export const findOrders = async (query) => {
-  return await Order.find(query).populate('user_id');
+  return await Order.find(query)
+    .populate("user_id")
+    .populate("pickup_dp_id")
+    .populate("delivery_dp_id")
+    .populate("package_id");
+};
+
+const populateOrder = (query) =>
+  query
+    .populate("user_id")
+    .populate("pickup_dp_id")
+    .populate("delivery_dp_id")
+    .populate("package_id");
+
+export const findPendingOrders = async () => {
+  const reqs = await OrderRequest.find();
+  const reqOrderIds = reqs.map((r) => r.order_id);
+  return await populateOrder(
+    Order.find({
+      _id: { $nin: reqOrderIds },
+      user_action: null,
+      status_completed: null,
+      broadcast_id: null,
+    }),
+  );
+};
+
+export const findAssignedOrders = async () => {
+  return await populateOrder(
+    Order.find({ pickup_dp_id: { $ne: null }, delivery_dp_id: null }),
+  );
+};
+
+export const findInTransitOrders = async () => {
+  const intransitReqs = await OrderRequest.find({
+    status: 1,
+    complete_status: null,
+  });
+  const orderIds = intransitReqs.map((req) => req.order_id);
+  return await populateOrder(Order.find({ _id: { $in: orderIds } }));
+};
+
+export const findDeliveredOrders = async () => {
+  return await populateOrder(Order.find({ status_completed: "delivered" }));
+};
+
+export const findBroadcastedOrders = async () => {
+  return await populateOrder(Order.find({ broadcast_id: { $ne: null } }));
+};
+
+export const findCustomerCancelledOrders = async () => {
+  return await populateOrder(Order.find({ user_action: 1 }));
+};
+
+export const findDpCancelledOrders = async () => {
+  const rejectedReqs = await OrderRequest.find({ rejected_by: { $ne: null } });
+  const orderIds = rejectedReqs.map((req) => req.order_id);
+  return await populateOrder(Order.find({ _id: { $in: orderIds } }));
 };
 
 export const findOrderById = async (id) => {
-  return await Order.findById(id).populate('user_id').populate('pickup_dp_id').populate('delivery_dp_id').populate('package_id');
+  return await Order.findById(id)
+    .populate("user_id")
+    .populate("pickup_dp_id")
+    .populate("delivery_dp_id")
+    .populate("package_id");
 };
 
 export const updateOrder = async (id, updateData) => {
@@ -204,27 +278,29 @@ export const updateOrder = async (id, updateData) => {
 
 export const findAllRatings = async () => {
   return await Rating.find()
-    .populate('order_id')
-    .populate('from_customer')
-    .populate('from_dp')
-    .populate('from_pdc');
+    .populate("order_id")
+    .populate("from_customer")
+    .populate("from_dp")
+    .populate("from_pdc");
 };
 
 export const findOrdersInDateRange = async (startDate, endDate) => {
   return await Order.find({
     createdAt: {
       $gte: new Date(startDate),
-      $lte: new Date(endDate)
-    }
-  }).populate('user_id').populate('pdc_id');
+      $lte: new Date(endDate),
+    },
+  })
+    .populate("user_id")
+    .populate("pdc_id");
 };
 
 export const findUsersInDateRange = async (startDate, endDate) => {
   return await User.find({
     createdAt: {
       $gte: new Date(startDate),
-      $lte: new Date(endDate)
-    }
+      $lte: new Date(endDate),
+    },
   });
 };
 
@@ -232,9 +308,12 @@ export const findRatingsInDateRange = async (startDate, endDate) => {
   return await Rating.find({
     createdAt: {
       $gte: new Date(startDate),
-      $lte: new Date(endDate)
-    }
-  }).populate('from_customer').populate('from_dp').populate('from_pdc');
+      $lte: new Date(endDate),
+    },
+  })
+    .populate("from_customer")
+    .populate("from_dp")
+    .populate("from_pdc");
 };
 
 export const findDeliverCharge = async (vehicle_type) => {
@@ -249,11 +328,13 @@ export const findAllDeliverCharges = async () => {
 };
 
 export const updateDeliverCharge = async (vehicle_type, updateData) => {
-  return await DeliverCharge.updateOne({ vehicle_type }, updateData, { upsert: true });
+  return await DeliverCharge.updateOne({ vehicle_type }, updateData, {
+    upsert: true,
+  });
 };
 
 export const findWalletById = async (id) => {
-  return await Wallet.findById(id).populate('user_id');
+  return await Wallet.findById(id).populate("user_id");
 };
 
 export const findWalletByUserId = async (userId) => {
@@ -269,11 +350,16 @@ export const createWalletTransaction = async (data) => {
 };
 
 export const findWalletTransactionsByWalletId = async (walletId) => {
-  return await WalletTransaction.find({ wallet_id: walletId }).sort({ created_at: -1 });
+  return await WalletTransaction.find({ wallet_id: walletId }).sort({
+    created_at: -1,
+  });
 };
 
 export const findWalletTransactionsByLogId = async (logId) => {
-  return await WalletTransaction.find({ transaction_type: 'mass_credit', reference_id: logId }).populate('user_id');
+  return await WalletTransaction.find({
+    transaction_type: "mass_credit",
+    reference_id: logId,
+  }).populate("user_id");
 };
 
 export const createMassCreditLog = async (data) => {
@@ -281,7 +367,9 @@ export const createMassCreditLog = async (data) => {
 };
 
 export const findMassCreditLogs = async () => {
-  return await MassCreditLog.find().populate('admin_id').sort({ created_at: -1 });
+  return await MassCreditLog.find()
+    .populate("admin_id")
+    .sort({ created_at: -1 });
 };
 
 export const findWalletConfig = async () => {
@@ -293,7 +381,9 @@ export const createWalletConfig = async (data) => {
 };
 
 export const findWalletConfigHistory = async () => {
-  return await WalletConfigHistory.find().populate('changed_by').sort({ created_at: -1 });
+  return await WalletConfigHistory.find()
+    .populate("changed_by")
+    .sort({ created_at: -1 });
 };
 
 export const createWalletConfigHistory = async (data) => {
@@ -305,6 +395,7 @@ export const createAdminPayout = async (data) => {
 };
 
 export const findAdminPayouts = async (query = {}) => {
-  return await AdminPayout.find(query).populate('user_id').sort({ created_at: -1 });
+  return await AdminPayout.find(query)
+    .populate("user_id")
+    .sort({ created_at: -1 });
 };
-
