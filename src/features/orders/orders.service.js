@@ -6,7 +6,7 @@ import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { PackageDetail } from "./packageDetail.model.js";
 import { Rating } from "../deliveryPartner/rating.model.js";
 import { Notification } from "../notifications/notification.model.js";
-import { uploadToCloudinary } from "../../common/services/cloudinary.service.js";
+import { uploadToCloudinary, deleteFromCloudinary } from "../../common/services/cloudinary.service.js";
 import mongoose from "mongoose";
 
 /**
@@ -89,18 +89,28 @@ export const createOrder = async (orderData, files) => {
   let image1Url = null;
   let image2Url = null;
   let image3Url = null;
+  const uploadedCloudinaryIds = [];
 
   if (files?.image1?.[0]) {
     const res = await uploadToCloudinary(files.image1[0].path, "order_images");
-    image1Url = res?.secure_url;
+    if (res) {
+      image1Url = res.secure_url;
+      uploadedCloudinaryIds.push(res.public_id);
+    }
   }
   if (files?.image2?.[0]) {
     const res = await uploadToCloudinary(files.image2[0].path, "order_images");
-    image2Url = res?.secure_url;
+    if (res) {
+      image2Url = res.secure_url;
+      uploadedCloudinaryIds.push(res.public_id);
+    }
   }
   if (files?.image3?.[0]) {
     const res = await uploadToCloudinary(files.image3[0].path, "order_images");
-    image3Url = res?.secure_url;
+    if (res) {
+      image3Url = res.secure_url;
+      uploadedCloudinaryIds.push(res.public_id);
+    }
   }
 
   const deliverCharge =
@@ -210,6 +220,16 @@ export const createOrder = async (orderData, files) => {
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
+
+    // Rollback Cloudinary uploads
+    if (uploadedCloudinaryIds && uploadedCloudinaryIds.length > 0) {
+      for (const publicId of uploadedCloudinaryIds) {
+        await deleteFromCloudinary(publicId).catch((err) => {
+          console.warn("Failed to delete orphaned Cloudinary image:", publicId, err.message);
+        });
+      }
+    }
+
     throw error;
   }
 };

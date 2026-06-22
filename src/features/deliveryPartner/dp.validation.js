@@ -382,3 +382,30 @@ export const rateUserSchema = Joi.object({
       'string.base': 'Message must be a string'
     })
 });
+
+export const orderAcceptSchema = Joi.object({
+  order_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'Order ID cannot be empty',
+      'string.pattern.base': 'Invalid Order ID format',
+      'any.required': 'Order ID is required'
+    }),
+  status: Joi.number()
+    .valid(0, 1)
+    .required()
+    .messages({
+      'number.base': 'Status must be a number',
+      'any.only': 'Status must be 0 (reject) or 1 (accept)',
+      'any.required': 'Status is required'
+    }),
+  user_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'User ID cannot be empty',
+      'string.pattern.base': 'Invalid User ID format',
+      'any.required': 'User ID is required'
+    })
+});

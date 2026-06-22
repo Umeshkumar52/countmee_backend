@@ -21,7 +21,7 @@ router.get("/orderHistory/:id", ordersController.orderHistory);
 router.get("/cancelledOrder/:id", ordersController.cancelledOrder);
 router.post("/charges", ordersController.charges);
 router.get("/assignedStatus/:orderId", ordersController.assignedStatus);
-router.get("/notifyDp/:orderId/:packageDetailsId", ordersController.notifyDp);
+router.post("/notifyDp", ordersController.notifyDp);
 router.get("/myNotifications/:user_id", ordersController.myNotifications);
 router.get("/rating/:user_id", ordersController.rating);
 router.post("/ratedp", ordersController.rateDp);

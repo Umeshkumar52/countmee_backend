@@ -138,3 +138,16 @@ export const rateDpSchema = Joi.object({
   }),
   message: Joi.string().trim().allow("", null),
 });
+
+export const notifyDpSchema = Joi.object({
+  orderId: Joi.string().regex(objectIdRegex).required().messages({
+    "string.empty": "Order ID is required",
+    "string.pattern.base": "Invalid Order ID format",
+    "any.required": "Order ID is required",
+  }),
+  packageDetailsId: Joi.string().regex(objectIdRegex).required().messages({
+    "string.empty": "Package Details ID is required",
+    "string.pattern.base": "Invalid Package Details ID format",
+    "any.required": "Package Details ID is required",
+  }),
+});

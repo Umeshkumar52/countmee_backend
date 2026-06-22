@@ -1,5 +1,6 @@
 import { ApiResponse } from "../utils/responseFormatter.js";
 import { ApiError } from "../utils/ApiError.js";
+import fs from "fs";
 
 /**
  * Global Express error handling middleware.
@@ -7,6 +8,30 @@ import { ApiError } from "../utils/ApiError.js";
  */
 export const errorHandler = (err, req, res, next) => {
   console.error("❌ Server Error:", err);
+
+  // Clean up any uploaded files if the request fails
+  const filesToDelete = [];
+  if (req.file) {
+    filesToDelete.push(req.file.path);
+  }
+  if (req.files) {
+    if (Array.isArray(req.files)) {
+      req.files.forEach((file) => filesToDelete.push(file.path));
+    } else {
+      // It's an object mapping field names to arrays of files
+      Object.values(req.files).forEach((fileArray) => {
+        fileArray.forEach((file) => filesToDelete.push(file.path));
+      });
+    }
+  }
+
+  filesToDelete.forEach((filePath) => {
+    fs.unlink(filePath, (unlinkErr) => {
+      if (unlinkErr && unlinkErr.code !== 'ENOENT') {
+        console.warn(`Failed to clean up file ${filePath}:`, unlinkErr.message);
+      }
+    });
+  });
 
   // Handle multer file size errors
   if (err.code === "LIMIT_FILE_SIZE") {

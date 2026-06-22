@@ -21,7 +21,18 @@ const dpDetailSchema = new mongoose.Schema(
     longitude: { type: Number, default: null },
     location: { type: String, default: "" },
   },
-  { timestamps: true },
+  { 
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  },
 );
+
+dpDetailSchema.virtual("dpDocument", {
+  ref: "DpDocument",
+  localField: "user_id",
+  foreignField: "user_id",
+  justOne: true,
+});
 
 export const DpDetail = mongoose.model("DpDetail", dpDetailSchema);

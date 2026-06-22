@@ -7,11 +7,13 @@ import { ApiError } from "../../common/utils/ApiError.js";
 
 export const createOrder = asyncHandler(async (req, res) => {
   req.body = validate(ordersValidation.createOrderSchema, req.body);
-  if (!req.files || !req.files.image1 || !req.files.image2) {
-    throw new ApiError(400, "Validation error", {
-      image1: ["image1 is required"],
-      image2: ["image2 is required"],
-    });
+  
+  const fileErrors = {};
+  if (!req.files || !req.files.image1) fileErrors.image1 = ["image1 is required"];
+  if (!req.files || !req.files.image2) fileErrors.image2 = ["image2 is required"];
+
+  if (Object.keys(fileErrors).length > 0) {
+    throw new ApiError(400, "Validation error", fileErrors);
   }
 
   const result = await ordersService.createOrder(req.body, req.files);
@@ -75,7 +77,10 @@ export const assignedStatus = asyncHandler(async (req, res) => {
 });
 
 export const notifyDp = asyncHandler(async (req, res) => {
-  const { orderId, packageDetailsId } = req.params;
+  const { orderId, packageDetailsId } = validate(
+    ordersValidation.notifyDpSchema,
+    req.body,
+  );
   const orderRequest = await ordersService.notifyDp(orderId, packageDetailsId);
   return res.json(
     ApiResponse.success(

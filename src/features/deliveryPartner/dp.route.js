@@ -48,7 +48,7 @@ router.post('/documentsreupload', docUploadFields, dpController.documentsReuploa
 
 // Order workflows
 router.get('/new_order/:user_id', dpController.new_order);
-router.get('/order_accept/:order_id/:status/:user_id', dpController.order_accept);
+router.post('/order_accept', dpController.order_accept);
 router.get('/acceptedOrders/:user_id', dpController.acceptedOrders);
 router.post('/pickupOtp', dpController.pickupOtp);
 router.post('/pickupOrderImageUpload', pickupImageUploadFields, dpController.pickupOrderImageUpload);

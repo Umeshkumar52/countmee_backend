@@ -67,7 +67,7 @@ export const new_order = asyncHandler(async (req, res) => {
 });
 
 export const order_accept = asyncHandler(async (req, res) => {
-  const { order_id, status, user_id } = req.params;
+  const { order_id, status, user_id } = validate(dpValidation.orderAcceptSchema, req.body);
   const result = await dpService.orderAccept(order_id, Number(status), user_id);
   return res.json(ApiResponse.success(null, result.message));
 });
