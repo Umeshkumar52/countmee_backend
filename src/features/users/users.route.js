@@ -18,7 +18,4 @@ router.post(
 router.post("/createAddress", usersController.createAddress);
 router.get("/myAddress/:customer_id", usersController.myAddress);
 
-// Sub-route for user orders
-router.use("/orders", ordersRouter);
-
 export default router;

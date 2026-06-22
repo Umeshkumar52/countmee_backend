@@ -1,66 +1,63 @@
-import { ApiResponse } from '../utils/responseFormatter.js';
-import { ApiError } from '../utils/ApiError.js';
+import { ApiResponse } from "../utils/responseFormatter.js";
+import { ApiError } from "../utils/ApiError.js";
 
 /**
  * Global Express error handling middleware.
  * Standardizes error responses and manages server-side logging.
  */
 export const errorHandler = (err, req, res, next) => {
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  let statusCode = err.statusCode || err.status || 500;
-  const message = err.message || 'Internal Server Error';
+  console.error("❌ Server Error:", err);
 
-  // Treat standard Error instances (without specific statusCode/status) as 400 Bad Request
-  if (!err.statusCode && !err.status && err.name === 'Error') {
-    statusCode = 400;
-  }
-
-  // 1. Structured Server Logging
-  if (statusCode >= 500) {
-    // Critical system errors: Log full stack trace
-    console.error(' [SYSTEM ERROR] Unhandled Exception:', {
-      message: err.message,
-      name: err.name,
-      stack: err.stack,
-      path: req.originalUrl,
-      method: req.method
+  // Handle multer file size errors
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({
+      success: false,
+      message: "File too large. Maximum file size is 500MB",
+      data: null,
     });
-  } else {
-    // Operational errors (validation, bad requests, auth checks): clean log without stack noise
-    console.warn(` [OPERATIONAL ERROR] ${req.method} ${req.originalUrl} - Status: ${statusCode} - Message: ${message}`);
   }
 
-  // 2. Custom ApiError Formatting
+  // Handle multer file type errors
+  if (
+    err.message &&
+    (err.message.includes("video files") ||
+      err.message.includes("Only video files"))
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      data: null,
+    });
+  }
+
+  // Handle multer "Unexpected field" error (wrong field name)
+  if (err.code === "LIMIT_UNEXPECTED_FILE") {
+    return res.status(400).json({
+      success: false,
+      message:
+        "Invalid field name. Use 'video' as the field name for file upload.",
+      data: null,
+    });
+  }
+
+  // If it's an instance of ApiError → use its structure
   if (err instanceof ApiError) {
     return res.status(err.statusCode).json(err.toJSON());
   }
 
-  // 3. Fallback Joi Validation (if validation middleware is triggered elsewhere)
-  if (err.isJoi) {
-    const errorDetails = {};
-    err.details.forEach(item => {
-      const key = item.context.key;
-      if (!errorDetails[key]) {
-        errorDetails[key] = [];
-      }
-      errorDetails[key].push(item.message);
+  // ✅ Handle JWT errors globally (Expired/Invalid)
+  if (err.name === "TokenExpiredError" || err.name === "JsonWebTokenError") {
+    return res.status(401).json({
+      success: false,
+      message: "401 Invalid or expired access token",
+      data: null,
     });
-
-    const firstErrorMessage = err.details[0]?.message || 'Validation error';
-    return res.status(400).json(ApiResponse.error(firstErrorMessage, errorDetails));
   }
 
-  // 4. Mongoose Duplicate Key Error
-  if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
-    return res.status(400).json(ApiResponse.error(`${field.toUpperCase()} already exists.`, { [field]: [`${field} already exists.`] }));
-  }
-
-  // 5. JWT Auth Signatures Errors
-  if (err.name === 'UnauthorizedError' || err.name === 'JsonWebTokenError') {
-    return res.status(401).json(ApiResponse.error('Unauthorized or invalid token.'));
-  }
-
-  // 6. Final Catch-all for Generic Server Errors
-  return res.status(statusCode).json(ApiResponse.error(message, isDevelopment ? { debug: err.stack } : null));
+  // Otherwise, fallback to generic
+  res.status(500).json({
+    success: false,
+    message: err.message || "Internal Server Error",
+    data: null,
+  });
 };
