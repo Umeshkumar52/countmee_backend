@@ -409,3 +409,32 @@ export const orderAcceptSchema = Joi.object({
       'any.required': 'User ID is required'
     })
 });
+
+export const dropOrderToCustomerSchema = Joi.object({
+  order_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'Order ID cannot be empty',
+      'string.pattern.base': 'Invalid Order ID format',
+      'any.required': 'Order ID is required'
+    }),
+  user_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'User ID cannot be empty',
+      'string.pattern.base': 'Invalid User ID format',
+      'any.required': 'User ID is required'
+    }),
+  drop_otp: Joi.string()
+    .length(4)
+    .pattern(/^\d+$/)
+    .required()
+    .messages({
+      'string.empty': 'Drop OTP cannot be empty',
+      'string.length': 'Drop OTP must be exactly 4 digits',
+      'string.pattern.base': 'Drop OTP must contain only digits',
+      'any.required': 'Drop OTP is required'
+    })
+});

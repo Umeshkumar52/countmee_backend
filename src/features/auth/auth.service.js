@@ -9,6 +9,21 @@ import {
   generateRefreshToken,
 } from "../../common/middlewares/auth.middleware.js";
 import mongoose from "mongoose";
+import { OrderRequest } from "../orders/orderRequest.model.js";
+import { Order } from "../orders/order.model.js";
+import { deleteFromCloudinary } from "../../common/services/cloudinary.service.js";
+
+const extractCloudinaryPublicId = (url) => {
+  if (!url) return null;
+  try {
+    const parts = url.split('/');
+    const filename = parts.pop().split('.')[0];
+    const folder = parts.pop();
+    return `${folder}/${filename}`;
+  } catch (e) {
+    return null;
+  }
+};
 
 export const registerCustomer = async (name, phone, email, dob) => {
   const existingUser = await authRepository.findUserByEmailPhoneAndType(
@@ -260,17 +275,82 @@ export const dpOtpVerification = async (userId, otp) => {
   };
 };
 
-export const deleteAccount = async (phone) => {
-  const affected = await User.findOneAndUpdate(
-    { phone },
-    { phone: "", email: "" },
-    { new: true },
-  );
+export const deleteAccount = async (userId) => {
+  const user = await User.findById(userId);
+  
+  if (!user) {
+    throw new Error("No user found with the given ID");
+  }
 
-  if (affected) {
+  // Check for active orders before allowing deletion
+  if (user.role === "customer") {
+    const activeOrders = await Order.countDocuments({
+      user_id: user._id,
+      status_completed: { $nin: ["delivered", "cancelled", "User cancelled", "Auto cancelled"] }
+    });
+    if (activeOrders > 0) {
+      throw new Error("You have active orders. Please complete or cancel them before deleting your account.");
+    }
+  } else if (user.role === "dp") {
+    const activeRequests = await OrderRequest.countDocuments({
+      accepted_by: user._id,
+      complete_status: null
+    });
+    if (activeRequests > 0) {
+      throw new Error("You have active delivery legs. Please complete them before deleting your account.");
+    }
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // Delete Cloudinary assets for DP
+    if (user.role === "dp") {
+      const dpDetail = await DpDetail.findOne({ user_id: user._id });
+      const dpDocument = await DpDocument.findOne({ user_id: user._id });
+
+      const imageUrlsToClean = [];
+
+      if (dpDetail && dpDetail.profile_img) {
+        imageUrlsToClean.push(dpDetail.profile_img);
+      }
+
+      if (dpDocument) {
+        const docFields = [
+          'aadhar_imgfront', 'aadhar_imgback', 'rc_imgfront', 'rc_imgback',
+          'dl_imgfront', 'dl_imgback', 'bank_imagefront', 'bank_imgeback',
+          'residence_img', 'vehicle_img'
+        ];
+        docFields.forEach(field => {
+          if (dpDocument[field]) imageUrlsToClean.push(dpDocument[field]);
+        });
+      }
+
+      // We do not await in the transaction loop to save time, but map them to Promises
+      const deletePromises = imageUrlsToClean.map(url => {
+        const publicId = extractCloudinaryPublicId(url);
+        if (publicId) return deleteFromCloudinary(publicId).catch(() => {});
+        return Promise.resolve();
+      });
+      await Promise.all(deletePromises);
+
+      // Delete associated DP records
+      await DpDetail.deleteOne({ user_id: user._id }).session(session);
+      await DpDocument.deleteOne({ user_id: user._id }).session(session);
+    }
+
+    // Delete the actual user record
+    await User.deleteOne({ _id: user._id }).session(session);
+
+    await session.commitTransaction();
+    session.endSession();
+
     return "User deleted successfully";
-  } else {
-    return "No user found with the given phone number";
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw new Error(`Failed to delete account: ${error.message}`);
   }
 };
 

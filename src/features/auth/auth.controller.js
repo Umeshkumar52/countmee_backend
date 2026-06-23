@@ -80,9 +80,9 @@ export const dpOtp = asyncHandler(async (req, res) => {
 });
 
 export const deleteAccount = asyncHandler(async (req, res) => {
-  const { phone } = req.params;
-  const message = await authService.deleteAccount(phone);
-  return res.type("text/plain").send(message);
+  const userId = req.user.id;
+  const message = await authService.deleteAccount(userId);
+  return res.json(ApiResponse.success(null, message));
 });
 
 export const refreshToken = asyncHandler(async (req, res) => {

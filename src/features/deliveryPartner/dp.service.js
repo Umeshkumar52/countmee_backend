@@ -183,8 +183,9 @@ export const getNewOrders = async (user_id) => {
   if (activeLeg) {
     throw new Error('Please complete your current orders');
   }
-
-  const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+  //const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+  // COMMENTED OUT FOR TESTING: const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+  const oneMinuteAgo = new Date(Date.now() - 60 * 60 * 1000); // 1 hour for testing
 
   // Find requests notifying this DP that are either recent or pdc broadcasts and not rejected
   const reqs = await OrderRequest.find({
@@ -313,7 +314,7 @@ export const orderAccept = async (order_id, status, user_id) => {
 
           const alreadyDistributed = await DpPayout.find({ order_id: order._id })
             .session(session);
-          
+
           const sumEarnings = alreadyDistributed
             .filter(p => p.travel_id !== travel._id)
             .reduce((acc, curr) => acc + curr.earnings, 0);
@@ -737,7 +738,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
     }
 
     const newInstanceOfOrder = await Order.findById(order._id).session(session);
-    
+
     // Update DpDetail location to final destination
     await DpDetail.findOneAndUpdate(
       { user_id },
@@ -770,7 +771,8 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       let earning = 0;
 
       if (orderRequest.request_type === 'direct') {
-        earning = Math.round(order.charges * (deliveryCharge.per_km_price / 100) * 100) / 100;
+        const perKmPrice = deliveryCharge ? deliveryCharge.per_km_price : 50;
+        earning = Math.round(order.charges * (perKmPrice / 100) * 100) / 100;
       } else {
         const dpCharges = await DeliverCharge.findOne({ vehicle_type: 'dp_charges' }).session(session);
         const percentage = dpCharges ? (dpCharges.per_km_price / 100) : 0.7;
@@ -968,46 +970,51 @@ export const getEarningHistory = async (userId) => {
     .filter(p => p.created_at >= todayStart && p.created_at <= todayEnd)
     .reduce((acc, curr) => acc + curr.earnings, 0);
 
-  const payoutDetails = [];
+  // const payoutDetails = [];
 
-  for (const payout of payouts) {
-    const order = await Order.findById(payout.order_id);
-    if (!order) continue;
+  // for (const payout of payouts) {
+  //   const order = await Order.findById(payout.order_id);
+  //   if (!order) continue;
 
-    const jsonOrder = order.toJSON();
-    const packageDetail = order.package_id ? await PackageDetail.findById(order.package_id) : null;
-    jsonOrder.packageDetail = packageDetail ? packageDetail.toJSON() : null;
-    jsonOrder.my_earning = payout.earnings;
+  //   const jsonOrder = order.toJSON();
+  //   const packageDetail = order.package_id ? await PackageDetail.findById(order.package_id) : null;
+  //   jsonOrder.packageDetail = packageDetail ? packageDetail.toJSON() : null;
+  //   jsonOrder.my_earning = payout.earnings;
 
-    if (order.pickup_dp_id === userId) {
-      jsonOrder.my_role = 'pickup';
-    } else if (order.delivery_dp_id === userId) {
-      jsonOrder.my_role = 'delivery';
-    } else {
-      jsonOrder.my_role = 'broadcast_partner';
-    }
+  //   if (String(order.pickup_dp_id) === String(userId)) {
+  //     jsonOrder.my_role = 'pickup';
+  //   } else if (String(order.delivery_dp_id) === String(userId)) {
+  //     jsonOrder.my_role = 'delivery';
+  //   } else {
+  //     jsonOrder.my_role = 'broadcast_partner';
+  //   }
 
-    const travel = await Travel.findOne({ order_id: order._id, user_id: userId });
-    if (travel) {
-      jsonOrder.pickup_location = travel.pickup_location;
-      jsonOrder.sender_latitude = travel.pickup_latitude;
-      jsonOrder.sender_longitude = travel.pickup_longitude;
-      jsonOrder.drop_location = travel.drop_location;
-      jsonOrder.receiver_latitude = travel.drop_latitude;
-      jsonOrder.receiver_longitude = travel.drop_longitude;
-      jsonOrder.distance = travel.distance;
-    }
+  //   const travel = await Travel.findOne({ order_id: order._id, user_id: userId });
+  //   if (travel) {
+  //     jsonOrder.pickup_location = travel.pickup_location;
+  //     jsonOrder.sender_latitude = travel.pickup_latitude;
+  //     jsonOrder.sender_longitude = travel.pickup_longitude;
+  //     jsonOrder.drop_location = travel.drop_location;
+  //     jsonOrder.receiver_latitude = travel.drop_latitude;
+  //     jsonOrder.receiver_longitude = travel.drop_longitude;
+  //     jsonOrder.distance = travel.distance;
+  //   }
 
-    payoutDetails.push({
-      order_id: payout.order_id,
-      payout_id: payout._id,
-      travel_id: payout.travel_id,
-      created_at: payout.created_at,
-      earnings: payout.earnings,
-      order: jsonOrder,
-      my_role: jsonOrder.my_role
-    });
-  }
+  //   payoutDetails.push({
+  //     order_id: payout.order_id,
+  //     payout_id: payout._id,
+  //     travel_id: payout.travel_id,
+  //     created_at: payout.created_at,
+  //     earnings: payout.earnings,
+  //     order: jsonOrder,
+  //     my_role: jsonOrder.my_role
+  //   });
+  // }
+
+  const payoutDetails = payouts.map(payout => ({
+    order_id: payout.order_id,
+    earnings: payout.earnings
+  }));
 
   return {
     totalEarning: Math.round(totalEarning * 100) / 100,
@@ -1217,7 +1224,7 @@ export const findNearestPdc = async (latitude, longitude, order, maxDistanceKm) 
   const maxRadiusMeters = maxDistanceKm * 1000;
 
   const pdcsAlongRoute = await mapsService.pdcAlongWay(pdcs, origin, destination, maxRadiusMeters);
-  
+
   if (typeof pdcsAlongRoute === 'string') {
     console.error('pdcAlongWay error:', pdcsAlongRoute);
     return [];

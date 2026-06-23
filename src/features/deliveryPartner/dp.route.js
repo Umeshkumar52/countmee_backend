@@ -64,7 +64,7 @@ router.post('/deliverpdc', dpController.deliverPdc);
 router.post('/pdcdeliveryotp', dpController.pdcDeliveryOtp);
 
 // Final drop workflows
-router.get('/dropOrderToCustomer/:order_id/:user_id/:drop_otp', dpController.dropOrderToCustomer);
+router.post('/dropOrderToCustomer', dpController.dropOrderToCustomer);
 router.get('/order_history/:user_id', dpController.order_history);
 router.post('/request_type', dpController.requestType);
 router.get('/totalorder/:user_id', dpController.totalorder);

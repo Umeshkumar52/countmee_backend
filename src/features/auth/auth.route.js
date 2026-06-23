@@ -29,13 +29,13 @@ router.post("/dp/login", loginDp);
 router.post("/dp/register", registerDp);
 router.post("/dp/otp", dpOtp);
 router.get("/dp/resend-otp/:phone", resendOtp);
-router.get("/dp/deleteAccount/:phone", deleteAccount);
+router.delete("/dp/deleteAccount", authenticate, deleteAccount);
 
 // 4. User / Customer Auth
 router.post("/user/register", registerCustomer);
 router.post("/user/login", loginCustomer);
 router.get("/user/resend-otp/:phone", resendOtp);
-router.get("/user/delete-account/:phone", deleteAccount);
+router.delete("/user/delete-account", authenticate, deleteAccount);
 router.post("/user/verify-otp", verifyOtp);
 
 // 5. Shared Token Operations

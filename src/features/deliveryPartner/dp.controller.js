@@ -416,7 +416,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
 });
 
 export const dropOrderToCustomer = asyncHandler(async (req, res) => {
-  const { order_id, user_id, drop_otp } = req.params;
+  const { order_id, user_id, drop_otp } = validate(dpValidation.dropOrderToCustomerSchema, req.body);
   const result = await dpService.dropOrderToCustomer(order_id, user_id, drop_otp);
   return res.json(ApiResponse.success(null, result.message));
 });
