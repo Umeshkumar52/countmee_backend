@@ -42,6 +42,11 @@ export const getVehicleTypes = asyncHandler(async (req, res) => {
   return res.json(ApiResponse.success({ vehicleTypes: validTypes }, 'Vehicle types fetched successfully'));
 });
 
+export const getTravelStates = asyncHandler(async (req, res) => {
+  const { TRAVEL_STATES } = await import('../../common/utils/constants.js');
+  return res.json(ApiResponse.success({ states: TRAVEL_STATES }, 'Travel states fetched successfully'));
+});
+
 export const dpDocuments = asyncHandler(async (req, res) => {
   const { user_id } = req.body;
   await dpService.saveDocuments(user_id, req.body, req.files);

@@ -47,8 +47,12 @@ router.post('/documents', docUploadFields, dpController.dpDocuments);
 router.post('/reference', dpController.dpReference);
 router.post('/documentStatus', dpController.dpDocumentStatus);
 router.post('/documentsreupload', docUploadFields, dpController.documentsReupload);
+
+///////////////////////////////////
 // New 2nd Phase api for vehicle types and subcategories
 router.get('/vehicleTypes', dpController.getVehicleTypes);
+router.get('/travelStates', dpController.getTravelStates);
+///////////////////////////////////
 
 // Order workflows
 router.get('/new_order/:user_id', dpController.new_order);
