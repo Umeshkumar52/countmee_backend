@@ -345,9 +345,9 @@ export const getPdcDetails = async (pdcid) => {
 };
 
 export const addPdc = async (body, files) => {
-  const { name, email, phone, address, aadhar, gst, pan, bank_name, bank_ifsc, bank_acc_no, shop_name, password1, password2 } = body;
+  const { name, email, phone, address, aadhar, gst, pan, bank_name, bank_ifsc, bank_acc_no, shop_name, password, confirmPassword } = body;
 
-  if (password1 !== password2) {
+  if (password !== confirmPassword) {
     throw new Error('Passwords do not match');
   }
 
@@ -356,7 +356,7 @@ export const addPdc = async (body, files) => {
     throw new Error('PDC Already Exists');
   }
 
-  const hashedPassword = await bcrypt.hash(password1, 10);
+  const hashedPassword = await bcrypt.hash(password, 10);
   const newUser = await adminRepository.createUser({
     name,
     email,
@@ -486,7 +486,7 @@ export const updatePdcLocation = async (pdc_id, latitude, longitude) => {
 
 export const updatePdcDocStatus = async (user, field, value) => {
   const updates = { [field]: value };
-  
+
   if (field === 'aadhar_status' && value === 'Accept') {
     updates.aadhar_reject_reason = null;
   } else if (field === 'aadhar_reject_reason') {
@@ -848,7 +848,7 @@ export const getReportData = async (report_type, start_date, end_date) => {
 
 export const getDeliverCharges = async () => {
   const allCharges = await adminRepository.findAllDeliverCharges();
-  
+
   const vehicleMap = {
     'By Hand': 1,
     'Two Wheeler': 2,
@@ -937,4 +937,51 @@ export const addBroadcastPoint = async (name, radius, lat, lon) => {
 export const getWalletConfigHistory = async () => {
   const history = await adminRepository.findWalletConfigHistory();
   return history;
+};
+
+export const getVehicleSubcategories = async () => {
+  const { VehicleSubcategory } = await import('../deliveryPartner/vehicleSubcategory.model.js');
+  const subcategories = await VehicleSubcategory.find().sort({ vehicle_type: 1, created_at: -1 });
+  return { subcategories };
+};
+
+export const addVehicleSubcategory = async (body) => {
+  const { VehicleSubcategory } = await import('../deliveryPartner/vehicleSubcategory.model.js');
+  const existing = await VehicleSubcategory.findOne({
+    vehicle_type: body.vehicle_type,
+    sub_vehicle_type: { $regex: new RegExp(`^${body.sub_vehicle_type}$`, 'i') }
+  });
+  if (existing) {
+    throw new Error('This sub-category already exists for the selected vehicle type');
+  }
+  const newSubcat = await VehicleSubcategory.create(body);
+  return { message: 'Vehicle subcategory added successfully', subcategory: newSubcat };
+};
+
+export const editVehicleSubcategory = async (id, body) => {
+  const { VehicleSubcategory } = await import('../deliveryPartner/vehicleSubcategory.model.js');
+  const subcat = await VehicleSubcategory.findById(id);
+  if (!subcat) throw new Error('Vehicle subcategory not found');
+
+  if (body.sub_vehicle_type) {
+    const existing = await VehicleSubcategory.findOne({
+      vehicle_type: body.vehicle_type || subcat.vehicle_type,
+      sub_vehicle_type: { $regex: new RegExp(`^${body.sub_vehicle_type}$`, 'i') },
+      _id: { $ne: id }
+    });
+    if (existing) {
+      throw new Error('This sub-category already exists for the selected vehicle type');
+    }
+  }
+
+  Object.assign(subcat, body);
+  await subcat.save();
+  return { message: 'Vehicle subcategory updated successfully', subcategory: subcat };
+};
+
+export const deleteVehicleSubcategory = async (id) => {
+  const { VehicleSubcategory } = await import('../deliveryPartner/vehicleSubcategory.model.js');
+  const subcat = await VehicleSubcategory.findByIdAndDelete(id);
+  if (!subcat) throw new Error('Vehicle subcategory not found');
+  return { message: 'Vehicle subcategory deleted successfully' };
 };

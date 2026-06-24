@@ -18,13 +18,13 @@ export const registerPdcSchema = Joi.object({
       'string.email': 'Enter a valid Email Address',
       'any.required': 'Email Address is required'
     }),
-  password1: Joi.string()
+  password: Joi.string()
     .required()
     .messages({
       'string.empty': 'Password is required',
       'any.required': 'Password is required'
     }),
-  password2: Joi.string()
+  confirmPassword: Joi.string()
     .required()
     .messages({
       'string.empty': 'Password confirmation is required',

@@ -27,6 +27,21 @@ export const dpDetails = asyncHandler(async (req, res) => {
   return res.json(ApiResponse.success({ argumnet1: true }, 'Dp Details submited'));
 });
 
+export const getVehicleTypes = asyncHandler(async (req, res) => {
+  const { type } = req.query;
+  const validTypes = ['By Hand', 'Two Wheeler', 'Three Wheeler', 'Four Wheeler'];
+
+  if (type) {
+    if (!validTypes.includes(type)) {
+      throw new ApiError(400, 'Invalid vehicle type');
+    }
+    const subcategories = await dpService.getVehicleSubcategories(type);
+    return res.json(ApiResponse.success({ subcategories }, 'Vehicle subcategories fetched successfully'));
+  }
+
+  return res.json(ApiResponse.success({ vehicleTypes: validTypes }, 'Vehicle types fetched successfully'));
+});
+
 export const dpDocuments = asyncHandler(async (req, res) => {
   const { user_id } = req.body;
   await dpService.saveDocuments(user_id, req.body, req.files);

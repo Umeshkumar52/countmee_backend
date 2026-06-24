@@ -479,3 +479,59 @@ export const postUpdatePdcPackageCharge = async (req, res, next) => {
     next(err);
   }
 };
+
+export const getVehicleTypes = async (req, res, next) => {
+  try {
+    const { type } = req.query;
+    const validTypes = ['By Hand', 'Two Wheeler', 'Three Wheeler', 'Four Wheeler'];
+
+    if (!type) {
+      return res.json(ApiResponse.success({ vehicleTypes: validTypes }, 'Vehicle types fetched successfully'));
+    }
+
+    if (type === 'all') {
+      const result = await adminService.getVehicleSubcategories();
+      return res.json(ApiResponse.success(result));
+    }
+
+    if (!validTypes.includes(type)) {
+      throw new Error('Invalid vehicle type');
+    }
+
+    const result = await adminService.getVehicleSubcategories(type);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const postAddVehicleSubcategory = async (req, res, next) => {
+  try {
+    const validatedBody = validate(adminValidation.addVehicleSubcategorySchema, req.body);
+    const result = await adminService.addVehicleSubcategory(validatedBody);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const postEditVehicleSubcategory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const validatedBody = validate(adminValidation.editVehicleSubcategorySchema, req.body);
+    const result = await adminService.editVehicleSubcategory(id, validatedBody);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteVehicleSubcategory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await adminService.deleteVehicleSubcategory(id);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};

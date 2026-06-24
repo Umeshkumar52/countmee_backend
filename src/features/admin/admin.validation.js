@@ -297,13 +297,13 @@ export const addPdcSchema = Joi.object({
   shop_name: Joi.string()
     .trim()
     .allow('', null),
-  password1: Joi.string()
+  password: Joi.string()
     .required()
     .messages({
       'string.empty': 'Password is required',
       'any.required': 'Password is required'
     }),
-  password2: Joi.string()
+  confirmPassword: Joi.string()
     .required()
     .messages({
       'string.empty': 'Password confirmation is required',
@@ -619,3 +619,38 @@ export const joiningBonusSchema = Joi.object({
       'any.required': 'Verification token is required'
     })
 });
+
+export const addVehicleSubcategorySchema = Joi.object({
+  vehicle_type: Joi.string()
+    .valid('By Hand', 'Two Wheeler', 'Three Wheeler', 'Four Wheeler')
+    .required()
+    .messages({
+      'string.empty': 'Vehicle type cannot be empty',
+      'any.only': 'Vehicle type must be one of: By Hand, Two Wheeler, Three Wheeler, Four Wheeler',
+      'any.required': 'Vehicle type is required'
+    }),
+  sub_vehicle_type: Joi.string()
+    .trim()
+    .required()
+    .messages({
+      'string.empty': 'Sub vehicle type cannot be empty',
+      'any.required': 'Sub vehicle type is required'
+    }),
+  is_active: Joi.boolean()
+    .optional()
+});
+
+export const editVehicleSubcategorySchema = Joi.object({
+  vehicle_type: Joi.string()
+    .valid('By Hand', 'Two Wheeler', 'Three Wheeler', 'Four Wheeler')
+    .optional()
+    .messages({
+      'any.only': 'Vehicle type must be one of: By Hand, Two Wheeler, Three Wheeler, Four Wheeler'
+    }),
+  sub_vehicle_type: Joi.string()
+    .trim()
+    .optional(),
+  is_active: Joi.boolean()
+    .optional()
+});
+

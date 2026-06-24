@@ -115,6 +115,15 @@ router.post('/update_deliver_charge', adminController.postUpdateDeliverCharge);
 router.post('/update_delivery_partner_charge', adminController.postUpdateDpCharge);
 router.post('/update_pdc_package_charge', adminController.postUpdatePdcPackageCharge);
 
+/////////////////////////////////////////////////////////
+// 2nd Phase New Api= Vehicle Subcategories configuration
+router.get('/vehicleTypes', adminController.getVehicleTypes);
+router.post('/vehicle_subcategories', adminController.postAddVehicleSubcategory);
+router.put('/vehicle_subcategories/:id', adminController.postEditVehicleSubcategory);
+router.delete('/vehicle_subcategories/:id', adminController.deleteVehicleSubcategory);
+////////////////////////////////////////////////////////
+
+
 // Wallet Management
 router.get('/wallets', adminWalletController.getWallets);
 router.get('/wallets/:id', adminWalletController.getWalletDetails);

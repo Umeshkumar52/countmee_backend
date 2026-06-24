@@ -17,7 +17,9 @@ const docUploadFields = uploadFields([
   { name: 'bank_imageback', maxCount: 1 },
   { name: 'bank_imgeback', maxCount: 1 },
   { name: 'residence_img', maxCount: 1 },
-  { name: 'vehicle_img', maxCount: 1 }
+  { name: 'vehicle_img', maxCount: 1 },
+  { name: 'insurance_document', maxCount: 1 },
+  { name: 'emission_certificate_document', maxCount: 1 }
 ]);
 
 const bankUploadFields = uploadFields([
@@ -45,6 +47,8 @@ router.post('/documents', docUploadFields, dpController.dpDocuments);
 router.post('/reference', dpController.dpReference);
 router.post('/documentStatus', dpController.dpDocumentStatus);
 router.post('/documentsreupload', docUploadFields, dpController.documentsReupload);
+// New 2nd Phase api for vehicle types and subcategories
+router.get('/vehicleTypes', dpController.getVehicleTypes);
 
 // Order workflows
 router.get('/new_order/:user_id', dpController.new_order);

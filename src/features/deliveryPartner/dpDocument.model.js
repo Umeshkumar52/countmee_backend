@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 
 const dpDocumentSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
-  vehicle_type: { type: String, default: null },
   aadhar_number: { type: String, default: null },
   aadhar_imgfront: { type: String, default: null },
   aadhar_imgback: { type: String, default: null },
@@ -25,15 +24,30 @@ const dpDocumentSchema = new mongoose.Schema({
   bank_imgeback: { type: String, default: null },
   bank_status: { type: String, default: null },
   bank_reject_reason: { type: String, default: null },
-  vehicle_number: { type: String, default: null },
   residence_img: { type: String, default: null },
-  vehicle_img: { type: String, default: null },
   rv_status: { type: String, default: null },
   rv_reject_reason: { type: String, default: null },
   reference1_name: { type: String, default: null },
   reference1_phone: { type: String, default: null },
   reference2_name: { type: String, default: null },
-  reference2_phone: { type: String, default: null }
+  reference2_phone: { type: String, default: null },
+  vehicle_number: { type: String, default: null },
+  vehicle_img: { type: String, default: null },
+  vehicle_type: { type: String, default: null },
+  sub_vehicle_type: { type: String, default: null },
+  other_vehicle_details: { type: String, default: null },
+  vehicle_min_capacity: { type: Number, default: null },
+  vehicle_max_capacity: { type: Number, default: null },
+  insurance_number: { type: String, default: null },
+  insurance_expiry_date: { type: String, default: null },
+  insurance_document: { type: String, default: null },
+  emission_certificate_number: { type: String, default: null },
+  emission_expiry_date: { type: String, default: null },
+  emission_certificate_document: { type: String, default: null },
+  is_new_vehicle: { type: Boolean, default: false },
+  vehicle_registration_date: { type: String, default: null },
+  travel_permit_states: { type: [String], default: [] },
+  permit_document: { type: String, default: null },
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

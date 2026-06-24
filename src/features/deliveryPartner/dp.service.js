@@ -61,13 +61,25 @@ export const saveDetails = async (user_id, gender, address, profileImgLocalPath)
   return true;
 };
 
+export const getVehicleSubcategories = async (vehicleType) => {
+  const { VehicleSubcategory } = await import('./vehicleSubcategory.model.js');
+  const subcategories = await VehicleSubcategory.find({ vehicle_type: vehicleType, is_active: true }).select('sub_vehicle_type').lean();
+  
+  const subCategoryList = subcategories.map(s => s.sub_vehicle_type);
+  if (!subCategoryList.includes('Other')) {
+    subCategoryList.push('Other');
+  }
+  return subCategoryList;
+};
+
 export const saveDocuments = async (user_id, docData, files) => {
   const fileFields = [
     'aadhar_imgfront', 'aadhar_imgback',
     'rc_imgfront', 'rc_imgback',
     'dl_imgfront', 'dl_imgback',
     'bank_imagefront', 'bank_imgeback',
-    'residence_img', 'vehicle_img'
+    'residence_img', 'vehicle_img',
+    'insurance_document', 'emission_certificate_document'
   ];
 
   const uploadResults = {};
@@ -85,6 +97,16 @@ export const saveDocuments = async (user_id, docData, files) => {
     { user_id },
     {
       vehicle_type: docData.vehicle_type,
+      sub_vehicle_type: docData.sub_vehicle_type,
+      other_vehicle_details: docData.other_vehicle_details,
+      vehicle_min_capacity: docData.vehicle_min_capacity,
+      vehicle_max_capacity: docData.vehicle_max_capacity,
+      insurance_number: docData.insurance_number,
+      insurance_expiry_date: docData.insurance_expiry_date,
+      emission_certificate_number: docData.emission_certificate_number,
+      emission_expiry_date: docData.emission_expiry_date,
+      is_new_vehicle: docData.is_new_vehicle,
+      vehicle_registration_date: docData.vehicle_registration_date,
       aadhar_number: docData.aadhar_number,
       rc_number: docData.rc_number,
       dl_number: docData.dl_number,

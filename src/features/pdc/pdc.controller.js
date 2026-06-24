@@ -13,12 +13,12 @@ import {
 } from "../../common/middlewares/auth.middleware.js";
 
 export const register = asyncHandler(async (req, res) => {
-  const { first_name, email, phone, password1, password2 } = validate(
+  const { first_name, email, phone, password, confirmPassword } = validate(
     pdcValidation.registerPdcSchema,
     req.body,
   );
 
-  if (password1 !== password2) {
+  if (password !== confirmPassword) {
     throw new ApiError(400, "Password does not match");
   }
 
@@ -26,7 +26,7 @@ export const register = asyncHandler(async (req, res) => {
     first_name,
     email,
     phone,
-    password1,
+    password,
   );
   const token = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
