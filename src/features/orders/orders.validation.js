@@ -45,6 +45,9 @@ export const createOrderSchema = Joi.object({
     "any.required": "Sender phone is required",
   }),
   how_to_reach_sender_location: Joi.string().trim().allow("", null),
+  sender_pin_code: Joi.string().trim().allow("", null),
+  sender_address: Joi.string().trim().allow("", null),
+  secondary_sender_phone: Joi.string().trim().allow("", null),
   receiver_name: Joi.string().trim().required().messages({
     "string.empty": "Receiver name is required",
     "any.required": "Receiver name is required",
@@ -54,6 +57,9 @@ export const createOrderSchema = Joi.object({
     "any.required": "Receiver phone is required",
   }),
   how_to_reach_receiver_address: Joi.string().trim().allow("", null),
+  receiver_address: Joi.string().trim().allow("", null),
+  secondary_receiver_phone: Joi.string().trim().allow("", null),
+  receiver_pin_code: Joi.string().trim().allow("", null),
   distance: Joi.number().required().messages({
     "number.base": "Distance must be a valid number",
     "any.required": "Distance is required",

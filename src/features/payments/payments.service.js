@@ -3,7 +3,8 @@ import { Order } from '../orders/order.model.js';
 import { User } from '../users/user.model.js';
 import { Wallet } from './wallet.model.js';
 import { WalletTransaction } from './walletTransaction.model.js';
-import { Notification } from '../notifications/notification.model.js';
+import { triggerNotification } from "../notifications/notification.service.js";
+import { ROLES } from "../../constants/index.js";
 import { notifyDp } from '../orders/orders.service.js';
 import axios from 'axios';
 import mongoose from 'mongoose';
@@ -79,13 +80,14 @@ export const payOrder = async (user_id, order_id, amount) => {
     await notifyDp(order._id, order.package_id);
 
     // Create success notification
-    await Notification.create([{
-      notifiable_type: 'customer',
-      notifiable_id: order.user_id,
+    await triggerNotification({
+      role: ROLES.USER,
+      userId: order.user_id,
       title: 'Payment Successful',
       message: `Payment of ₹${amount} for Order #${order._id} completed via Wallet`,
-      order_id: order._id
-    }], { session });
+      orderId: order._id,
+      session
+    });
 
     await session.commitTransaction();
     session.endSession();
@@ -124,12 +126,13 @@ export const recharge = async (user_id, amount, transaction_id, payment_method, 
       wallet.balance += Number(amount);
       await wallet.save({ session });
 
-      await Notification.create([{
-        notifiable_type: 'customer',
-        notifiable_id: user_id,
+      await triggerNotification({
+        role: ROLES.USER,
+        userId: user_id,
         title: 'Wallet Recharged',
-        message: `Your wallet has been credited with ₹${amount}. Transaction ID: ${transaction_id}`
-      }], { session });
+        message: `Your wallet has been credited with ₹${amount}. Transaction ID: ${transaction_id}`,
+        session
+      });
 
       await session.commitTransaction();
       session.endSession();
@@ -241,12 +244,13 @@ export const verifyCashfreePayment = async (order_id) => {
           wallet.balance += transaction.amount;
           await wallet.save({ session });
 
-          await Notification.create([{
-            notifiable_type: 'customer',
-            notifiable_id: wallet.user_id,
+          await triggerNotification({
+            role: ROLES.USER,
+            userId: wallet.user_id,
             title: 'Wallet Recharged',
-            message: `Your wallet has been credited with ₹${transaction.amount} via Cashfree.`
-          }], { session });
+            message: `Your wallet has been credited with ₹${transaction.amount} via Cashfree.`,
+            session
+          });
 
           await session.commitTransaction();
           session.endSession();
@@ -306,13 +310,14 @@ export const processRazorpayPayment = async (paymentData) => {
         await notifyDp(order._id, order.package_id);
 
         // Notification logs
-        await Notification.create([{
-          notifiable_type: 'customer',
-          notifiable_id: order.user_id,
+        await triggerNotification({
+          role: ROLES.USER,
+          userId: order.user_id,
           title: 'Payment Successful',
           message: `Payment of ₹${price} for Order #${order._id} completed`,
-          order_id: order._id
-        }], { session });
+          orderId: order._id,
+          session
+        });
       }
 
       await session.commitTransaction();

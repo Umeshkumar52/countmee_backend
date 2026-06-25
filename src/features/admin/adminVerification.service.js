@@ -19,7 +19,7 @@ export const verifyCredentials = async (currentUser, email, password) => {
   if (email === adminEmail && password === adminPassword) {
     verified = true;
   } else {
-    const user = await adminRepository.findUserByEmailAndType(email, 'admin');
+    const user = await adminRepository.findUserByEmailAndType(email, 'ADMIN');
     if (user && user.password) {
       const isMatch = await bcrypt.compare(password, user.password);
       if (isMatch) {
@@ -64,7 +64,7 @@ export const sendOtp = async (credentialsToken, phone, actionType, amount) => {
   const type = actionType || 'Wallet Operation';
   const amt = amount || '0';
 
-  const adminUser = await adminRepository.findUserByEmailAndType(decodedCredentials.email, 'admin');
+  const adminUser = await adminRepository.findUserByEmailAndType(decodedCredentials.email, 'ADMIN');
   const adminName = adminUser ? adminUser.name : 'Admin';
 
   const message = `Admin ${adminName} is processing ${type} of Rs. ${amt}. Wallet OTP is ${otp}. - CountMe`;

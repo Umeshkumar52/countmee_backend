@@ -1,6 +1,7 @@
 import * as authRepository from "./auth.repository.js";
+import { ROLES } from "../../constants/index.js";
 import { sendOTPViaSMS } from "../notifications/sms.service.js";
-import { Notification } from "../notifications/notification.model.js";
+import { triggerNotification } from "../notifications/notification.service.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
 import bcrypt from "bcryptjs";
@@ -29,7 +30,7 @@ export const registerCustomer = async (name, phone, email, dob) => {
   const existingUser = await authRepository.findUserByEmailPhoneAndType(
     email,
     phone,
-    "customer",
+    ROLES.USER,
   );
   if (existingUser) {
     throw new Error("Phone number or email already registered");
@@ -37,7 +38,7 @@ export const registerCustomer = async (name, phone, email, dob) => {
 
   // Create user
   const newUser = await authRepository.createUser({
-    role: "customer",
+    role: ROLES.USER,
     name,
     phone,
     email,
@@ -53,20 +54,16 @@ export const registerCustomer = async (name, phone, email, dob) => {
   await sendOTPViaSMS(phone, message);
 
   // Send notifications
-  const admin = await authRepository.findAdminUser();
-  if (admin) {
-    await Notification.create({
-      notifiable_type: "admin",
-      notifiable_id: admin._id,
-      title: "New Customer Registered",
-      message: `${name} has registered`,
-    });
-  }
+  await triggerNotification({
+    role: ROLES.ADMIN,
+    title: "New Customer Registered",
+    message: `${name} has registered`,
+  });
 
-  await Notification.create({
-    notifiable_type: "customer",
-    notifiable_id: newUser._id,
-    title: "Welcom to CountMee",
+  await triggerNotification({
+    role: ROLES.USER,
+    userId: newUser._id,
+    title: "Welcome to CountMee",
     message: "You have been registered successfully",
   });
 
@@ -79,7 +76,7 @@ export const registerCustomer = async (name, phone, email, dob) => {
 };
 
 export const loginCustomer = async (phone) => {
-  const user = await authRepository.findUserByPhoneAndType(phone, "customer");
+  const user = await authRepository.findUserByPhoneAndType(phone, ROLES.USER);
   if (!user) {
     throw new Error("Phone number not registered, Please register");
   }
@@ -134,14 +131,14 @@ export const registerDp = async (name, phone, email, dob) => {
   const existingUser = await authRepository.findUserByEmailPhoneAndType(
     email,
     phone,
-    "dp",
+    ROLES.DP,
   );
   if (existingUser) {
     throw new Error("Dp already registered");
   }
 
   const newUser = await authRepository.createUser({
-    role: "dp",
+    role: ROLES.DP,
     name,
     phone,
     email,
@@ -155,19 +152,15 @@ export const registerDp = async (name, phone, email, dob) => {
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
   await sendOTPViaSMS(phone, message);
 
-  const admin = await authRepository.findAdminUser();
-  if (admin) {
-    await Notification.create({
-      notifiable_type: "admin",
-      notifiable_id: admin._id,
-      title: "New Delivery Partner Registered",
-      message: `${name}has registered as delivery partner`,
-    });
-  }
+  await triggerNotification({
+    role: ROLES.ADMIN,
+    title: "New Delivery Partner Registered",
+    message: `${name} has registered as delivery partner`,
+  });
 
-  await Notification.create({
-    notifiable_type: "dp",
-    notifiable_id: newUser._id,
+  await triggerNotification({
+    role: ROLES.DP,
+    userId: newUser._id,
     title: "Welcome to CountMee",
     message: "You have been registered successfully",
   });
@@ -185,7 +178,7 @@ export const registerDp = async (name, phone, email, dob) => {
 };
 
 export const loginDp = async (phone) => {
-  const dp = await authRepository.findUserByPhoneAndType(phone, "dp");
+  const dp = await authRepository.findUserByPhoneAndType(phone, ROLES.DP);
   if (!dp) {
     throw new Error("DP Not Fount Go to Register Page");
   }
@@ -277,13 +270,15 @@ export const dpOtpVerification = async (userId, otp) => {
 
 export const deleteAccount = async (userId) => {
   const user = await User.findById(userId);
+  let message = "";
   
   if (!user) {
     throw new Error("No user found with the given ID");
   }
 
   // Check for active orders before allowing deletion
-  if (user.role === "customer") {
+  if (user.role === ROLES.USER) {
+    message = "Your customer account has been deleted.";
     const activeOrders = await Order.countDocuments({
       user_id: user._id,
       status_completed: { $nin: ["delivered", "cancelled", "User cancelled", "Auto cancelled"] }
@@ -291,7 +286,8 @@ export const deleteAccount = async (userId) => {
     if (activeOrders > 0) {
       throw new Error("You have active orders. Please complete or cancel them before deleting your account.");
     }
-  } else if (user.role === "dp") {
+  } else if (user.role === ROLES.DP) {
+    message = "Your delivery partner account has been deleted.";
     const activeRequests = await OrderRequest.countDocuments({
       accepted_by: user._id,
       complete_status: null
@@ -306,7 +302,7 @@ export const deleteAccount = async (userId) => {
 
   try {
     // Delete Cloudinary assets for DP
-    if (user.role === "dp") {
+    if (user.role === ROLES.DP) {
       const dpDetail = await DpDetail.findOne({ user_id: user._id });
       const dpDocument = await DpDocument.findOne({ user_id: user._id });
 

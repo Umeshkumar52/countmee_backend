@@ -1,5 +1,6 @@
 import { User } from "../users/user.model.js";
 import { Customer } from "../users/customer.model.js";
+import { ROLES } from "../../constants/index.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
 import { PdcDocument } from "../pdc/pdcDocument.model.js";
@@ -39,7 +40,7 @@ export const deleteUser = async (id) => {
 };
 
 export const countCustomers = async () => {
-  return await User.countDocuments({ role: "customer" });
+  return await User.countDocuments({ role: ROLES.USER });
 };
 
 export const countDeliveryPartners = async () => {
@@ -111,7 +112,7 @@ export const deleteDpDocumentByUserId = async (userId) => {
 };
 
 export const findAllCustomers = async () => {
-  const users = await User.find({ role: "customer" });
+  const users = await User.find({ role: ROLES.USER });
   const customers = await Customer.find({});
   const customerMap = new Map(
     customers.map((c) => [c.user_id ? c.user_id.toString() : "", c]),

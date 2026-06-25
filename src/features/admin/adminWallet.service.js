@@ -29,7 +29,7 @@ export const getWalletsList = async (searchQuery, balanceRange) => {
   const configHistory = await adminRepository.findWalletConfigHistory();
   const massCreditLogs = await adminRepository.findMassCreditLogs();
 
-  const userQuery = { role: 'customer' };
+  const userQuery = { role: 'CUSTOMER' };
   if (searchQuery) {
     userQuery.$or = [
       { name: new RegExp(searchQuery, 'i') },
@@ -149,7 +149,7 @@ export const creditCustomer = async (user_id, amount, description, verificationT
 export const creditMass = async (adminEmail, amount, description, verificationToken) => {
   verifyVerificationToken(verificationToken, 'Mass Credit', amount);
 
-  const adminUser = await adminRepository.findUserByEmailAndType(adminEmail, 'admin');
+  const adminUser = await adminRepository.findUserByEmailAndType(adminEmail, 'ADMIN');
   const customers = await adminRepository.findAllCustomers();
 
   const log = await adminRepository.createMassCreditLog({
@@ -201,7 +201,7 @@ export const updateJoiningBonus = async (adminEmail, amount, verificationToken) 
     await config.save();
   }
 
-  const adminUser = await adminRepository.findUserByEmailAndType(adminEmail, 'admin');
+  const adminUser = await adminRepository.findUserByEmailAndType(adminEmail, 'ADMIN');
 
   const history = await adminRepository.createWalletConfigHistory({
     changed_by: adminUser ? adminUser._id : null,
@@ -215,7 +215,7 @@ export const updateJoiningBonus = async (adminEmail, amount, verificationToken) 
 };
 
 export const verifyUser = async (phone) => {
-  const user = await adminRepository.findUserByPhoneAndType(phone, 'customer');
+  const user = await adminRepository.findUserByPhoneAndType(phone, 'CUSTOMER');
   if (user) {
     return { name: user.name, user_id: user._id };
   }

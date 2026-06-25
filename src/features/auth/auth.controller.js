@@ -1,5 +1,6 @@
 import * as authService from "./auth.service.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
+import { ROLES } from '../../constants/index.js';
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
 import { validate } from "../../common/utils/validationHelper.js";
 import * as authValidation from "./auth.validation.js";
@@ -17,7 +18,7 @@ export const registerCustomer = asyncHandler(async (req, res) => {
       name: result.user.name,
       email: result.user.email,
       phone: result.user.phone,
-      role: "customer",
+      role: ROLES.USER,
     },
     token: result.token,
     refreshToken: result.refreshToken,

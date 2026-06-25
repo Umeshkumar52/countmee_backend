@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const massCreditLogSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
-  role: { type: String, required: true }, // 'customer', 'dp', or 'all'
+  role: { type: String, required: true }, // 'CUSTOMER', 'DP', or 'ALL'
   credited_by: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
   recipients_count: { type: Number, required: true },
   description: { type: String, required: true }

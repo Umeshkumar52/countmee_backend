@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import * as adminRepository from './admin.repository.js';
+import { ROLES } from '../../constants/index.js';
 import { generateAccessToken, generateRefreshToken } from '../../common/middlewares/auth.middleware.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
 import { getLatLongFromAddress } from '../tracking/maps.service.js';
@@ -13,12 +14,12 @@ export const loginAdmin = async (email, password) => {
 
   if (email === adminEmail && password === adminPassword) {
     isAuthenticated = true;
-    adminUser = await adminRepository.findUserByEmailAndType(email, 'admin');
+    adminUser = await adminRepository.findUserByEmailAndType(email, ROLES.ADMIN);
     if (!adminUser) {
-      adminUser = await adminRepository.createUser({ name: 'Admin', email, password: 'env', role: 'admin' });
+      adminUser = await adminRepository.createUser({ name: 'Admin', email, password: 'env', role: ROLES.ADMIN });
     }
   } else {
-    const user = await adminRepository.findUserByEmailAndType(email, 'admin');
+    const user = await adminRepository.findUserByEmailAndType(email, ROLES.ADMIN);
     if (user && user.password) {
       const isMatch = await bcrypt.compare(password, user.password);
       if (isMatch) {
@@ -154,7 +155,7 @@ export const updateDpDocumentApproval = async (userId, document_approval) => {
 export const addDp = async (body, files) => {
   const { name, phone, email, dob, gender, address, vehicle_type, aadhar_number, rc_number, dl_number, bank_name, bank_acc_number, bank_ifsc, vehicle_number, reference1_name, reference1_phone, reference2_name, reference2_phone } = body;
 
-  const existing = await adminRepository.findUserByPhoneAndType(phone, 'dp');
+  const existing = await adminRepository.findUserByPhoneAndType(phone, ROLES.DP);
   if (existing) {
     throw new Error('Delivery Partner Already Exists');
   }
@@ -163,7 +164,7 @@ export const addDp = async (body, files) => {
     name,
     phone,
     email,
-    role: 'dp'
+    role: ROLES.DP
   });
 
   const uploadResults = {};
@@ -351,7 +352,7 @@ export const addPdc = async (body, files) => {
     throw new Error('Passwords do not match');
   }
 
-  const existing = await adminRepository.findUserByPhoneAndType(phone, 'pdc');
+  const existing = await adminRepository.findUserByPhoneAndType(phone, ROLES.PDC);
   if (existing) {
     throw new Error('PDC Already Exists');
   }
@@ -362,7 +363,7 @@ export const addPdc = async (body, files) => {
     email,
     phone,
     password: hashedPassword,
-    role: 'pdc'
+    role: ROLES.PDC
   });
 
   const uploadResults = {};
@@ -581,7 +582,7 @@ export const getDpCancelledOrders = async () => {
 
 export const getAssignOrdersSelect = async (orderId) => {
   const User = await import('../users/user.model.js');
-  const dps = await User.User.find({ role: 'dp' });
+  const dps = await User.User.find({ role: ROLES.DP });
   return { orderId, dps };
 };
 
@@ -612,7 +613,7 @@ export const getPendingPayments = async (type, startDate, endDate) => {
   const start = new Date(startDate + 'T00:00:00.000Z');
   const end = new Date(endDate + 'T23:59:59.999Z');
 
-  if (type === 'dp') {
+  if (type === ROLES.DP) {
     const payouts = await DpPayout.find({
       settled: 0,
       created_at: { $gte: start, $lte: end }
@@ -739,11 +740,11 @@ export const settlePayments = async (ids, payable, settlementAmount) => {
   }
 
   let orderIds = [];
-  if (user.role === 'dp') {
+  if (user.role === ROLES.DP) {
     await DpPayout.updateMany({ _id: { $in: ids } }, { settled: 1 });
     const payouts = await DpPayout.find({ _id: { $in: ids } });
     orderIds = payouts.map(p => p.order_id).filter(Boolean);
-  } else if (user.role === 'pdc') {
+  } else if (user.role === ROLES.PDC) {
     await PdcPayout.updateMany({ _id: { $in: ids } }, { settled: 1 });
     const payouts = await PdcPayout.find({ _id: { $in: ids } });
     orderIds = payouts.map(p => p.order_id).filter(Boolean);
@@ -781,7 +782,7 @@ export const getPastPayments = async (userId, onlySpecificOrder = false) => {
   const formattedPayouts = payouts.map(p => ({
     id: p._id,
     user_name: p.user_id?.name || 'Unknown',
-    role: p.user_id?.role || 'dp',
+    role: p.user_id?.role || ROLES.DP,
     settled_amount: p.settled_amount,
     order_id: p.order_id || [],
     created_at: p.created_at ? new Date(p.created_at).toISOString().split('T')[0] : 'N/A'
@@ -822,16 +823,16 @@ export const getReportData = async (report_type, start_date, end_date) => {
     const ratings = await adminRepository.findRatingsInDateRange(start_date, end_date);
     reportData = ratings.map(r => {
       let name = 'System';
-      let role = 'customer';
+      let role = ROLES.USER;
       if (r.from_customer) {
         name = r.from_customer.name || 'Customer';
-        role = 'customer';
+        role = ROLES.USER;
       } else if (r.from_dp) {
         name = r.from_dp.name || 'Delivery Partner';
-        role = 'dp';
+        role = ROLES.DP;
       } else if (r.from_pdc) {
         name = r.from_pdc.name || 'PDC Hub';
-        role = 'pdc';
+        role = ROLES.PDC;
       }
       return {
         id: r._id,
