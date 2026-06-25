@@ -4,6 +4,7 @@ import * as adminWalletController from './adminWallet.controller.js';
 import * as adminVerificationController from './adminVerification.controller.js';
 import { uploadSingle, uploadFields } from '../../common/middlewares/upload.middleware.js';
 import { authenticate, authorize } from '../../common/middlewares/auth.middleware.js';
+import { ROLES } from '../../constants/index.js';
 
 const router = Router();
 
@@ -37,7 +38,7 @@ router.post('/login', adminController.postLogin);
 
 // Protected Admin REST API routes
 router.use(authenticate);
-router.use(authorize(['admin']));
+router.use(authorize([ROLES.ADMIN]));
 
 router.get('/dashboard', adminController.getDashboard);
 

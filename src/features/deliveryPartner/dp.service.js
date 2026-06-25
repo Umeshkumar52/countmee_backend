@@ -1,4 +1,5 @@
 import * as dpRepository from './dp.repository.js';
+import { ROLES } from '../../constants/index.js';
 import { User } from '../users/user.model.js';
 import { Order } from '../orders/order.model.js';
 import { OrderRequest } from '../orders/orderRequest.model.js';
@@ -12,7 +13,7 @@ import { PackageDetail } from '../orders/packageDetail.model.js';
 import { PdcDocument } from '../pdc/pdcDocument.model.js';
 import { PdcPackage } from '../pdc/pdcPackage.model.js';
 import { PdcPayout } from '../pdc/pdcPayout.model.js';
-import { Notification } from '../notifications/notification.model.js';
+import { triggerNotification } from '../notifications/notification.service.js';
 import { DeliverCharge } from '../orders/deliverCharge.model.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
 import { sendOTPViaSMS } from '../notifications/sms.service.js';
@@ -427,33 +428,35 @@ export const orderAccept = async (order_id, status, user_id) => {
       }
 
       // Trigger notifications
-      const admin = await User.findOne({ role: 'admin' }).session(session);
+      const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
       const dpUser = await User.findById(user_id).session(session);
 
-      await Notification.create([{
-        notifiable_type: 'admin',
-        notifiable_id: admin._id,
+      await triggerNotification({
+        role: ROLES.ADMIN,
         title: orderRequest.request_type === 'direct' ? 'Order Accepted' : 'Broadcast Accepted',
         message: `The order of ID : ${order_id} has been accepted by ${dpUser.name}`,
-        order_id
-      }], { session });
+        orderId: order_id,
+        session
+      });
 
-      await Notification.create([{
-        notifiable_type: 'dp',
-        notifiable_id: user_id,
+      await triggerNotification({
+        role: ROLES.DP,
+        userId: user_id,
         title: 'Order Accepted',
         message: `You have accpeted the order of ID : ${order_id}`,
-        order_id
-      }], { session });
+        orderId: order_id,
+        session
+      });
 
       if (orderRequest.request_type === 'direct') {
-        await Notification.create([{
-          notifiable_type: 'customer',
-          notifiable_id: orderCheck.user_id,
+        await triggerNotification({
+          role: ROLES.USER,
+          userId: orderCheck.user_id,
           title: 'Order Update',
           message: `Your order of ID : ${order_id} is accepted by ${dpUser.name}`,
-          order_id
-        }], { session });
+          orderId: order_id,
+          session
+        });
       }
 
       await session.commitTransaction();
@@ -473,24 +476,25 @@ export const orderAccept = async (order_id, status, user_id) => {
         await orderRequest.save({ session });
       }
 
-      const admin = await User.findOne({ role: 'admin' }).session(session);
+      const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
       const dpUser = await User.findById(user_id).session(session);
 
-      await Notification.create([{
-        notifiable_type: 'admin',
-        notifiable_id: admin._id,
+      await triggerNotification({
+        role: ROLES.ADMIN,
         title: 'Order Rejected',
         message: `The order of ID : ${order_id} has been rejected by ${dpUser.name}`,
-        order_id
-      }], { session });
+        orderId: order_id,
+        session
+      });
 
-      await Notification.create([{
-        notifiable_type: 'dp',
-        notifiable_id: user_id,
+      await triggerNotification({
+        role: ROLES.DP,
+        userId: user_id,
         title: 'Order Rejected',
         message: `You have rejected the order of ID : ${order_id}`,
-        order_id
-      }], { session });
+        orderId: order_id,
+        session
+      });
 
       await session.commitTransaction();
       session.endSession();
@@ -664,7 +668,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
         const latestBroadcast = await Broadcast.findOne({ order_id: order._id }).sort({ created_at: -1 }).session(session);
         if (latestBroadcast) {
           latestBroadcast.status = '1';
-          await latestBroadcast.save({ session });
+          latestBroadcast.save({ session });
         }
       } else {
         const previousBroadcast = await Broadcast.findOne({ order_id: order._id })
@@ -674,7 +678,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
 
         if (previousBroadcast) {
           previousBroadcast.status = '1';
-          await previousBroadcast.save({ session });
+          previousBroadcast.save({ session });
         }
       }
 
@@ -683,43 +687,45 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
     }
 
     // Notifications logs
-    const admin = await User.findOne({ role: 'admin' }).session(session);
-    let type = 'customer';
+    const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
+    let type = 'CUSTOMER';
     if (orderRequest.request_type === 'direct') {
-      await Notification.create([{
-        notifiable_type: 'admin',
-        notifiable_id: admin._id,
+      await triggerNotification({
+        role: ROLES.ADMIN,
         title: 'Order Update',
         message: `The order of ID : ${order_id} is in transit`,
-        order_id
-      }], { session });
+        orderId: order_id,
+        session
+      });
     } else {
       type = 'delivery partner';
-      await Notification.create([{
-        notifiable_type: 'admin',
-        notifiable_id: admin._id,
+      await triggerNotification({
+        role: ROLES.ADMIN,
         title: 'Order Update',
         message: `The order of ID : ${order_id} is broadcasted with ID : ${order.broadcast_id}`,
-        order_id
-      }], { session });
+        orderId: order_id,
+        session
+      });
     }
 
-    await Notification.create([{
-      notifiable_type: 'dp',
-      notifiable_id: user_id,
+    await triggerNotification({
+      role: ROLES.DP,
+      userId: user_id,
       title: 'Order Collected',
       message: `You have collected the package from ${type}`,
-      order_id
-    }], { session });
+      orderId: order_id,
+      session
+    });
 
     if (orderRequest.request_type === 'direct') {
-      await Notification.create([{
-        notifiable_type: 'customer',
-        notifiable_id: order.user_id,
+      await triggerNotification({
+        role: ROLES.USER,
+        userId: order.user_id,
         title: 'Order Update',
         message: `Your order of ID : ${order_id} is in transit`,
-        order_id
-      }], { session });
+        orderId: order_id,
+        session
+      });
     }
 
     await session.commitTransaction();
@@ -841,7 +847,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
 
     const uniquePdcIds = Array.from(new Set([...pkgPdcIds, ...broadcastPdcIds]));
     // Exclude DPs/Customers if they accidentally appear as broadcaster
-    const validPdcUsers = await User.find({ _id: { $in: uniquePdcIds }, role: 'pdc' }).session(session);
+    const validPdcUsers = await User.find({ _id: { $in: uniquePdcIds }, role: ROLES.PDC }).session(session);
     const validPdcIds = validPdcUsers.map(u => u._id);
 
     const pdcCount = validPdcIds.length;
@@ -883,31 +889,33 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
     }
 
     // Notifications
-    const admin = await User.findOne({ role: 'admin' }).session(session);
+    const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
 
-    await Notification.create([{
-      notifiable_type: 'customer',
-      notifiable_id: order.user_id,
+    await triggerNotification({
+      role: ROLES.USER,
+      userId: order.user_id,
       title: 'Order Delivered',
       message: `Successfully delivered the order number ${order._id} to ${order.receiver_name}`,
-      order_id: order._id
-    }], { session });
+      orderId: order._id,
+      session
+    });
 
-    await Notification.create([{
-      notifiable_type: 'admin',
-      notifiable_id: admin._id,
+    await triggerNotification({
+      role: ROLES.ADMIN,
       title: `Order Id ${order._id} Delivered`,
       message: `Successfully delivered the order number ${order._id} to ${order.receiver_name}`,
-      order_id: order._id
-    }], { session });
+      orderId: order._id,
+      session
+    });
 
-    await Notification.create([{
-      notifiable_type: 'dp',
-      notifiable_id: user_id,
+    await triggerNotification({
+      role: ROLES.DP,
+      userId: user_id,
       title: 'Order Delivered',
       message: `You Delivered the order number ${order._id} to ${order.receiver_name}`,
-      order_id: order._id
-    }], { session });
+      orderId: order._id,
+      session
+    });
 
     await session.commitTransaction();
     session.endSession();
@@ -1086,13 +1094,22 @@ export const rateUser = async (order_id, from_dp, to_user, stars, message = '') 
   if (!user) throw new Error('User not found');
 
   let existingRating = null;
+  const ratingData = {
+    stars,
+    from_dp,
+    order_id,
+    message
+  };
 
-  if (user.role === 'customer') {
+  if (user.role === ROLES.USER) {
     existingRating = await Rating.findOne({ order_id: order._id, from_dp, to_customer: user._id });
-  } else if (user.role === 'pdc') {
+    ratingData.to_customer = user._id;
+  } else if (user.role === ROLES.PDC) {
     existingRating = await Rating.findOne({ order_id: order._id, from_dp, to_pdc: user._id });
-  } else if (user.role === 'dp') {
+    ratingData.to_pdc = user._id;
+  } else if (user.role === ROLES.DP) {
     existingRating = await Rating.findOne({ order_id: order._id, from_dp, to_dp: user._id });
+    ratingData.to_dp = user._id;
   }
 
   if (!existingRating) {

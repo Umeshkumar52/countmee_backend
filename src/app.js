@@ -11,19 +11,7 @@ import {
   preventHpp,
 } from "./common/middlewares/security.middleware.js";
 
-// Import Feature Routers (New starting routes)
-import authRouter from "./features/auth/auth.route.js";
-import adminRouter from "./features/admin/admin.route.js";
-import pdcRouter from "./features/pdc/pdc.route.js";
-import dpRouter from "./features/deliveryPartner/dp.route.js";
-import userRouter from "./features/users/users.route.js";
-import paymentsRouter from "./features/payments/payments.route.js";
-import trackingRouter from "./features/tracking/tracking.route.js";
-import smsRouter from "./features/notifications/sms.route.js";
-import authRoute from "./features/auth/auth.route.js";
-import ordersRouter from "./features/orders/orders.route.js";
-import { walletRouter } from "./features/payments/payments.route.js";
-import { authenticate } from "./common/middlewares/auth.middleware.js";
+import router from "./routes/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,11 +29,6 @@ app.use(
     referrerPolicy: { policy: "same-origin" },
   }),
 );
-
-// 3. CORS Configuration
-// const allowedOrigins = process.env.ALLOWED_ORIGINS
-//   ? process.env.ALLOWED_ORIGINS.split(",")
-//   : ["*"];
 
 // app.use(
 //   cors({
@@ -125,16 +108,7 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // REST API routes under /api
-app.use("/api/auth", authRouter);
-app.use("/api/user", userRouter);
-app.use("/api/admin", adminRouter);
-app.use("/api/pdc", pdcRouter);
-app.use("/api/dp", dpRouter);
-app.use("/api/order", authenticate, ordersRouter);
-app.use("/api/payment", paymentsRouter);
-app.use("/api/tracking", trackingRouter);
-app.use("/api/wallet", authenticate, walletRouter);
-app.use("/api", smsRouter);
+app.use("/api", router);
 
 // 8. Fallback 404 Route for all unresolved endpoints
 app.use("*", (req, res) => {

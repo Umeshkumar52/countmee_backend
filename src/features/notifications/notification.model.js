@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { User } from "../users/user.model.js";
+import { ROLES } from "../../constants/index.js";
 const { sendNotificationToUser } =
   await import("../../common/services/socket.service.js");
 const { sendPushNotification } =
@@ -9,7 +10,7 @@ const notificationSchema = new mongoose.Schema(
   {
     notifiable_type: {
       type: String,
-      enum: ["customer", "dp", "pdc", "admin"],
+      enum: Object.values(ROLES),
       required: true,
     },
     notifiable_id: {

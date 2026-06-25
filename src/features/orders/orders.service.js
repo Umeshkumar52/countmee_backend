@@ -1,12 +1,16 @@
 import * as ordersRepository from "./orders.repository.js";
+import { ROLES } from "../../constants/index.js";
 import { User } from "../users/user.model.js";
 import { Order } from "./order.model.js";
 import { OrderRequest } from "./orderRequest.model.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { PackageDetail } from "./packageDetail.model.js";
 import { Rating } from "../deliveryPartner/rating.model.js";
-import { Notification } from "../notifications/notification.model.js";
-import { uploadToCloudinary, deleteFromCloudinary } from "../../common/services/cloudinary.service.js";
+import { triggerNotification } from "../notifications/notification.service.js";
+import {
+  uploadToCloudinary,
+  deleteFromCloudinary,
+} from "../../common/services/cloudinary.service.js";
 import mongoose from "mongoose";
 
 /**
@@ -26,7 +30,7 @@ export const calculateFinalCharges = (deliverCharge, distance) => {
 
   // Ensure price is calculated exactly to 2 decimal places before applying GST
   const exactPrice = Math.round(price * 100) / 100;
-  const exactGst = Math.round((exactPrice * 0.05) * 100) / 100; // 5% GST
+  const exactGst = Math.round(exactPrice * 0.05 * 100) / 100; // 5% GST
   const totalAmount = exactPrice + exactGst;
 
   return {
@@ -71,9 +75,15 @@ export const createOrder = async (orderData, files) => {
     sender_name,
     sender_phone,
     how_to_reach_sender_location,
+    sender_pin_code,
+    sender_address,
+    secondary_sender_phone,
     receiver_name,
     receiver_phone,
     how_to_reach_receiver_address,
+    receiver_address,
+    secondary_receiver_phone,
+    receiver_pin_code,
     distance,
     product_description,
     product_weight,
@@ -142,14 +152,21 @@ export const createOrder = async (orderData, files) => {
           sender_name,
           sender_phone,
           how_to_reach_sender_location,
+          sender_pin_code,
+          sender_address,
+          secondary_sender_phone,
           receiver_name,
           receiver_phone,
           how_to_reach_receiver_address,
+          receiver_address,
+          secondary_receiver_phone,
+          receiver_pin_code,
           distance: Number(distance),
           pickup_otp,
           drop_otp,
           charges: calc.total,
           delivery_type: "direct",
+
           status: 0,
         },
       ],
@@ -183,35 +200,22 @@ export const createOrder = async (orderData, files) => {
     await newOrder.save({ session });
 
     // In-app notifications
-    const admin = await User.findOne({ role: "admin" });
+    await triggerNotification({
+      role: ROLES.USER,
+      userId: user_id,
+      title: "Order Placed",
+      message: `Your order of ID : ${newOrder._id} is placed`,
+      orderId: newOrder._id,
+      session
+    });
 
-    await Notification.create(
-      [
-        {
-          notifiable_type: "customer",
-          notifiable_id: user_id,
-          title: "Order Placed",
-          message: `Your order of ID : ${newOrder._id} is placed`,
-          order_id: newOrder._id,
-        },
-      ],
-      { session },
-    );
-
-    if (admin) {
-      await Notification.create(
-        [
-          {
-            notifiable_type: "admin",
-            notifiable_id: admin._id,
-            title: "New Order Placed",
-            message: ` has placed an order of ID : ${newOrder._id}`,
-            order_id: newOrder._id,
-          },
-        ],
-        { session },
-      );
-    }
+    await triggerNotification({
+      role: ROLES.ADMIN,
+      title: "New Order Placed",
+      message: ` has placed an order of ID : ${newOrder._id}`,
+      orderId: newOrder._id,
+      session
+    });
 
     await session.commitTransaction();
     session.endSession();
@@ -225,7 +229,11 @@ export const createOrder = async (orderData, files) => {
     if (uploadedCloudinaryIds && uploadedCloudinaryIds.length > 0) {
       for (const publicId of uploadedCloudinaryIds) {
         await deleteFromCloudinary(publicId).catch((err) => {
-          console.warn("Failed to delete orphaned Cloudinary image:", publicId, err.message);
+          console.warn(
+            "Failed to delete orphaned Cloudinary image:",
+            publicId,
+            err.message,
+          );
         });
       }
     }
@@ -241,50 +249,41 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
   const order = await Order.findById(order_id);
   if (order) {
     order.user_action = 1;
-    order.status = 2; // Cancelled
-    order.status_completed = "cancelled";
+    order.status = 5; 
     order.cancel_order_reason = cancel_order_reason;
     await order.save();
+
+    if (cancel_order_reason === "Driver are not found") {
+      await triggerNotification({
+        role: ROLES.USER,
+        userId: order.user_id,
+        title: "Order Cancelled",
+        message: "Sorry, No Delivery partners are available this moment. Please try again later!",
+        orderId: order._id,
+      });
+
+      await triggerNotification({
+        role: ROLES.ADMIN,
+        title: "Order Cancelled",
+        message: `No Delivery partners are available for the order of ID: ${order._id}`,
+        orderId: order._id,
+      });
+    } else {
+      await triggerNotification({
+        role: ROLES.ADMIN,
+        title: "Order Cancelled",
+        message: `${order.sender_name} has cancelled the order`, // maps to customer name
+        orderId: order._id,
+      });
+    }
+    return true;
   } else {
     throw new Error("Order not found");
   }
-
-  const admin = await User.findOne({ role: "admin" });
-
-  if (cancel_order_reason === "Driver are not found") {
-    await Notification.create({
-      notifiable_type: "customer",
-      notifiable_id: order.user_id,
-      title: "Order Cancelled",
-      message:
-        "Sorry, No Delivery partners are available this moment. Please try again later!",
-      order_id: order._id,
-    });
-    if (admin) {
-      await Notification.create({
-        notifiable_type: "admin",
-        notifiable_id: admin._id,
-        title: "Order Cancelled",
-        message: `No Delivery partners are available for the order of ID: ${order._id}`,
-        order_id: order._id,
-      });
-    }
-  } else {
-    if (admin) {
-      await Notification.create({
-        notifiable_type: "admin",
-        notifiable_id: admin._id,
-        title: "Order Cancelled",
-        message: `${order.sender_name} has cancelled the order`, // maps to customer name
-        order_id: order._id,
-      });
-    }
-  }
-  return true;
 };
 
 export const getOrderDetails = async (userId) => {
-  const user = await User.findOne({ _id: userId, role: "customer" });
+  const user = await User.findOne({ _id: userId, role: ROLES.USER });
   if (!user) {
     throw new Error("User details not found");
   }
@@ -292,7 +291,7 @@ export const getOrderDetails = async (userId) => {
 };
 
 export const getTrackingDetails = async (userId, orderId) => {
-  const user = await User.findOne({ _id: userId, role: "customer" });
+  const user = await User.findOne({ _id: userId, role: ROLES.USER });
   if (!user) {
     throw new Error("User details not found");
   }

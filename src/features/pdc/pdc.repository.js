@@ -4,14 +4,15 @@ import { PdcPackage } from './pdcPackage.model.js';
 import { PdcPayout } from './pdcPayout.model.js';
 import { User } from '../users/user.model.js';
 import { Rating } from '../deliveryPartner/rating.model.js';
+import { ROLES } from '../../constants/index.js';
 
 export const findUserByPhone = async (phone) => {
-  return await User.findOne({ role: 'pdc', phone });
+  return await User.findOne({ role: ROLES.PDC, phone });
 };
 
 export const createUser = async (userData) => {
   return await User.create({
-    role: 'pdc',
+    role: ROLES.PDC,
     ...userData
   });
 };

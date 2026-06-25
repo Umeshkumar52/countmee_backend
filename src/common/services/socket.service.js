@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { Order } from '../../features/orders/order.model.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtsecretkeyforsecurityandhashing';
 
@@ -44,6 +45,35 @@ export const init = (httpServer) => {
       userSockets.get(userIdStr).add(socket.id);
       console.log(`[Socket] User ${userIdStr} connected (Socket ID: ${socket.id}). Total users: ${userSockets.size}`);
     }
+
+    // Tracking Events
+    socket.on('order:join', ({ orderId }) => {
+      if (orderId) {
+        socket.join(`order_${orderId}`);
+        console.log(`[Socket] Socket ${socket.id} joined room order_${orderId}`);
+      }
+    });
+
+    socket.on('order:leave', ({ orderId }) => {
+      if (orderId) {
+        socket.leave(`order_${orderId}`);
+        console.log(`[Socket] Socket ${socket.id} left room order_${orderId}`);
+      }
+    });
+
+    socket.on('location:update', async ({ orderId, lat, lng }) => {
+      if (orderId && lat != null && lng != null) {
+        // Broadcast location to anyone in this order's room
+        ioInstance.to(`order_${orderId}`).emit('location:updated', { lat, lng });
+        
+        // Asynchronously save to DB
+        try {
+          await Order.findByIdAndUpdate(orderId, { current_lat: lat, current_lng: lng });
+        } catch (err) {
+          console.error(`[Socket] Error saving location for order ${orderId}:`, err);
+        }
+      }
+    });
 
     socket.on('disconnect', () => {
       if (userId) {

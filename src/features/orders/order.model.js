@@ -13,9 +13,15 @@ const orderSchema = new mongoose.Schema({
   sender_name: { type: String, required: true },
   sender_phone: { type: String, required: true },
   how_to_reach_sender_location: { type: String, default: null },
+  sender_pin_code: { type: String, default: null },
+  sender_address: { type: String, default: null },
+  secondary_sender_phone: { type: String, default: null },
   receiver_name: { type: String, required: true },
   receiver_phone: { type: String, required: true },
   how_to_reach_receiver_address: { type: String, default: null },
+  receiver_address: { type: String, default: null },
+  secondary_receiver_phone: { type: String, default: null },
+  receiver_pin_code: { type: String, default: null },
   distance: { type: Number, required: true },
   charges: { type: Number, required: true },
   user_action: { type: Number, default: null },
@@ -30,7 +36,9 @@ const orderSchema = new mongoose.Schema({
   broadcast_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Broadcast', default: null },
   pickup_dp_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   delivery_dp_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-  status: { type: Number, default: 0 }
+  status: { type: Number, default: 0 },
+  current_lat: { type: Number, default: null },
+  current_lng: { type: Number, default: null }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   toJSON: { virtuals: true },
