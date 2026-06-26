@@ -311,12 +311,10 @@ export const dpOnlineToggleSchema = Joi.object({
       'string.pattern.base': 'Invalid User ID format',
       'any.required': 'User ID is required'
     }),
-  online: Joi.number()
-    .valid(0, 1)
+  online: Joi.boolean()
     .required()
     .messages({
-      'number.base': 'Online status must be a number',
-      'any.only': 'Online status must be 0 (offline) or 1 (online)',
+      'boolean.base': 'Online status must be a boolean',
       'any.required': 'Online status is required'
     }),
   location: Joi.string()
@@ -392,12 +390,10 @@ export const orderAcceptSchema = Joi.object({
       'string.pattern.base': 'Invalid Order ID format',
       'any.required': 'Order ID is required'
     }),
-  status: Joi.number()
-    .valid(0, 1)
+  status: Joi.boolean()
     .required()
     .messages({
-      'number.base': 'Status must be a number',
-      'any.only': 'Status must be 0 (reject) or 1 (accept)',
+      'boolean.base': 'Status must be a boolean',
       'any.required': 'Status is required'
     }),
   user_id: Joi.string()

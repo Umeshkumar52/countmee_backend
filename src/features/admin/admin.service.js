@@ -864,20 +864,17 @@ export const getDeliverCharges = async () => {
       vehicle_type: c.vehicle_type,
       base_distance: c.base_distance,
       base_price: c.base_price,
-      per_km_price: c.per_km_price
+      per_km_price: c.per_km_price,
+      dp_commission: c.dp_commission !== undefined ? c.dp_commission : 50,
+      pdc_commission: c.pdc_commission !== undefined ? c.pdc_commission : 5
     }));
 
-  const dpRecord = allCharges.find(c => c.vehicle_type === 'dp_charges');
-  const pdcRecord = allCharges.find(c => c.vehicle_type === 'pdc_charges');
-
   return {
-    vehicle_charges: vehicleCharges,
-    dp_commission: dpRecord ? dpRecord.per_km_price : 70,
-    pdc_commission: pdcRecord ? pdcRecord.per_km_price : 5
+    vehicle_charges: vehicleCharges
   };
 };
 
-export const updateDeliverCharge = async (vehicle_type, base_distance, base_price, per_km_price) => {
+export const updateDeliverCharge = async (vehicle_type, base_distance, base_price, per_km_price, dp_commission, pdc_commission) => {
   const vehicleMap = {
     '1': 'By Hand',
     '2': 'Two Wheeler',
@@ -892,27 +889,11 @@ export const updateDeliverCharge = async (vehicle_type, base_distance, base_pric
   await adminRepository.updateDeliverCharge(typeName, {
     base_distance,
     base_price,
-    per_km_price
+    per_km_price,
+    dp_commission,
+    pdc_commission
   });
   return { message: 'Vehicle payout parameters updated successfully' };
-};
-
-export const updateDpCharge = async (dp_base_charge, dp_per_km_charge) => {
-  await adminRepository.updateDeliverCharge('dp_charges', {
-    base_distance: dp_base_charge,
-    base_price: dp_base_charge,
-    per_km_price: dp_per_km_charge
-  });
-  return { message: 'Delivery partner share rates updated successfully' };
-};
-
-export const updatePdcPackageCharge = async (pdc_package_rate) => {
-  await adminRepository.updateDeliverCharge('pdc_charges', {
-    base_distance: 0,
-    base_price: 0,
-    per_km_price: pdc_package_rate
-  });
-  return { message: 'PDC package charge rate updated successfully' };
 };
 
 export const addBroadcastPoint = async (name, radius, lat, lon) => {

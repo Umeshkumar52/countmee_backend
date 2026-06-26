@@ -65,7 +65,7 @@ export const saveDetails = async (user_id, gender, address, profileImgLocalPath)
 export const getVehicleSubcategories = async (vehicleType) => {
   const { VehicleSubcategory } = await import('./vehicleSubcategory.model.js');
   const subcategories = await VehicleSubcategory.find({ vehicle_type: vehicleType, is_active: true }).select('sub_vehicle_type').lean();
-  
+
   const subCategoryList = subcategories.map(s => s.sub_vehicle_type);
   if (!subCategoryList.includes('Other')) {
     subCategoryList.push('Other');
@@ -78,9 +78,10 @@ export const saveDocuments = async (user_id, docData, files) => {
     'aadhar_imgfront', 'aadhar_imgback',
     'rc_imgfront', 'rc_imgback',
     'dl_imgfront', 'dl_imgback',
-    'bank_imagefront', 'bank_imgeback',
+    'bank_imagefront', 'bank_imageback',
     'residence_img', 'vehicle_img',
-    'insurance_document', 'emission_certificate_document'
+    'insurance_document', 'emission_certificate_document',
+    'permit_document'
   ];
 
   const uploadResults = {};
@@ -90,6 +91,19 @@ export const saveDocuments = async (user_id, docData, files) => {
       const uploadResult = await uploadToCloudinary(files[field][0].path, 'dp_documents');
       if (uploadResult) {
         uploadResults[field] = uploadResult.secure_url;
+      }
+    }
+  }
+
+  let parsedStates = [];
+  if (docData.travel_permit_states) {
+    try {
+      parsedStates = JSON.parse(docData.travel_permit_states);
+    } catch (e) {
+      if (typeof docData.travel_permit_states === 'string') {
+        parsedStates = docData.travel_permit_states.split(',').map(s => s.trim());
+      } else if (Array.isArray(docData.travel_permit_states)) {
+        parsedStates = docData.travel_permit_states;
       }
     }
   }
@@ -106,9 +120,11 @@ export const saveDocuments = async (user_id, docData, files) => {
       emission_expiry_date: docData.emission_expiry_date,
       is_new_vehicle: docData.is_new_vehicle,
       vehicle_registration_date: docData.vehicle_registration_date,
+      travel_permit_states: parsedStates.length > 0 ? parsedStates : undefined,
       aadhar_number: docData.aadhar_number,
       rc_number: docData.rc_number,
       dl_number: docData.dl_number,
+      dl_expiry_date: docData.dl_expiry_date,
       bank_name: docData.bank_name,
       bank_acc_number: docData.bank_acc_number,
       bank_ifsc: docData.bank_ifsc,
@@ -123,15 +139,15 @@ export const saveDocuments = async (user_id, docData, files) => {
 
 export const updateBankDetail = async (user_id, bankData, files) => {
   let bank_imagefront = null;
-  let bank_imgeback = null;
+  let bank_imageback = null;
 
   if (files?.bank_imagefront?.[0]) {
     const uploadResult = await uploadToCloudinary(files.bank_imagefront[0].path, 'dp_documents');
     bank_imagefront = uploadResult?.secure_url;
   }
-  if (files?.bank_imgeback?.[0]) {
-    const uploadResult = await uploadToCloudinary(files.bank_imgeback[0].path, 'dp_documents');
-    bank_imgeback = uploadResult?.secure_url;
+  if (files?.bank_imageback?.[0]) {
+    const uploadResult = await uploadToCloudinary(files.bank_imageback[0].path, 'dp_documents');
+    bank_imageback = uploadResult?.secure_url;
   }
 
   const updateFields = {
@@ -141,7 +157,7 @@ export const updateBankDetail = async (user_id, bankData, files) => {
   };
 
   if (bank_imagefront) updateFields.bank_imagefront = bank_imagefront;
-  if (bank_imgeback) updateFields.bank_imgeback = bank_imgeback;
+  if (bank_imageback) updateFields.bank_imageback = bank_imageback;
 
   await DpDocument.findOneAndUpdate({ user_id }, updateFields);
   return true;
@@ -222,6 +238,10 @@ export const getNewOrders = async (user_id) => {
   const orderIds = reqs.map(r => r.order_id);
   const orders = await Order.find({ _id: { $in: orderIds } });
 
+  const allCharges = await DeliverCharge.find({});
+  const chargeMap = {};
+  allCharges.forEach(c => chargeMap[c.vehicle_type] = c);
+
   const ordersWithPickup = [];
   for (const order of orders) {
     const jsonOrder = order.toJSON();
@@ -243,6 +263,34 @@ export const getNewOrders = async (user_id) => {
     jsonOrder.pickup_lat = jsonOrder.broadcast?.pickup_latitude || order.sender_latitude;
     jsonOrder.pickup_lon = jsonOrder.broadcast?.pickup_longitude || order.sender_longitude;
     jsonOrder.dist = jsonOrder.broadcast?.distance || `${order.distance} km`;
+
+    const chargeConfig = chargeMap[order.mode_of_transport];
+    const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.5;
+
+    const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
+    const distributedDpAmount = await DpPayout.find({ order_id: order._id });
+    const sumEarnings = distributedDpAmount.reduce((acc, curr) => acc + curr.earnings, 0);
+    const remainingPot = Math.max(0, totalDpPot - sumEarnings);
+
+    jsonOrder.estimated_earnings = remainingPot;
+
+    let remaining_distance = order.distance;
+
+    if (broadcast) {
+      const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
+      const distToReceiver = parseFloat(await mapsService.distanceBetween(
+        jsonOrder.pickup_lat,
+        jsonOrder.pickup_lon,
+        order.receiver_latitude,
+        order.receiver_longitude,
+        mode
+      )) || 0;
+      remaining_distance = Math.round(distToReceiver * 1000) / 1000;
+    }
+
+    jsonOrder.remaining_distance = remaining_distance;
+    jsonOrder.per_km_amount = remaining_distance > 0 ? Math.round((remainingPot / remaining_distance) * 100) / 100 : 0;
+
     ordersWithPickup.push(jsonOrder);
   }
 
@@ -278,8 +326,8 @@ export const orderAccept = async (order_id, status, user_id) => {
       const order = await Order.findById(order_id).session(session);
 
       // Payout allocation settings
-      const dpCharges = await DeliverCharge.findOne({ vehicle_type: 'dp_charges' }).session(session);
-      const percentage = dpCharges ? (dpCharges.per_km_price / 100) : 0.5;
+      const chargeConfig = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).session(session);
+      const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.5;
       const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
 
       if (orderRequest.request_type === 'direct') {
@@ -783,7 +831,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
     const travel = await Travel.findOne({ order_id, user_id }).sort({ created_at: -1 }).session(session);
 
     if (travel) {
-      const deliveryCharge = await DeliverCharge.findOne({ vehicle_type: 'dp_charges' }).session(session);
+      const chargeConfig = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).session(session);
       const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
       const distance = await mapsService.distanceBetween(
         travel.pickup_latitude,
@@ -797,11 +845,10 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       let earning = 0;
 
       if (orderRequest.request_type === 'direct') {
-        const perKmPrice = deliveryCharge ? deliveryCharge.per_km_price : 50;
+        const perKmPrice = chargeConfig && chargeConfig.dp_commission != null ? chargeConfig.dp_commission : 50;
         earning = Math.round(order.charges * (perKmPrice / 100) * 100) / 100;
       } else {
-        const dpCharges = await DeliverCharge.findOne({ vehicle_type: 'dp_charges' }).session(session);
-        const percentage = dpCharges ? (dpCharges.per_km_price / 100) : 0.7;
+        const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.7;
         const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
 
         const previousPayouts = await DpPayout.find({ order_id: order._id })
@@ -833,8 +880,8 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
     }
 
     // PDC Payout Split calculation
-    const pdcCharges = await DeliverCharge.findOne({ vehicle_type: 'pdc_charges' }).session(session);
-    const pdcPercentage = pdcCharges ? (pdcCharges.per_km_price / 100) : 0.05;
+    const pdcChargeConfig = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).session(session);
+    const pdcPercentage = pdcChargeConfig && pdcChargeConfig.pdc_commission != null ? (pdcChargeConfig.pdc_commission / 100) : 0.05;
     const totalPdcPot = Math.round(order.charges * pdcPercentage * 100) / 100;
 
     const pdcPackages = await PdcPackage.find({ order_id: order._id }).session(session);

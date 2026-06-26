@@ -412,11 +412,11 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
     const travel = await dpService.findTravelByOrderAndUser(order_id, user_id);
     if (!travel) throw new ApiError(404, "Travel record not found");
 
-    const dpCharges = await mongoose
+    const chargeConfig = await mongoose
       .model("DeliverCharge")
-      .findOne({ vehicle_type: "dp_charges" })
+      .findOne({ vehicle_type: order.mode_of_transport })
       .session(session);
-    const percentage = dpCharges ? dpCharges.per_km_price / 100 : 0.7;
+    const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.7;
     const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
 
     const previousPayouts = await dpService.findPayoutsByDp(user_id);
@@ -913,17 +913,13 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
         );
         const distanceKm = distanceMeters / 1000;
 
-        const deliveryCharge = await mongoose
-          .model("DeliverCharge")
-          .findOne({ vehicle_type: "dp_charges" })
-          .session(session);
         const vehicleCharge = await mongoose
           .model("DeliverCharge")
           .findOne({ vehicle_type: order.mode_of_transport })
           .session(session);
 
-        const deliveryChargePerKm = deliveryCharge
-          ? deliveryCharge.per_km_price
+        const deliveryChargePerKm = vehicleCharge && vehicleCharge.dp_commission != null
+          ? vehicleCharge.dp_commission
           : 0;
         const vehicleChargePerKm = vehicleCharge
           ? vehicleCharge.per_km_price

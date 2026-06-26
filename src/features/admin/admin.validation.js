@@ -439,28 +439,22 @@ export const deliverChargeSchema = Joi.object({
     .messages({
       'number.base': 'Per-km price must be a number',
       'any.required': 'Per-km price is required'
-    })
-});
-
-export const dpChargeSchema = Joi.object({
-  type: Joi.string().optional(),
-  commission: Joi.number()
+    }),
+  dp_commission: Joi.number()
     .required()
     .messages({
       'number.base': 'DP commission must be a number',
       'any.required': 'DP commission is required'
-    })
-});
-
-export const pdcPackageChargeSchema = Joi.object({
-  type: Joi.string().optional(),
-  commission: Joi.number()
+    }),
+  pdc_commission: Joi.number()
     .required()
     .messages({
       'number.base': 'PDC commission must be a number',
       'any.required': 'PDC commission is required'
     })
 });
+
+
 
 export const verifyCredentialsSchema = Joi.object({
   email: Joi.string()

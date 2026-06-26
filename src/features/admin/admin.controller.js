@@ -452,33 +452,15 @@ export const getDeliverChargePage = async (req, res, next) => {
 
 export const postUpdateDeliverCharge = async (req, res, next) => {
   try {
-    const { vehicle_type, base_distance, base_price, per_km_price } = validate(adminValidation.deliverChargeSchema, req.body);
-    const result = await adminService.updateDeliverCharge(vehicle_type, base_distance, base_price, per_km_price);
+    const { vehicle_type, base_distance, base_price, per_km_price, dp_commission, pdc_commission } = validate(adminValidation.deliverChargeSchema, req.body);
+    const result = await adminService.updateDeliverCharge(vehicle_type, base_distance, base_price, per_km_price, dp_commission, pdc_commission);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
   }
 };
 
-export const postUpdateDpCharge = async (req, res, next) => {
-  try {
-    const { commission } = validate(adminValidation.dpChargeSchema, req.body);
-    const result = await adminService.updateDpCharge(0, commission);
-    return res.json(ApiResponse.success(result));
-  } catch (err) {
-    next(err);
-  }
-};
 
-export const postUpdatePdcPackageCharge = async (req, res, next) => {
-  try {
-    const { commission } = validate(adminValidation.pdcPackageChargeSchema, req.body);
-    const result = await adminService.updatePdcPackageCharge(commission);
-    return res.json(ApiResponse.success(result));
-  } catch (err) {
-    next(err);
-  }
-};
 
 export const getVehicleTypes = async (req, res, next) => {
   try {

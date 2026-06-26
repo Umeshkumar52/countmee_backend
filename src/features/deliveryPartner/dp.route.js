@@ -15,17 +15,16 @@ const docUploadFields = uploadFields([
   { name: 'dl_imgback', maxCount: 1 },
   { name: 'bank_imagefront', maxCount: 1 },
   { name: 'bank_imageback', maxCount: 1 },
-  { name: 'bank_imgeback', maxCount: 1 },
   { name: 'residence_img', maxCount: 1 },
   { name: 'vehicle_img', maxCount: 1 },
   { name: 'insurance_document', maxCount: 1 },
-  { name: 'emission_certificate_document', maxCount: 1 }
+  { name: 'emission_certificate_document', maxCount: 1 },
+  { name: 'permit_document', maxCount: 1 }
 ]);
 
 const bankUploadFields = uploadFields([
   { name: 'bank_imagefront', maxCount: 1 },
-  { name: 'bank_imageback', maxCount: 1 },
-  { name: 'bank_imgeback', maxCount: 1 }
+  { name: 'bank_imageback', maxCount: 1 }
 ]);
 
 const pickupImageUploadFields = uploadFields([

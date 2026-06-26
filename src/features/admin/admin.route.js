@@ -112,9 +112,7 @@ router.post('/reportdata', adminController.postReportDataPage);
 
 // Delivery Charges configuration
 router.get('/deliver_charge', adminController.getDeliverChargePage);
-router.post('/update_deliver_charge', adminController.postUpdateDeliverCharge);
-router.post('/update_delivery_partner_charge', adminController.postUpdateDpCharge);
-router.post('/update_pdc_package_charge', adminController.postUpdatePdcPackageCharge);
+router.post('/deliver_charge', adminController.postUpdateDeliverCharge);
 
 /////////////////////////////////////////////////////////
 // 2nd Phase New Api= Vehicle Subcategories configuration
