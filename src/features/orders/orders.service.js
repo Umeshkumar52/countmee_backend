@@ -6,11 +6,12 @@ import { OrderRequest } from "./orderRequest.model.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { PackageDetail } from "./packageDetail.model.js";
 import { Rating } from "../deliveryPartner/rating.model.js";
-import { triggerNotification } from "../notifications/notification.service.js";
+import { sendNotification } from "../../common/utils/sendNotification.js";
 import {
   uploadToCloudinary,
   deleteFromCloudinary,
 } from "../../common/services/cloudinary.service.js";
+import { distanceBetween } from "../tracking/maps.service.js";
 import mongoose from "mongoose";
 
 /**
@@ -42,7 +43,7 @@ export const calculateFinalCharges = (deliverCharge, distance) => {
   };
 };
 
-export const getCharges = async (mode_of_transport, distance) => {
+export const getCharges = async (mode_of_transport, pickup_lat, pickup_lng, drop_lat, drop_lng, no_of_items) => {
   const deliverCharge =
     await ordersRepository.findDeliverChargeByVehicle(mode_of_transport);
   if (!deliverCharge) {
@@ -51,13 +52,31 @@ export const getCharges = async (mode_of_transport, distance) => {
     );
   }
 
-  const calc = calculateFinalCharges(deliverCharge, distance);
+  let googleMapMode = "driving";
+  if (mode_of_transport === "By Hand") {
+    googleMapMode = "walking";
+  }
+
+  const distanceText = await distanceBetween(pickup_lat, pickup_lng, drop_lat, drop_lng, googleMapMode);
+  const distanceValue = parseFloat(distanceText) || 0;
+
+  const calc = calculateFinalCharges(deliverCharge, distanceValue);
+
+  const itemsMultiplier = no_of_items || 1;
+  const netPrice = calc.net_price * itemsMultiplier;
+  const exactPrice = Math.round(netPrice * 100) / 100;
+  const exactGst = Math.round(exactPrice * 0.05 * 100) / 100; // 5% GST
+  const totalAmount = Math.round((exactPrice + exactGst) * 100) / 100;
+
   return {
-    amount: calc.total,
+    distance_text: distanceText,
+    distance_value: distanceValue,
+    amount: totalAmount,
     breakdown: {
-      base_price: calc.base_price,
-      additional_km: calc.additional_km_price,
-      gst: calc.gst,
+      single_item_base_price: calc.base_price,
+      single_item_additional_km: calc.additional_km_price,
+      total_items_price: exactPrice,
+      gst: exactGst,
     },
   };
 };
@@ -200,7 +219,7 @@ export const createOrder = async (orderData, files) => {
     await newOrder.save({ session });
 
     // In-app notifications
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.USER,
       userId: user_id,
       title: "Order Placed",
@@ -209,7 +228,7 @@ export const createOrder = async (orderData, files) => {
       session
     });
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.ADMIN,
       title: "New Order Placed",
       message: ` has placed an order of ID : ${newOrder._id}`,
@@ -254,7 +273,7 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
     await order.save();
 
     if (cancel_order_reason === "Driver are not found") {
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.USER,
         userId: order.user_id,
         title: "Order Cancelled",
@@ -262,14 +281,14 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
         orderId: order._id,
       });
 
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.ADMIN,
         title: "Order Cancelled",
         message: `No Delivery partners are available for the order of ID: ${order._id}`,
         orderId: order._id,
       });
     } else {
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.ADMIN,
         title: "Order Cancelled",
         message: `${order.sender_name} has cancelled the order`, // maps to customer name

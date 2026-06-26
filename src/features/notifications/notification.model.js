@@ -34,6 +34,7 @@ const notificationSchema = new mongoose.Schema(
 
 notificationSchema.post("save", async function (doc) {
   try {
+    console.log("notification save method has been called");
     // 1. Send via Socket.io (Real-time online users)
     const payload = {
       id: doc._id,
@@ -46,16 +47,19 @@ notificationSchema.post("save", async function (doc) {
       order_id: doc.order_id,
       created_at: doc.createdAt || doc.created_at,
     };
-    sendNotificationToUser(doc.notifiable_id, payload);
+    // sendNotificationToUser(doc.notifiable_id, payload);
 
     // 2. Send via Firebase Cloud Messaging (Background push notifications)
     const user = await User.findById(doc.notifiable_id);
-    if (user && user.fcm_token) {
-      await sendPushNotification(user.fcm_token, doc.title, doc.message, {
-        notification_id: doc._id,
-        order_id: doc.order_id || "",
+    console.log("user finded", user);
+    if (user && user.fcm_tokens && user.fcm_tokens.length > 0) {
+      await sendPushNotification(user.fcm_tokens, doc.title, doc.message, {
+        notification_id: doc._id.toString(),
+        order_id: doc.order_id ? doc.order_id.toString() : "",
       });
     }
+
+    console.log("notification sent succesfuly");
   } catch (error) {
     console.error(
       "[Notification Hook Error] Failed to broadcast notification:",

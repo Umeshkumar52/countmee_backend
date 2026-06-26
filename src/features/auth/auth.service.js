@@ -1,7 +1,7 @@
 import * as authRepository from "./auth.repository.js";
 import { ROLES } from "../../constants/index.js";
 import { sendOTPViaSMS } from "../notifications/sms.service.js";
-import { triggerNotification } from "../notifications/notification.service.js";
+import { sendNotification } from "../../common/utils/sendNotification.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
 import bcrypt from "bcryptjs";
@@ -17,8 +17,8 @@ import { deleteFromCloudinary } from "../../common/services/cloudinary.service.j
 const extractCloudinaryPublicId = (url) => {
   if (!url) return null;
   try {
-    const parts = url.split('/');
-    const filename = parts.pop().split('.')[0];
+    const parts = url.split("/");
+    const filename = parts.pop().split(".")[0];
     const folder = parts.pop();
     return `${folder}/${filename}`;
   } catch (e) {
@@ -54,13 +54,13 @@ export const registerCustomer = async (name, phone, email, dob) => {
   await sendOTPViaSMS(phone, message);
 
   // Send notifications
-  await triggerNotification({
+  await sendNotification({
     role: ROLES.ADMIN,
     title: "New Customer Registered",
     message: `${name} has registered`,
   });
 
-  await triggerNotification({
+  await sendNotification({
     role: ROLES.USER,
     userId: newUser._id,
     title: "Welcome to CountMee",
@@ -152,13 +152,13 @@ export const registerDp = async (name, phone, email, dob) => {
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
   await sendOTPViaSMS(phone, message);
 
-  await triggerNotification({
+  await sendNotification({
     role: ROLES.ADMIN,
     title: "New Delivery Partner Registered",
     message: `${name} has registered as delivery partner`,
   });
 
-  await triggerNotification({
+  await sendNotification({
     role: ROLES.DP,
     userId: newUser._id,
     title: "Welcome to CountMee",
@@ -271,7 +271,7 @@ export const dpOtpVerification = async (userId, otp) => {
 export const deleteAccount = async (userId) => {
   const user = await User.findById(userId);
   let message = "";
-  
+
   if (!user) {
     throw new Error("No user found with the given ID");
   }
@@ -281,19 +281,25 @@ export const deleteAccount = async (userId) => {
     message = "Your customer account has been deleted.";
     const activeOrders = await Order.countDocuments({
       user_id: user._id,
-      status_completed: { $nin: ["delivered", "cancelled", "User cancelled", "Auto cancelled"] }
+      status_completed: {
+        $nin: ["delivered", "cancelled", "User cancelled", "Auto cancelled"],
+      },
     });
     if (activeOrders > 0) {
-      throw new Error("You have active orders. Please complete or cancel them before deleting your account.");
+      throw new Error(
+        "You have active orders. Please complete or cancel them before deleting your account.",
+      );
     }
   } else if (user.role === ROLES.DP) {
     message = "Your delivery partner account has been deleted.";
     const activeRequests = await OrderRequest.countDocuments({
       accepted_by: user._id,
-      complete_status: null
+      complete_status: null,
     });
     if (activeRequests > 0) {
-      throw new Error("You have active delivery legs. Please complete them before deleting your account.");
+      throw new Error(
+        "You have active delivery legs. Please complete them before deleting your account.",
+      );
     }
   }
 
@@ -314,17 +320,24 @@ export const deleteAccount = async (userId) => {
 
       if (dpDocument) {
         const docFields = [
-          'aadhar_imgfront', 'aadhar_imgback', 'rc_imgfront', 'rc_imgback',
-          'dl_imgfront', 'dl_imgback', 'bank_imagefront', 'bank_imgeback',
-          'residence_img', 'vehicle_img'
+          "aadhar_imgfront",
+          "aadhar_imgback",
+          "rc_imgfront",
+          "rc_imgback",
+          "dl_imgfront",
+          "dl_imgback",
+          "bank_imagefront",
+          "bank_imgeback",
+          "residence_img",
+          "vehicle_img",
         ];
-        docFields.forEach(field => {
+        docFields.forEach((field) => {
           if (dpDocument[field]) imageUrlsToClean.push(dpDocument[field]);
         });
       }
 
       // We do not await in the transaction loop to save time, but map them to Promises
-      const deletePromises = imageUrlsToClean.map(url => {
+      const deletePromises = imageUrlsToClean.map((url) => {
         const publicId = extractCloudinaryPublicId(url);
         if (publicId) return deleteFromCloudinary(publicId).catch(() => {});
         return Promise.resolve();
@@ -355,7 +368,6 @@ export const rotateRefreshToken = async (refreshToken) => {
   const JWT_REFRESH_SECRET =
     process.env.JWT_REFRESH_SECRET ||
     "supersecretjwtrefreshsecretkeyforrotationandrevocation";
-  const User = mongoose.model("User");
 
   try {
     const decoded = jwt.default.verify(refreshToken, JWT_REFRESH_SECRET);
@@ -380,8 +392,8 @@ export const rotateRefreshToken = async (refreshToken) => {
 };
 
 export const updateFcmToken = async (userId, fcmToken) => {
-  const User = mongoose.model("User");
-  await User.findByIdAndUpdate(userId, { fcm_token: fcmToken });
+  // const User = mongoose.model("User");
+  await User.findByIdAndUpdate(userId, { $addToSet: { fcm_tokens: fcmToken } });
 };
 
 import { User } from "../users/user.model.js";

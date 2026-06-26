@@ -57,13 +57,17 @@ export const cancelledOrder = asyncHandler(async (req, res) => {
 });
 
 export const charges = asyncHandler(async (req, res) => {
-  const { mode_of_transport, distance } = validate(
+  const { mode_of_transport, pickup_lat, pickup_lng, drop_lat, drop_lng, no_of_items } = validate(
     ordersValidation.calculateChargesSchema,
     req.body,
   );
   const result = await ordersService.getCharges(
     mode_of_transport,
-    Number(distance),
+    Number(pickup_lat),
+    Number(pickup_lng),
+    Number(drop_lat),
+    Number(drop_lng),
+    Number(no_of_items)
   );
   return res.json(
     ApiResponse.success(result, "Charges calculated successfully"),

@@ -9,7 +9,7 @@ import { Order } from "../orders/order.model.js";
 import { DpDocument } from "./dpDocument.model.js";
 import { DpDetail } from "./dpDetail.model.js";
 import { Broadcast } from "../orders/broadcast.model.js";
-import { triggerNotification } from "../notifications/notification.service.js";
+import { sendNotification } from "../../common/utils/sendNotification.js";
 import * as mapsService from "../tracking/maps.service.js";
 import { PdcDocument } from "../pdc/pdcDocument.model.js";
 import { User } from "../users/user.model.js";
@@ -463,7 +463,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
     const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
     const dpUser = await User.findById(user_id).session(session);
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.ADMIN,
       title: "Order Status Update",
       message: `The order of ID : ${order_id} is reached at PDC`,
@@ -471,7 +471,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
       session,
     });
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.DP,
       userId: user_id,
       title: "Order Delivered",
@@ -480,7 +480,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
       session,
     });
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.USER,
       userId: order.user_id,
       title: "Order Status Update",
@@ -489,7 +489,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
       session,
     });
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.PDC,
       userId: pdc_id,
       title: "New Package Received",

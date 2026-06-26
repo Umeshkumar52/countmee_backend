@@ -113,10 +113,26 @@ export const calculateChargesSchema = Joi.object({
     "string.empty": "Mode of transport is required",
     "any.required": "Mode of transport is required",
   }),
-  distance: Joi.number().min(0).required().messages({
-    "number.base": "Distance must be a valid number",
-    "number.min": "Distance cannot be negative",
-    "any.required": "Distance is required",
+  pickup_lat: Joi.number().required().messages({
+    "number.base": "Pickup latitude must be a number",
+    "any.required": "Pickup latitude is required",
+  }),
+  pickup_lng: Joi.number().required().messages({
+    "number.base": "Pickup longitude must be a number",
+    "any.required": "Pickup longitude is required",
+  }),
+  drop_lat: Joi.number().required().messages({
+    "number.base": "Drop latitude must be a number",
+    "any.required": "Drop latitude is required",
+  }),
+  drop_lng: Joi.number().required().messages({
+    "number.base": "Drop longitude must be a number",
+    "any.required": "Drop longitude is required",
+  }),
+  no_of_items: Joi.number().integer().valid(1, 2, 3, 4).required().messages({
+    "number.base": "Number of items must be a number",
+    "any.only": "Number of items must be 1, 2, 3, or 4",
+    "any.required": "Number of items is required",
   }),
 });
 

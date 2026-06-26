@@ -36,7 +36,8 @@ export const registerPdcSchema = Joi.object({
     .messages({
       'string.empty': 'Phone number is required',
       'any.required': 'Phone number is required'
-    })
+    }),
+  fcmToken: Joi.string().allow('', null).optional()
 });
 
 export const loginPdcSchema = Joi.object({
@@ -55,7 +56,8 @@ export const loginPdcSchema = Joi.object({
     .messages({
       'string.empty': 'Password is required',
       'any.required': 'Password is required'
-    })
+    }),
+  fcmToken: Joi.string().allow('', null).optional()
 });
 
 export const editPdcProfileSchema = Joi.object({

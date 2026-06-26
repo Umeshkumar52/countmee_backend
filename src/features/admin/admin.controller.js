@@ -5,8 +5,8 @@ import * as adminValidation from './admin.validation.js';
 
 export const postLogin = async (req, res, next) => {
   try {
-    const { email, password } = validate(adminValidation.loginSchema, req.body);
-    const result = await adminService.loginAdmin(email, password);
+    const { email, password, fcmToken } = validate(adminValidation.loginSchema, req.body);
+    const result = await adminService.loginAdmin(email, password, fcmToken);
     return res.json(ApiResponse.success(result));
   } catch (error) {
     next(error);
