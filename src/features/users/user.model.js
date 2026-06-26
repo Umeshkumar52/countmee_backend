@@ -15,15 +15,9 @@ const userSchema = new mongoose.Schema(
     password: { type: String, default: "" },
     otp: { type: String, default: "" },
     refreshToken: { type: String, default: null },
-    fcm_token: { type: String, default: null },
+    fcm_tokens: { type: [String], default: [] },
   },
-  {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
-  },
+  { timestamps: true },
 );
-
-
 
 export const User = mongoose.model("User", userSchema);

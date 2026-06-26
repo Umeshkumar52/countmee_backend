@@ -14,8 +14,10 @@ import { DpDetail } from '../deliveryPartner/dpDetail.model.js';
 import { Notification } from '../notifications/notification.model.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
 import { getLatLongFromAddress } from '../tracking/maps.service.js';
+import { sendNotification } from '../../common/utils/sendNotification.js';
+import { ROLES } from '../../constants/index.js';
 
-export const register = async (firstName, email, phone, password) => {
+export const register = async (firstName, email, phone, password, fcmToken) => {
   const existingUser = await pdcRepository.findUserByPhone(phone);
   if (existingUser) {
     throw new Error('User already exists');
@@ -26,7 +28,8 @@ export const register = async (firstName, email, phone, password) => {
     name: firstName,
     email,
     phone,
-    password: hashedPassword
+    password: hashedPassword,
+    fcm_tokens: fcmToken ? [fcmToken] : []
   });
 
   const pdc = await pdcRepository.createPdcDocument({
@@ -35,10 +38,23 @@ export const register = async (firstName, email, phone, password) => {
     phone
   });
 
+  await sendNotification({
+    role: ROLES.ADMIN,
+    title: 'New PDC Registered',
+    message: `${firstName} has registered as a Pickup & Delivery Center`,
+  });
+
+  await sendNotification({
+    role: ROLES.PDC,
+    userId: user._id,
+    title: 'Welcome to CountMee',
+    message: 'Your PDC account has been registered successfully',
+  });
+
   return { user, pdc };
 };
 
-export const login = async (phone, password) => {
+export const login = async (phone, password, fcmToken) => {
   const user = await pdcRepository.findUserByPhone(phone);
   if (!user) {
     throw new Error('User not registered. Please register first.');
@@ -47,6 +63,14 @@ export const login = async (phone, password) => {
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
     throw new Error('Invalid phone number or password');
+  }
+
+  if (fcmToken) {
+    if (!user.fcm_tokens) user.fcm_tokens = [];
+    if (!user.fcm_tokens.includes(fcmToken)) {
+      user.fcm_tokens.push(fcmToken);
+    }
+    await user.save();
   }
 
   // Populate virtuals

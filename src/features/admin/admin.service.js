@@ -5,7 +5,7 @@ import { generateAccessToken, generateRefreshToken } from '../../common/middlewa
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
 import { getLatLongFromAddress } from '../tracking/maps.service.js';
 
-export const loginAdmin = async (email, password) => {
+export const loginAdmin = async (email, password, fcmToken) => {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@countmee.com';
   const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 
@@ -33,6 +33,12 @@ export const loginAdmin = async (email, password) => {
     const token = generateAccessToken(adminUser);
     const refreshToken = generateRefreshToken(adminUser);
     adminUser.refreshToken = refreshToken;
+    if (fcmToken) {
+      if (!adminUser.fcm_tokens) adminUser.fcm_tokens = [];
+      if (!adminUser.fcm_tokens.includes(fcmToken)) {
+        adminUser.fcm_tokens.push(fcmToken);
+      }
+    }
     await adminUser.save();
 
     return {

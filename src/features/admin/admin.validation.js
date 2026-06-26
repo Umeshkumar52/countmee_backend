@@ -16,7 +16,8 @@ export const loginSchema = Joi.object({
     .messages({
       'string.empty': 'Password is required',
       'any.required': 'Password is required'
-    })
+    }),
+  fcmToken: Joi.string().allow('', null).optional()
 });
 
 export const updateDocStatusSchema = Joi.object({

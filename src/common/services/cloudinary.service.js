@@ -1,34 +1,35 @@
-import { v2 as cloudinary } from 'cloudinary';
-import fs from 'fs/promises';
-import dotenv from 'dotenv';
+import { v2 as cloudinary } from "cloudinary";
+import fs from "fs/promises";
+import dotenv from "dotenv";
 
 dotenv.config();
 
 // Initialize Cloudinary
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'cloudinary_name',
-  api_key: process.env.CLOUDINARY_API_KEY || 'cloudinary_key',
-  api_secret: process.env.CLOUDINARY_API_SECRET || 'cloudinary_secret'
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "cloudinary_name",
+  api_key: process.env.CLOUDINARY_API_KEY || "cloudinary_key",
+  api_secret: process.env.CLOUDINARY_API_SECRET || "cloudinary_secret",
 });
 
-/**
- * Uploads a local file to Cloudinary and cleans up the local temporary file afterwards
- * @param {string} localFilePath - Path of the file in the local filesystem
- * @param {string} folderName - Subfolder in Cloudinary (e.g. 'dp_docs', 'order_images')
- * @returns {Promise<object>} Upload result containing secure_url, public_id, etc.
- */
-export const uploadToCloudinary = async (localFilePath, folderName = 'countme') => {
+export const uploadToCloudinary = async (
+  localFilePath,
+  folderName = "countme",
+) => {
   try {
     if (!localFilePath) return null;
 
     const result = await cloudinary.uploader.upload(localFilePath, {
       folder: folderName,
-      resource_type: 'auto'
+      resource_type: "auto",
     });
 
     // Cleanup local temp file asynchronously
-    await fs.unlink(localFilePath).catch(err => {
-      console.warn('Failed to delete temporary local file:', localFilePath, err.message);
+    await fs.unlink(localFilePath).catch((err) => {
+      console.warn(
+        "Failed to delete temporary local file:",
+        localFilePath,
+        err.message,
+      );
     });
 
     return result;

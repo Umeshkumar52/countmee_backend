@@ -13,7 +13,7 @@ import {
 } from "../../common/middlewares/auth.middleware.js";
 
 export const register = asyncHandler(async (req, res) => {
-  const { first_name, email, phone, password, confirmPassword } = validate(
+  const { first_name, email, phone, password, confirmPassword, fcmToken } = validate(
     pdcValidation.registerPdcSchema,
     req.body,
   );
@@ -27,6 +27,7 @@ export const register = asyncHandler(async (req, res) => {
     email,
     phone,
     password,
+    fcmToken,
   );
   const token = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
@@ -46,7 +47,7 @@ export const register = asyncHandler(async (req, res) => {
 });
 
 export const login = asyncHandler(async (req, res) => {
-  const { phone, password } = req.body;
+  const { phone, password, fcmToken } = req.body;
 
   if (!phone || phone.length !== 10) {
     throw new ApiError(400, "Valid 10-digit phone number is required");
@@ -55,7 +56,7 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Password is required");
   }
 
-  const user = await pdcService.login(phone, password);
+  const user = await pdcService.login(phone, password, fcmToken);
   const token = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
 
@@ -249,8 +250,12 @@ export const rateDp = asyncHandler(async (req, res) => {
 
 export const logout = asyncHandler(async (req, res) => {
   const userId = req.user.id;
+  const { fcmToken } = req.body || {};
   if (userId) {
     await PdcDocument.findOneAndUpdate({ user_id: userId }, { online: 0 });
+    if (fcmToken) {
+      await User.findByIdAndUpdate(userId, { $pull: { fcm_tokens: fcmToken } });
+    }
   }
   return res.json(ApiResponse.success(null, "Logout successful"));
 });

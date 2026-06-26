@@ -13,7 +13,7 @@ import { PackageDetail } from '../orders/packageDetail.model.js';
 import { PdcDocument } from '../pdc/pdcDocument.model.js';
 import { PdcPackage } from '../pdc/pdcPackage.model.js';
 import { PdcPayout } from '../pdc/pdcPayout.model.js';
-import { triggerNotification } from '../notifications/notification.service.js';
+import { sendNotification } from '../../common/utils/sendNotification.js';
 import { DeliverCharge } from '../orders/deliverCharge.model.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
 import { sendOTPViaSMS } from '../notifications/sms.service.js';
@@ -479,7 +479,7 @@ export const orderAccept = async (order_id, status, user_id) => {
       const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
       const dpUser = await User.findById(user_id).session(session);
 
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.ADMIN,
         title: orderRequest.request_type === 'direct' ? 'Order Accepted' : 'Broadcast Accepted',
         message: `The order of ID : ${order_id} has been accepted by ${dpUser.name}`,
@@ -487,7 +487,7 @@ export const orderAccept = async (order_id, status, user_id) => {
         session
       });
 
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.DP,
         userId: user_id,
         title: 'Order Accepted',
@@ -497,7 +497,7 @@ export const orderAccept = async (order_id, status, user_id) => {
       });
 
       if (orderRequest.request_type === 'direct') {
-        await triggerNotification({
+        await sendNotification({
           role: ROLES.USER,
           userId: orderCheck.user_id,
           title: 'Order Update',
@@ -527,7 +527,7 @@ export const orderAccept = async (order_id, status, user_id) => {
       const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
       const dpUser = await User.findById(user_id).session(session);
 
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.ADMIN,
         title: 'Order Rejected',
         message: `The order of ID : ${order_id} has been rejected by ${dpUser.name}`,
@@ -535,7 +535,7 @@ export const orderAccept = async (order_id, status, user_id) => {
         session
       });
 
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.DP,
         userId: user_id,
         title: 'Order Rejected',
@@ -738,7 +738,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
     const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
     let type = 'CUSTOMER';
     if (orderRequest.request_type === 'direct') {
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.ADMIN,
         title: 'Order Update',
         message: `The order of ID : ${order_id} is in transit`,
@@ -747,7 +747,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       });
     } else {
       type = 'delivery partner';
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.ADMIN,
         title: 'Order Update',
         message: `The order of ID : ${order_id} is broadcasted with ID : ${order.broadcast_id}`,
@@ -756,7 +756,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       });
     }
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.DP,
       userId: user_id,
       title: 'Order Collected',
@@ -766,7 +766,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
     });
 
     if (orderRequest.request_type === 'direct') {
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.USER,
         userId: order.user_id,
         title: 'Order Update',
@@ -938,7 +938,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
     // Notifications
     const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.USER,
       userId: order.user_id,
       title: 'Order Delivered',
@@ -947,7 +947,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       session
     });
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.ADMIN,
       title: `Order Id ${order._id} Delivered`,
       message: `Successfully delivered the order number ${order._id} to ${order.receiver_name}`,
@@ -955,7 +955,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       session
     });
 
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.DP,
       userId: user_id,
       title: 'Order Delivered',

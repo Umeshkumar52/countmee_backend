@@ -3,7 +3,7 @@ import { Order } from '../orders/order.model.js';
 import { User } from '../users/user.model.js';
 import { Wallet } from './wallet.model.js';
 import { WalletTransaction } from './walletTransaction.model.js';
-import { triggerNotification } from "../notifications/notification.service.js";
+import { sendNotification } from "../../common/utils/sendNotification.js";
 import { ROLES } from "../../constants/index.js";
 import { notifyDp } from '../orders/orders.service.js';
 import axios from 'axios';
@@ -80,7 +80,7 @@ export const payOrder = async (user_id, order_id, amount) => {
     await notifyDp(order._id, order.package_id);
 
     // Create success notification
-    await triggerNotification({
+    await sendNotification({
       role: ROLES.USER,
       userId: order.user_id,
       title: 'Payment Successful',
@@ -126,7 +126,7 @@ export const recharge = async (user_id, amount, transaction_id, payment_method, 
       wallet.balance += Number(amount);
       await wallet.save({ session });
 
-      await triggerNotification({
+      await sendNotification({
         role: ROLES.USER,
         userId: user_id,
         title: 'Wallet Recharged',
@@ -244,7 +244,7 @@ export const verifyCashfreePayment = async (order_id) => {
           wallet.balance += transaction.amount;
           await wallet.save({ session });
 
-          await triggerNotification({
+          await sendNotification({
             role: ROLES.USER,
             userId: wallet.user_id,
             title: 'Wallet Recharged',
@@ -310,7 +310,7 @@ export const processRazorpayPayment = async (paymentData) => {
         await notifyDp(order._id, order.package_id);
 
         // Notification logs
-        await triggerNotification({
+        await sendNotification({
           role: ROLES.USER,
           userId: order.user_id,
           title: 'Payment Successful',
