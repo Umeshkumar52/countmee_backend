@@ -22,20 +22,22 @@ export const createPdcDocument = async (pdcData) => {
 };
 
 export const findPdcDocumentByUserId = async (userId) => {
-  const doc = await PdcDocument.findOne({ user_id: userId }).populate('user_id');
+  const doc = await PdcDocument.findOne({ user_id: userId }).populate('user_id', '-password -otp -refreshToken -fcm_tokens -fcm_token');
   if (doc) {
     const obj = doc.toObject();
     obj.userDetails = obj.user_id;
+    obj.user_id = obj.user_id._id;
     return obj;
   }
   return null;
 };
 
 export const findPdcDocumentById = async (id) => {
-  const doc = await PdcDocument.findById(id).populate('user_id');
+  const doc = await PdcDocument.findById(id).populate('user_id', '-password -otp -refreshToken -fcm_tokens -fcm_token');
   if (doc) {
     const obj = doc.toObject();
     obj.userDetails = obj.user_id;
+    obj.user_id = obj.user_id._id;
     return obj;
   }
   return null;

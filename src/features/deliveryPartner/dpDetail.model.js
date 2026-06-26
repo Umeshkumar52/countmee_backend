@@ -10,7 +10,7 @@ const dpDetailSchema = new mongoose.Schema(
     gender: { type: String, required: true },
     address: { type: String, default: null },
     profile_img: { type: String, required: true },
-    online: { type: Number, default: 0 },
+    online: { type: Boolean, default: false },
     document_approval: {
       type: String,
       enum: ["Approved", "Rejected", "Pending"],

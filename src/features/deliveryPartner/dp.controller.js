@@ -594,14 +594,14 @@ export const online = asyncHandler(async (req, res) => {
   );
   await dpService.toggleOnlineStatus(
     user_id,
-    Number(online),
+    online,
     location,
     Number(latitude),
     Number(longitude),
   );
 
   const message =
-    Number(online) === 1 ? "You Are Now Online" : "You Are Offline Now";
+    online ? "You Are Now Online" : "You Are Offline Now";
   return res.json(ApiResponse.success(null, message));
 });
 
@@ -628,7 +628,7 @@ export const customerLocation = asyncHandler(async (req, res) => {
 export const findPdcInRoute = asyncHandler(async (req, res) => {
   const { pickup_lat, pickup_lng, drop_lat, drop_lng } = req.body;
 
-  const warehouses = await PdcDocument.find({ online: 1 });
+  const warehouses = await PdcDocument.find({ online: true });
   const warehousesInRoute = [];
 
   for (const pdc of warehouses) {

@@ -86,7 +86,7 @@ export const getPdcDocumentById = async (id) => {
   return await pdcRepository.findPdcDocumentById(id);
 };
 
-export const updateInnerForm = async (userId, name, email, phone, city, address) => {
+export const updateInnerForm = async (userId, name, email, phone) => {
   const editUser = await pdcRepository.updateUser(userId, { name, email, phone });
   if (!editUser) {
     throw new Error('User not found');
@@ -94,17 +94,13 @@ export const updateInnerForm = async (userId, name, email, phone, city, address)
 
   let pdcDoc = await pdcRepository.findPdcDocumentByUserId(userId);
   const pdcUpdateData = { name, email, phone };
-  if (city) pdcUpdateData.city = city;
-  if (address) pdcUpdateData.address = address;
 
   if (!pdcDoc) {
     pdcDoc = await pdcRepository.createPdcDocument({
       user_id: userId,
       name,
       email,
-      phone,
-      city,
-      address
+      phone
     });
   } else {
     pdcDoc = await pdcRepository.updatePdcDocumentByUserId(userId, pdcUpdateData);

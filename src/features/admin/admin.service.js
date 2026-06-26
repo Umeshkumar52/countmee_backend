@@ -198,7 +198,7 @@ export const addDp = async (body, files) => {
     gender,
     address,
     profile_img: uploadResults.profile_img || null,
-    online: 0,
+    online: false,
     document_approval: 'Approved',
     status: 'Verified'
   });

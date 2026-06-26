@@ -428,7 +428,7 @@ export const notifyDp = async (orderId, packageDetailsId) => {
 
   // Find eligible online DPs
   const eligibleDps = await DpDetail.find({
-    online: 1,
+    online: true,
     document_approval: "Approved",
     user_id: { $nin: busyDpIds },
   }).populate({

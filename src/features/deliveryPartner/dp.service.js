@@ -1317,7 +1317,7 @@ export const resendReceiverOtp = async (orderId, dpId) => {
 };
 
 export const findNearestPdc = async (latitude, longitude, order, maxDistanceKm) => {
-  const pdcs = await PdcDocument.find({ online: 1 });
+  const pdcs = await PdcDocument.find({ online: true });
   if (!pdcs || pdcs.length === 0) {
     return [];
   }
@@ -1368,7 +1368,7 @@ export const checkNearbyDps = async (radius, broadcastId, userId) => {
 
   const onlineDps = await DpDetail.find({
     user_id: { $in: matchedUserIds },
-    online: 1
+    online: true
   });
 
   const oldBroadcasts = await Broadcast.find({ order_id: order._id });

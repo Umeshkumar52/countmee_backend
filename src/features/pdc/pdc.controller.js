@@ -90,16 +90,14 @@ export const pdc_inner_form = asyncHandler(async (req, res) => {
 
 export const register_inner_form = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { name, phone, email, city, address } = req.body;
+  const { name, phone, email } = req.body;
 
   try {
     const document = await pdcService.updateInnerForm(
       userId,
       name,
       email,
-      phone,
-      city,
-      address,
+      phone
     );
     return res.json(
       ApiResponse.success({ document }, "Records Updated Successfully"),
@@ -194,10 +192,11 @@ export const updatePdcStatus = asyncHandler(async (req, res) => {
 
 export const online = asyncHandler(async (req, res) => {
   const { id, online } = req.params;
-  await pdcService.toggleOnlineStatus(id, Number(online));
+  const isOnline = online === "true" || online === "1";
+  await pdcService.toggleOnlineStatus(id, isOnline);
   return res.json(
     ApiResponse.success(
-      { online: Number(online) },
+      { online: isOnline },
       "Online status updated successfully",
     ),
   );
@@ -252,7 +251,7 @@ export const logout = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { fcmToken } = req.body || {};
   if (userId) {
-    await PdcDocument.findOneAndUpdate({ user_id: userId }, { online: 0 });
+    await PdcDocument.findOneAndUpdate({ user_id: userId }, { online: false });
     if (fcmToken) {
       await User.findByIdAndUpdate(userId, { $pull: { fcm_tokens: fcmToken } });
     }

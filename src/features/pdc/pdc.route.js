@@ -49,7 +49,7 @@ router.use(authenticate);
 
 router.get("/submit-doc", submitdocuments);
 router.get("/inner-registered/:pdcid", pdc_inner_form);
-router.post("/inner-register-update", register_inner_form);
+router.put("/inner-register-update", register_inner_form);
 router.get("/submit-documents/:pdcid", submit_pdc_documents);
 router.post(
   "/submit-documents-form",

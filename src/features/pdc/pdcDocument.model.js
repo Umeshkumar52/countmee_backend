@@ -35,7 +35,7 @@ const pdcDocumentSchema = new mongoose.Schema(
     profile_image: { type: String, default: null },
     shop_image: { type: String, default: null },
     status: { type: Number, default: 0 },
-    online: { type: Number, default: 0 },
+    online: { type: Boolean, default: false },
     aadhar_reject_reason: { type: String, default: null },
     pan_reject_reason: { type: String, default: null },
     gst_reject_reason: { type: String, default: null },
