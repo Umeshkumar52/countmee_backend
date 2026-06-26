@@ -64,6 +64,10 @@ export const createOrderSchema = Joi.object({
     "number.base": "Distance must be a valid number",
     "any.required": "Distance is required",
   }),
+  charges: Joi.number().required().messages({
+    "number.base": "Charges must be a valid number",
+    "any.required": "Charges is required",
+  }),
   product_description: Joi.string().trim().allow("", null),
   product_weight: Joi.string().trim().required().messages({
     "string.empty": "Product weight is required",

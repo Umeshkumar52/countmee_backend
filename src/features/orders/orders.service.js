@@ -112,6 +112,7 @@ export const createOrder = async (orderData, files) => {
     product_height,
     product_length,
     product_width,
+    charges,
   } = orderData;
 
   // Upload images to Cloudinary
@@ -141,14 +142,6 @@ export const createOrder = async (orderData, files) => {
       uploadedCloudinaryIds.push(res.public_id);
     }
   }
-
-  const deliverCharge =
-    await ordersRepository.findDeliverChargeByVehicle(mode_of_transport);
-  if (!deliverCharge) {
-    throw new Error(`Vehicle transport type ${mode_of_transport} not found.`);
-  }
-
-  const calc = calculateFinalCharges(deliverCharge, Number(distance));
 
   // Generate OTPs
   const pickup_otp = Math.floor(1000 + Math.random() * 9000);
@@ -183,7 +176,7 @@ export const createOrder = async (orderData, files) => {
           distance: Number(distance),
           pickup_otp,
           drop_otp,
-          charges: calc.total,
+          charges: Number(charges),
           delivery_type: "direct",
 
           status: 0,

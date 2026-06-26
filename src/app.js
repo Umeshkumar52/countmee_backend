@@ -30,26 +30,6 @@ app.use(
   }),
 );
 
-// app.use(
-//   cors({
-//     origin: (origin, callback) => {
-//       // Allow requests with no origin (like mobile apps or curl) or matching allowed list
-//       if (
-//         !origin ||
-//         allowedOrigins.includes("*") ||
-//         allowedOrigins.includes(origin)
-//       ) {
-//         callback(null, true);
-//       } else {
-//         callback(new Error("Not allowed by CORS"));
-//       }
-//     },
-//     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-//     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-//     credentials: true,
-//   }),
-// );
-
 const envOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
   : [];
@@ -106,6 +86,15 @@ app.use(preventHpp);
 // 6. Static File Serving
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
+// webhook
+app.use(
+  "/api/payment/webhook",
+
+  express.raw({
+    type: "*/*",
+  }),
+);
 
 // REST API routes under /api
 app.use("/api", router);
