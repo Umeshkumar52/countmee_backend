@@ -452,8 +452,9 @@ export const getDeliverChargePage = async (req, res, next) => {
 
 export const postUpdateDeliverCharge = async (req, res, next) => {
   try {
-    const { vehicle_type, base_distance, base_price, per_km_price, dp_commission, pdc_commission } = validate(adminValidation.deliverChargeSchema, req.body);
-    const result = await adminService.updateDeliverCharge(vehicle_type, base_distance, base_price, per_km_price, dp_commission, pdc_commission);
+    const validatedBody = validate(adminValidation.deliverChargeSchema, req.body);
+    const updates = Array.isArray(validatedBody) ? validatedBody : [validatedBody];
+    const result = await adminService.updateDeliverCharges(updates);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);

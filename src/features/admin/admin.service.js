@@ -850,49 +850,33 @@ export const getReportData = async (report_type, start_date, end_date) => {
 export const getDeliverCharges = async () => {
   const allCharges = await adminRepository.findAllDeliverCharges();
 
-  const vehicleMap = {
-    'By Hand': 1,
-    'Two Wheeler': 2,
-    'Three Wheeler': 3,
-    'Four Wheeler': 4
-  };
-
-  const vehicleCharges = allCharges
-    .filter(c => vehicleMap[c.vehicle_type] !== undefined)
-    .map(c => ({
-      id: vehicleMap[c.vehicle_type],
-      vehicle_type: c.vehicle_type,
-      base_distance: c.base_distance,
-      base_price: c.base_price,
-      per_km_price: c.per_km_price,
-      dp_commission: c.dp_commission !== undefined ? c.dp_commission : 50,
-      pdc_commission: c.pdc_commission !== undefined ? c.pdc_commission : 5
-    }));
+  const vehicleCharges = allCharges.map(c => ({
+    id: c._id,
+    vehicle_type: c.vehicle_type,
+    base_distance: c.base_distance,
+    base_price: c.base_price,
+    per_km_price: c.per_km_price,
+    dp_commission: c.dp_commission !== undefined ? c.dp_commission : 70,
+    pdc_commission: c.pdc_commission !== undefined ? c.pdc_commission : 5
+  }));
 
   return {
     vehicle_charges: vehicleCharges
   };
 };
 
-export const updateDeliverCharge = async (vehicle_type, base_distance, base_price, per_km_price, dp_commission, pdc_commission) => {
-  const vehicleMap = {
-    '1': 'By Hand',
-    '2': 'Two Wheeler',
-    '3': 'Three Wheeler',
-    '4': 'Four Wheeler',
-    'By Hand': 'By Hand',
-    'Two Wheeler': 'Two Wheeler',
-    'Three Wheeler': 'Three Wheeler',
-    'Four Wheeler': 'Four Wheeler'
-  };
-  const typeName = vehicleMap[vehicle_type] || 'Unknown';
-  await adminRepository.updateDeliverCharge(typeName, {
-    base_distance,
-    base_price,
-    per_km_price,
-    dp_commission,
-    pdc_commission
-  });
+export const updateDeliverCharges = async (updates) => {
+  for (const update of updates) {
+    const typeName = update.vehicle_type;
+    await adminRepository.updateDeliverCharge(typeName, {
+      base_distance: update.base_distance,
+      base_price: update.base_price,
+      per_km_price: update.per_km_price,
+      dp_commission: update.dp_commission,
+      pdc_commission: update.pdc_commission
+    });
+  }
+
   return { message: 'Vehicle payout parameters updated successfully' };
 };
 

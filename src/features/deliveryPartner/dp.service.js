@@ -265,7 +265,7 @@ export const getNewOrders = async (user_id) => {
     jsonOrder.dist = jsonOrder.broadcast?.distance || `${order.distance} km`;
 
     const chargeConfig = chargeMap[order.mode_of_transport];
-    const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.5;
+    const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.7;
 
     const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
     const distributedDpAmount = await DpPayout.find({ order_id: order._id });
@@ -327,7 +327,7 @@ export const orderAccept = async (order_id, status, user_id) => {
 
       // Payout allocation settings
       const chargeConfig = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).session(session);
-      const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.5;
+      const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.7;
       const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
 
       if (orderRequest.request_type === 'direct') {
@@ -845,7 +845,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       let earning = 0;
 
       if (orderRequest.request_type === 'direct') {
-        const perKmPrice = chargeConfig && chargeConfig.dp_commission != null ? chargeConfig.dp_commission : 50;
+        const perKmPrice = chargeConfig && chargeConfig.dp_commission != null ? chargeConfig.dp_commission : 70;
         earning = Math.round(order.charges * (perKmPrice / 100) * 100) / 100;
       } else {
         const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.7;

@@ -415,7 +415,7 @@ export const reportDataSchema = Joi.object({
     })
 });
 
-export const deliverChargeSchema = Joi.object({
+const deliverChargeItemSchema = Joi.object({
   vehicle_type: Joi.string()
     .required()
     .messages({
@@ -453,6 +453,11 @@ export const deliverChargeSchema = Joi.object({
       'any.required': 'PDC commission is required'
     })
 });
+
+export const deliverChargeSchema = Joi.alternatives().try(
+  deliverChargeItemSchema,
+  Joi.array().items(deliverChargeItemSchema).min(1)
+);
 
 
 
