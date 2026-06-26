@@ -434,3 +434,14 @@ export const dropOrderToCustomerSchema = Joi.object({
       'any.required': 'Drop OTP is required'
     })
 });
+
+export const resendOtpSchema = Joi.object({
+  orderId: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'Order ID cannot be empty',
+      'string.pattern.base': 'Invalid Order ID format',
+      'any.required': 'Order ID is required'
+    })
+});

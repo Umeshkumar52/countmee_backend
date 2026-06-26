@@ -37,8 +37,8 @@ const pickupImageUploadFields = uploadFields([
 router.use(authenticate);
 
 // OTP Resend
-router.get('/resendPickupOtp/:orderId', dpController.resendPickupOtp);
-router.get('/resendReceiverOtp/:orderId', dpController.resendReceiverOtp);
+router.post('/resendPickupOtp', dpController.resendPickupOtp);
+router.post('/resendReceiverOtp', dpController.resendReceiverOtp);
 
 // Profile and details submission
 router.post('/details', uploadSingle('profile_img'), dpController.dpDetails);

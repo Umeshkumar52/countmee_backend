@@ -734,14 +734,16 @@ export const cancelBroadcast = asyncHandler(async (req, res) => {
 });
 
 export const resendPickupOtp = asyncHandler(async (req, res) => {
-  const { orderId } = req.params;
-  const result = await dpService.resendPickupOtp(orderId);
+  const { orderId } = validate(dpValidation.resendOtpSchema, req.body);
+  const dpId = req.user._id;
+  const result = await dpService.resendPickupOtp(orderId, dpId);
   return res.json(ApiResponse.success(null, result.message));
 });
 
 export const resendReceiverOtp = asyncHandler(async (req, res) => {
-  const { orderId } = req.params;
-  const result = await dpService.resendReceiverOtp(orderId);
+  const { orderId } = validate(dpValidation.resendOtpSchema, req.body);
+  const dpId = req.user._id;
+  const result = await dpService.resendReceiverOtp(orderId, dpId);
   return res.json(ApiResponse.success(null, result.message));
 });
 

@@ -1266,32 +1266,51 @@ export const getDocumentVerificationStatus = async (dp_id) => {
   };
 };
 
-export const resendPickupOtp = async (orderId) => {
+export const resendPickupOtp = async (orderId, dpId) => {
   const order = await Order.findById(orderId);
   if (!order) {
     throw new Error('Order not found');
   }
 
-  const broadcast = order.broadcast_id ? await Broadcast.findById(order.broadcast_id) : null;
-
-  let otp = order.pickup_otp;
-  if (broadcast && order.delivery_type !== 'direct') {
-    otp = broadcast.pickup_otp;
+  const orderRequest = await OrderRequest.findOne({ order_id: orderId, accepted_by: dpId }).sort({ created_at: -1 });
+  if (!orderRequest) {
+    throw new Error('Not authorized to resend OTP for this order');
   }
 
-  const message = `Your CountMee pickup OTP for Order #${order._id} is ${otp}`;
+  const newOtp = Math.floor(1000 + Math.random() * 9000);
+
+  if (orderRequest.request_type === 'direct') {
+    order.pickup_otp = newOtp;
+    await order.save();
+  } else {
+    const broadcast = await Broadcast.findById(orderRequest.broadcast_id);
+    if (!broadcast) throw new Error('Broadcast not found');
+    broadcast.pickup_otp = newOtp;
+    await broadcast.save();
+  }
+
+  const message = `Your CountMee pickup OTP for Order #${order._id} is ${newOtp}`;
   await sendOTPViaSMS(order.sender_phone, message);
 
   return { message: 'Pickup OTP resent to sender' };
 };
 
-export const resendReceiverOtp = async (orderId) => {
+export const resendReceiverOtp = async (orderId, dpId) => {
   const order = await Order.findById(orderId);
   if (!order) {
     throw new Error('Order not found');
   }
 
-  const message = `Your CountMee delivery verification code is ${order.drop_otp}`;
+  const orderRequest = await OrderRequest.findOne({ order_id: orderId, accepted_by: dpId }).sort({ created_at: -1 });
+  if (!orderRequest) {
+    throw new Error('Not authorized to resend OTP for this order');
+  }
+
+  const newOtp = Math.floor(1000 + Math.random() * 9000);
+  order.drop_otp = newOtp;
+  await order.save();
+
+  const message = `Your CountMee delivery verification code is ${newOtp}`;
   await sendOTPViaSMS(order.receiver_phone, message);
 
   return { message: 'Delivery OTP resent to receiver' };
