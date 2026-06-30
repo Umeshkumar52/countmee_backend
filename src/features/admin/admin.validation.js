@@ -383,10 +383,16 @@ export const assignDeliveryboySchema = Joi.object({
 });
 
 export const minBroadcastSchema = Joi.object({
+  role: Joi.string().required().messages({
+    'string.base': 'Role must be a string',
+    'any.required': 'Role is required'
+  }),
   distance: Joi.number()
+    .min(0)
     .required()
     .messages({
       'number.base': 'Distance must be a valid number',
+      'number.min': 'Distance cannot be negative',
       'any.required': 'Distance is required'
     })
 });
@@ -452,7 +458,12 @@ const deliverChargeItemSchema = Joi.object({
     .messages({
       'number.base': 'PDC commission must be a number',
       'any.required': 'PDC commission is required'
-    })
+    }),
+  max_weight: Joi.number().optional().default(0),
+  max_height: Joi.number().optional().default(0),
+  max_width: Joi.number().optional().default(0),
+  max_length: Joi.number().optional().default(0),
+  dimension_unit: Joi.string().valid('cm', 'm', 'ft', 'inch').optional().default('cm')
 });
 
 export const deliverChargeSchema = Joi.alternatives().try(

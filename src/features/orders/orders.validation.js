@@ -86,18 +86,52 @@ export const createOrderSchema = Joi.object({
     "string.empty": "Size of package is required",
     "any.required": "Size of package is required",
   }),
-  product_height: Joi.string().trim().required().messages({
-    "string.empty": "Height of product is required",
-    "any.required": "Height of product is required",
+  product_height: Joi.string().trim().when('different_dimantion', {
+    is: true,
+    then: Joi.optional().allow("", null),
+    otherwise: Joi.required().messages({
+      "string.empty": "Height of product is required",
+      "any.required": "Height of product is required",
+    })
   }),
-  product_width: Joi.string().trim().required().messages({
-    "string.empty": "Width of product is required",
-    "any.required": "Width of product is required",
+  product_width: Joi.string().trim().when('different_dimantion', {
+    is: true,
+    then: Joi.optional().allow("", null),
+    otherwise: Joi.required().messages({
+      "string.empty": "Width of product is required",
+      "any.required": "Width of product is required",
+    })
   }),
-  product_length: Joi.string().trim().required().messages({
-    "string.empty": "Length of product is required",
-    "any.required": "Length of product is required",
+  product_length: Joi.string().trim().when('different_dimantion', {
+    is: true,
+    then: Joi.optional().allow("", null),
+    otherwise: Joi.required().messages({
+      "string.empty": "Length of product is required",
+      "any.required": "Length of product is required",
+    })
   }),
+  dimension_unit: Joi.string().valid('cm', 'm', 'ft', 'inch').when('different_dimantion', {
+    is: true,
+    then: Joi.optional().allow("", null),
+    otherwise: Joi.required().messages({
+      "string.empty": "Dimension unit is required",
+      "any.required": "Dimension unit is required",
+      "any.only": "Dimension unit must be one of cm, m, ft, inch"
+    })
+  }),
+  different_dimantion: Joi.boolean().default(false),
+  dimensions_list: Joi.array().items(
+    Joi.object({
+      length: Joi.string().required(),
+      width: Joi.string().required(),
+      height: Joi.string().required(),
+      dimension_unit: Joi.string().valid('cm', 'm', 'ft', 'inch').required()
+    })
+  ).when('different_dimantion', {
+    is: true,
+    then: Joi.required(),
+    otherwise: Joi.optional()
+  })
 });
 
 export const cancelOrderSchema = Joi.object({

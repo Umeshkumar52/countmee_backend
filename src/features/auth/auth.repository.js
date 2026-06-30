@@ -17,7 +17,7 @@ export const findUserByPhoneAndType = async (phone, role) => {
 };
 
 export const findUserByEmailPhoneAndType = async (email, phone, role) => {
-  return await User.findOne({ email, phone, role });
+  return await User.findOne({ $or: [{ email }, { phone }], role });
 };
 
 export const findUserById = async (id) => {

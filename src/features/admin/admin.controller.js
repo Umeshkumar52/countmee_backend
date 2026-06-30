@@ -224,8 +224,8 @@ export const getBroadcastPage = async (req, res, next) => {
 
 export const postMinBroadcast = async (req, res, next) => {
   try {
-    const { distance } = validate(adminValidation.minBroadcastSchema, req.body);
-    const result = await adminService.updateMinBroadcastDistance(distance);
+    const { role, distance } = validate(adminValidation.minBroadcastSchema, req.body);
+    const result = await adminService.updateMinBroadcastDistance(role, distance);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);

@@ -20,7 +20,7 @@ const dpUploadFields = uploadFields([
   { name: 'residence_img', maxCount: 1 },
   { name: 'vehicle_img', maxCount: 1 },
   { name: 'bank_imagefront', maxCount: 1 },
-  { name: 'bank_imgeback', maxCount: 1 }
+  { name: 'bank_imageback', maxCount: 1 }
 ]);
 
 const pdcUploadFields = uploadFields([

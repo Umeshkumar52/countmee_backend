@@ -1,5 +1,7 @@
 import jwt from 'jsonwebtoken';
 import * as adminRepository from './admin.repository.js';
+import { sendNotification } from '../../common/utils/sendNotification.js';
+import { ROLES } from '../../constants/index.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtsecretkeyforsecurityandhashing';
 
@@ -38,6 +40,8 @@ export const getWalletsList = async (searchQuery, balanceRange) => {
   }
 
   const allCustomers = await adminRepository.findAllCustomers();
+  const allWallets = await adminRepository.findAllWallets();
+  const walletMap = new Map(allWallets.map(w => [w.user_id ? w.user_id.toString() : '', w]));
   
   // Filter by query and balance locally to preserve legacy search pattern
   let filteredCustomers = allCustomers;
@@ -50,7 +54,8 @@ export const getWalletsList = async (searchQuery, balanceRange) => {
 
   if (balanceRange) {
     filteredCustomers = filteredCustomers.filter(cust => {
-      const balance = cust.wallet ? cust.wallet.balance : 0;
+      const wallet = walletMap.get(cust._id.toString());
+      const balance = wallet ? wallet.balance : 0;
       if (balanceRange === '0-100') return balance >= 0 && balance <= 100;
       if (balanceRange === '101-500') return balance >= 101 && balance <= 500;
       if (balanceRange === '501-1000') return balance >= 501 && balance <= 1000;
@@ -59,10 +64,13 @@ export const getWalletsList = async (searchQuery, balanceRange) => {
     });
   }
 
-  const customersData = filteredCustomers.map(cust => ({
-    ...cust.toObject(),
-    wallet: cust.wallet ? cust.wallet.toObject() : { balance: 0 }
-  }));
+  const customersData = filteredCustomers.map(cust => {
+    const wallet = walletMap.get(cust._id.toString());
+    return {
+      ...cust,
+      wallet: wallet ? (wallet.toObject ? wallet.toObject() : wallet) : { balance: 0 }
+    };
+  });
 
   const joiningBonus = config ? { value: config.joining_bonus } : { value: 0 };
 
@@ -76,7 +84,8 @@ export const getWalletsList = async (searchQuery, balanceRange) => {
 
   const formattedLogs = massCreditLogs.map(log => ({
     ...log.toObject(),
-    admin: log.admin_id
+    user_count: log.recipients_count,
+    admin: log.credited_by
   }));
 
   return {
@@ -143,6 +152,13 @@ export const creditCustomer = async (user_id, amount, description, verificationT
     transaction_type: 'manual_credit'
   });
 
+  await sendNotification({
+    role: ROLES.USER,
+    userId: wallet.user_id,
+    title: 'Wallet Credited',
+    message: `Your wallet has been credited with ₹${amount}. Reason: ${description || 'Admin Credit'}`
+  });
+
   return { wallet, transaction };
 };
 
@@ -154,9 +170,10 @@ export const creditMass = async (adminEmail, amount, description, verificationTo
 
   const log = await adminRepository.createMassCreditLog({
     amount: Number(amount),
-    user_count: customers.length,
+    recipients_count: customers.length,
     description,
-    admin_id: adminUser ? adminUser._id : null
+    credited_by: adminUser ? adminUser._id : null,
+    role: 'CUSTOMER'
   });
 
   for (const customer of customers) {
@@ -176,6 +193,13 @@ export const creditMass = async (adminEmail, amount, description, verificationTo
       description,
       transaction_type: 'mass_credit',
       reference_id: log._id
+    });
+
+    await sendNotification({
+      role: ROLES.USER,
+      userId: customer._id,
+      title: 'Promotional Wallet Credit',
+      message: `Your wallet has been credited with ₹${amount}. Reason: ${description}`
     });
   }
 
@@ -234,8 +258,8 @@ export const getUserTransactions = async (user_id) => {
 export const getMassCreditRecipients = async (log_id) => {
   const transactions = await adminRepository.findWalletTransactionsByLogId(log_id);
   const recipients = transactions.map(trx => ({
-    name: trx.user_id ? trx.user_id.name : 'N/A',
-    phone: trx.user_id ? trx.user_id.phone : 'N/A',
+    name: trx.wallet_id && trx.wallet_id.user_id ? trx.wallet_id.user_id.name : 'N/A',
+    phone: trx.wallet_id && trx.wallet_id.user_id ? trx.wallet_id.user_id.phone : 'N/A',
     amount: trx.amount,
     created_at: trx.created_at
   }));

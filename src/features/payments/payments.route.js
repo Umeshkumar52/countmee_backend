@@ -4,8 +4,13 @@ import { authenticate } from "../../common/middlewares/auth.middleware.js";
 
 const router = Router();
 
+// Cashfree Webhook (Unauthenticated)
+router.post("/cashfree-webhook", paymentsController.cashfreeWebhookController);
+
 // Apply auth middleware to all payments/wallet endpoints
 router.use(authenticate);
+// razorpay payment
+router.post("/webhook", paymentsController.razorpayWebhook);
 router.post("/", paymentsController.processRazorpayPayment);
 // Wallet endpoints under `/api/payment` prefix
 router.get("/wallet/balance/:user_id", paymentsController.getBalance);

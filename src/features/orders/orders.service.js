@@ -11,7 +11,10 @@ import {
   uploadToCloudinary,
   deleteFromCloudinary,
 } from "../../common/services/cloudinary.service.js";
-import { distanceBetween } from "../tracking/maps.service.js";
+import { distanceBetween, haversineGreatCircleDistance } from "../tracking/maps.service.js";
+import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
+import { MinBroadcastDist } from "../tracking/minBroadcast.model.js";
+import { sendNotificationToUser } from "../../common/services/socket.service.js";
 import mongoose from "mongoose";
 
 /**
@@ -81,6 +84,69 @@ export const getCharges = async (mode_of_transport, pickup_lat, pickup_lng, drop
   };
 };
 
+export const broadcastOrderToNearbyDPs = async (order, packageDetail) => {
+  try {
+    // 1. Get minimum broadcast distance for DP
+    const minBroadcast = await MinBroadcastDist.findOne({ role: { $regex: /^dp$/i } });
+    const maxDistanceKm = minBroadcast ? minBroadcast.minimum_broadcast_distance : 5;
+    const maxDistanceMeters = maxDistanceKm * 1000;
+
+    // 2. Fetch DP Commission logic for the given vehicle type
+    const deliverCharge = await ordersRepository.findDeliverChargeByVehicle(order.mode_of_transport);
+    if (!deliverCharge) {
+      console.warn(`[Broadcast] No deliver charge found for ${order.mode_of_transport}`);
+      return;
+    }
+
+    // 3. Calculate DP Earning exactly
+    const dp_earning = (order.charges * (deliverCharge.dp_commission / 100)).toFixed(2);
+
+    // 4. Find Active DPs whose vehicle matches
+    const activeDps = await DpDetail.find({ online: 1 });
+    const activeDpUserIds = activeDps.map(dp => dp.user_id);
+
+    const matchingDocuments = await DpDocument.find({
+      user_id: { $in: activeDpUserIds },
+      vehicle_type: order.mode_of_transport
+    });
+    
+    const matchedUserIds = new Set(matchingDocuments.map(doc => doc.user_id.toString()));
+    const targetDps = activeDps.filter(dp => matchedUserIds.has(dp.user_id.toString()));
+
+    let sentCount = 0;
+    // 5. Geo-filter and Broadcast
+    for (const dp of targetDps) {
+      if (dp.latitude && dp.longitude) {
+        const distanceMeters = haversineGreatCircleDistance(
+          order.sender_latitude,
+          order.sender_longitude,
+          dp.latitude,
+          dp.longitude
+        );
+
+        if (distanceMeters <= maxDistanceMeters) {
+          // Fire Socket notification
+          sendNotificationToUser(dp.user_id, {
+            type: "NEW_ORDER_BROADCAST",
+            order_id: order._id,
+            pickup_location: order.pickup_location,
+            drop_location: order.drop_location,
+            distance: order.distance,
+            dp_earning: Number(dp_earning),
+            product_description: packageDetail.product_description,
+            no_of_items: packageDetail.no_of_items
+          });
+          sentCount++;
+        }
+      }
+    }
+
+    console.log(`[Broadcast] Order ${order._id} broadcasted to ${sentCount} nearby DPs`);
+  } catch (error) {
+    console.error("[Broadcast] Error broadcasting to DPs:", error.message);
+  }
+};
+
 export const createOrder = async (orderData, files) => {
   const {
     user_id,
@@ -112,6 +178,9 @@ export const createOrder = async (orderData, files) => {
     product_height,
     product_length,
     product_width,
+    different_dimantion,
+    dimension_unit,
+    dimensions_list,
     charges,
   } = orderData;
 
@@ -182,7 +251,7 @@ export const createOrder = async (orderData, files) => {
           status: 0,
         },
       ],
-      { session },
+      { session, ordered: true },
     );
 
     const newOrder = order[0];
@@ -200,12 +269,15 @@ export const createOrder = async (orderData, files) => {
           product_height,
           product_length,
           product_width,
+          dimension_unit,
+          different_dimantion,
+          dimensions_list,
           image1: image1Url,
           image2: image2Url,
           image3: image3Url,
         },
       ],
-      { session },
+      { session, ordered: true },
     );
 
     newOrder.package_id = packageDetail[0]._id;
@@ -231,6 +303,11 @@ export const createOrder = async (orderData, files) => {
 
     await session.commitTransaction();
     session.endSession();
+
+    // Fire-and-forget broadcast
+    broadcastOrderToNearbyDPs(newOrder, packageDetail[0]).catch(err => 
+      console.error("[Broadcast] Background execution failed:", err)
+    );
 
     return { order: newOrder, packageDetails: packageDetail[0] };
   } catch (error) {
