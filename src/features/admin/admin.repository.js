@@ -184,14 +184,62 @@ export const deletePdcDocument = async (userId) => {
   return await PdcDocument.deleteOne({ user_id: userId });
 };
 
-export const findMinBroadcast = async () => {
-  return await MinBroadcastDist.findOne();
+export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
+  const session = await Order.startSession();
+  session.startTransaction();
+  try {
+    // 1. Update Order
+    await Order.updateOne(
+      { _id: order_id },
+      {
+        pickup_dp_id: dp_id,
+        status_completed: 'order accepted',
+        dp_accept_time: new Date()
+      },
+      { session }
+    );
+
+    // 2. Cancel active uncompleted OrderRequests for this order to prevent conflicts
+    await OrderRequest.updateMany(
+      { order_id, complete_status: null },
+      { status: 0 },
+      { session }
+    );
+
+    // 3. Create active OrderRequest for this assigned DP
+    await OrderRequest.create(
+      [{
+        order_id,
+        requested_by: customer_id,
+        notified_ids: [dp_id],
+        status: 1,
+        request_type: 'direct',
+        accepted_by: dp_id
+      }],
+      { session, ordered: true }
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
+  }
 };
 
-export const updateMinBroadcast = async (distance) => {
+export const getOverallStats = async () => {
+  return await MinBroadcastDist.find();
+};
+
+export const getMinBroadcast = async () => {
+  return await MinBroadcastDist.find();
+};
+
+export const updateMinBroadcast = async (role, distance) => {
   return await MinBroadcastDist.updateOne(
-    {},
-    { minimum_broadcast_distance: distance },
+    { role },
+    { role, minimum_broadcast_distance: distance },
     { upsert: true },
   );
 };
@@ -342,6 +390,10 @@ export const findWalletByUserId = async (userId) => {
   return await Wallet.findOne({ user_id: userId });
 };
 
+export const findAllWallets = async () => {
+  return await Wallet.find({});
+};
+
 export const createWallet = async (data) => {
   return await Wallet.create(data);
 };
@@ -360,7 +412,10 @@ export const findWalletTransactionsByLogId = async (logId) => {
   return await WalletTransaction.find({
     transaction_type: "mass_credit",
     reference_id: logId,
-  }).populate("user_id");
+  }).populate({
+    path: "wallet_id",
+    populate: { path: "user_id" }
+  });
 };
 
 export const createMassCreditLog = async (data) => {
@@ -369,7 +424,7 @@ export const createMassCreditLog = async (data) => {
 
 export const findMassCreditLogs = async () => {
   return await MassCreditLog.find()
-    .populate("admin_id")
+    .populate("credited_by")
     .sort({ created_at: -1 });
 };
 

@@ -34,12 +34,12 @@ export const findOrderById = async (id) => {
   return orderObj;
 };
 
-export const createOrder = async (orderData) => {
-  return await Order.create(orderData);
+export const createOrder = async (orderData, options) => {
+  return await Order.create(orderData, options);
 };
 
-export const createPackageDetail = async (packageData) => {
-  return await PackageDetail.create(packageData);
+export const createPackageDetail = async (packageData, options) => {
+  return await PackageDetail.create(packageData, options);
 };
 
 export const updateOrder = async (id, updateData) => {

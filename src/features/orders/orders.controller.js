@@ -6,6 +6,17 @@ import * as ordersValidation from "./orders.validation.js";
 import { ApiError } from "../../common/utils/ApiError.js";
 
 export const createOrder = asyncHandler(async (req, res) => {
+  if (typeof req.body.different_dimantion === 'string') {
+    req.body.different_dimantion = req.body.different_dimantion === 'true';
+  }
+  if (req.body.dimensions_list && typeof req.body.dimensions_list === 'string') {
+    try {
+      req.body.dimensions_list = JSON.parse(req.body.dimensions_list);
+    } catch (e) {
+      throw new ApiError(400, "Invalid JSON format for dimensions_list");
+    }
+  }
+
   req.body = validate(ordersValidation.createOrderSchema, req.body);
   
   const fileErrors = {};

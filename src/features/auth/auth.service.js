@@ -12,6 +12,9 @@ import {
 import mongoose from "mongoose";
 import { OrderRequest } from "../orders/orderRequest.model.js";
 import { Order } from "../orders/order.model.js";
+import { WalletConfig } from "../payments/walletConfig.model.js";
+import { Wallet } from "../payments/wallet.model.js";
+import { WalletTransaction } from "../payments/walletTransaction.model.js";
 import { deleteFromCloudinary } from "../../common/services/cloudinary.service.js";
 
 const extractCloudinaryPublicId = (url) => {
@@ -49,6 +52,36 @@ export const registerCustomer = async (name, phone, email, dob) => {
   newUser.otp = otp;
   await newUser.save();
 
+  // Handle Joining Bonus
+  try {
+    const config = await WalletConfig.findOne();
+    console.log("wallet", config);
+    if (config && config.joining_bonus > 0) {
+      const wallet = await Wallet.create({
+        user_id: newUser._id,
+        balance: config.joining_bonus,
+      });
+
+      await WalletTransaction.create({
+        wallet_id: wallet._id,
+        user_id: newUser._id,
+        amount: config.joining_bonus,
+        type: "credit",
+        description: "Welcome Joining Bonus",
+        transaction_type: "joining_bonus",
+      });
+
+      await sendNotification({
+        role: ROLES.USER,
+        userId: newUser._id,
+        title: "Joining Bonus Credited!",
+        message: `Your wallet has been credited with ₹${config.joining_bonus} as a welcome bonus.`,
+      });
+    }
+  } catch (err) {
+    console.error("Error applying joining bonus:", err);
+  }
+
   // Send OTP
   const message = `Your CountMee Courier verification code is ${otp}`;
   await sendOTPViaSMS(phone, message);
@@ -72,7 +105,7 @@ export const registerCustomer = async (name, phone, email, dob) => {
   newUser.refreshToken = refreshToken;
   await newUser.save();
 
-  return { user: newUser, token, refreshToken };
+  return { user: newUser, token };
 };
 
 export const loginCustomer = async (phone) => {

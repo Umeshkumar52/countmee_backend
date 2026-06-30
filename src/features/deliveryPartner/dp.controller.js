@@ -287,7 +287,7 @@ export const saveBroadcastPoint = asyncHandler(async (req, res) => {
     });
   }
 
-  const minBroadcast = await mongoose.model("MinBroadcastDist").findOne();
+  const minBroadcast = await mongoose.model("MinBroadcastDist").findOne({ role: "DP" });
   const searchRadius = minBroadcast
     ? minBroadcast.minimum_broadcast_distance * 1000
     : Number(radius) || 1000;

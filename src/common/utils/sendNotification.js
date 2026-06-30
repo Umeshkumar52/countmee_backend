@@ -42,7 +42,7 @@ export const sendNotification = async ({ role, title, message, userId, orderId, 
     }));
 
     // Notification.create will automatically trigger the 'save' hooks for Socket & FCM
-    await Notification.create(notifications, session ? { session } : undefined);
+    await Notification.create(notifications, session ? { session, ordered: true } : undefined);
 
     console.log(`[Notification] Successfully dispatched ${usersToNotify.length} notifications for role: ${role}.`);
   } catch (error) {

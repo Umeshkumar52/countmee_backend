@@ -176,7 +176,7 @@ export const addDp = async (body, files) => {
   const uploadResults = {};
   const fileFields = [
     'profile_img', 'aadhar_imgfront', 'aadhar_imgback', 'rc_imgfront', 'rc_imgback',
-    'dl_imgfront', 'dl_imgback', 'residence_img', 'vehicle_img', 'bank_imagefront', 'bank_imgeback'
+    'dl_imgfront', 'dl_imgback', 'residence_img', 'vehicle_img', 'bank_imagefront', 'bank_imageback'
   ];
 
   for (const field of fileFields) {
@@ -219,7 +219,7 @@ export const addDp = async (body, files) => {
     bank_acc_number,
     bank_ifsc,
     bank_imagefront: uploadResults.bank_imagefront || null,
-    bank_imgeback: uploadResults.bank_imgeback || null,
+    bank_imageback: uploadResults.bank_imageback || null,
     vehicle_number,
     residence_img: uploadResults.residence_img || null,
     vehicle_img: uploadResults.vehicle_img || null,
@@ -260,7 +260,7 @@ export const editDp = async (id, body, files) => {
   const uploadResults = {};
   const fileFields = [
     'profile_img', 'aadhar_imgfront', 'aadhar_imgback', 'rc_imgfront', 'rc_imgback',
-    'dl_imgfront', 'dl_imgback', 'residence_img', 'vehicle_img', 'bank_imagefront', 'bank_imgeback'
+    'dl_imgfront', 'dl_imgback', 'residence_img', 'vehicle_img', 'bank_imagefront', 'bank_imageback'
   ];
 
   for (const field of fileFields) {
@@ -281,7 +281,7 @@ export const editDp = async (id, body, files) => {
   // Map remaining file fields to docUpdate
   const remainingFileFields = [
     'aadhar_imgfront', 'aadhar_imgback', 'rc_imgfront', 'rc_imgback',
-    'dl_imgfront', 'dl_imgback', 'residence_img', 'vehicle_img', 'bank_imagefront', 'bank_imgeback'
+    'dl_imgfront', 'dl_imgback', 'residence_img', 'vehicle_img', 'bank_imagefront', 'bank_imageback'
   ];
   for (const f of remainingFileFields) {
     if (uploadResults[f]) {
@@ -526,23 +526,21 @@ export const updatePdcDocStatus = async (user, field, value) => {
 };
 
 export const getBroadcastDistance = async () => {
-  const distRecord = await adminRepository.findMinBroadcast();
-  const distance = distRecord ? (distRecord.minimum_broadcast_distance ?? distRecord.distance ?? 0) : 0;
-  const broadcasts = await adminRepository.findAllBroadcastPoints();
-  const formattedBroadcasts = broadcasts.map(b => ({
-    id: b._id,
-    name: b.name,
-    radius: b.radius,
-    lat: b.lat,
-    lon: b.lon,
-    active: b.active
-  }));
-  return { minBroadcastDistance: distance, broadcasts: formattedBroadcasts };
+  const minBroadcasts = await adminRepository.getMinBroadcast();
+  
+  const distancesByRole = {};
+  if (minBroadcasts && minBroadcasts.length > 0) {
+    minBroadcasts.forEach(mb => {
+      distancesByRole[mb.role] = mb.minimum_broadcast_distance;
+    });
+  }
+
+  return { distancesByRole };
 };
 
-export const updateMinBroadcastDistance = async (distance) => {
-  await adminRepository.updateMinBroadcast(distance);
-  return { message: 'Minimum broadcast distance updated' };
+export const updateMinBroadcastDistance = async (role, distance) => {
+  await adminRepository.updateMinBroadcast(role, distance);
+  return { message: 'Minimum broadcast distance updated for ' + role };
 };
 
 export const getOrders = async (statusList) => {
@@ -593,7 +591,10 @@ export const getAssignOrdersSelect = async (orderId) => {
 };
 
 export const assignDeliveryboy = async (order_id, dp_id) => {
-  await adminRepository.updateOrder(order_id, { pickup_dp_id: dp_id, status: 'Accepted' });
+  const order = await adminRepository.findOrderById(order_id);
+  if (!order) throw new Error('Order not found');
+
+  await adminRepository.assignDpToOrder(order_id, dp_id, order.user_id);
   return { message: 'Order assigned successfully' };
 };
 
@@ -863,7 +864,12 @@ export const getDeliverCharges = async () => {
     base_price: c.base_price,
     per_km_price: c.per_km_price,
     dp_commission: c.dp_commission !== undefined ? c.dp_commission : 70,
-    pdc_commission: c.pdc_commission !== undefined ? c.pdc_commission : 5
+    pdc_commission: c.pdc_commission !== undefined ? c.pdc_commission : 5,
+    max_weight: c.max_weight,
+    max_height: c.max_height,
+    max_width: c.max_width,
+    max_length: c.max_length,
+    dimension_unit: c.dimension_unit
   }));
 
   return {
@@ -879,7 +885,12 @@ export const updateDeliverCharges = async (updates) => {
       base_price: update.base_price,
       per_km_price: update.per_km_price,
       dp_commission: update.dp_commission,
-      pdc_commission: update.pdc_commission
+      pdc_commission: update.pdc_commission,
+      max_weight: update.max_weight !== undefined ? update.max_weight : 0,
+      max_height: update.max_height !== undefined ? update.max_height : 0,
+      max_width: update.max_width !== undefined ? update.max_width : 0,
+      max_length: update.max_length !== undefined ? update.max_length : 0,
+      dimension_unit: update.dimension_unit || 'cm'
     });
   }
 
