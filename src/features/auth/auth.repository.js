@@ -21,7 +21,7 @@ export const findUserByEmailPhoneAndType = async (email, phone, role) => {
 };
 
 export const findUserById = async (id) => {
-  const user = await User.findById(id);
+  const user = await User.findById(id).select('+otp');
   if (user) {
     const userObj = user.toObject();
     if (user.role === ROLES.DP) {

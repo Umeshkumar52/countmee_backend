@@ -17,10 +17,11 @@ import mongoose from "mongoose";
 import { OrderRequest } from "../orders/orderRequest.model.js";
 
 export const dpDetails = asyncHandler(async (req, res) => {
-  const { user_id, gender, address } = validate(
+  const { gender, address } = validate(
     dpValidation.dpDetailsSchema,
     req.body,
   );
+  const user_id = req.user.id;
   const profileImgPath = req.file ? req.file.path : null;
 
   if (!profileImgPath) {
@@ -74,7 +75,7 @@ export const getTravelStates = asyncHandler(async (req, res) => {
 });
 
 export const dpDocuments = asyncHandler(async (req, res) => {
-  const { user_id } = req.body;
+  const user_id = req.user.id;
   await dpService.saveDocuments(user_id, req.body, req.files);
   return res.json(
     ApiResponse.success({ argumnet2: true }, "document submited"),
@@ -82,7 +83,8 @@ export const dpDocuments = asyncHandler(async (req, res) => {
 });
 
 export const dpReference = asyncHandler(async (req, res) => {
-  const { user_id } = validate(dpValidation.dpReferenceSchema, req.body);
+  validate(dpValidation.dpReferenceSchema, req.body);
+  const user_id = req.user.id;
   await dpService.saveReference(user_id, req.body);
   return res.json(
     ApiResponse.success({ argumnet3: true }, "document submited"),
@@ -90,7 +92,8 @@ export const dpReference = asyncHandler(async (req, res) => {
 });
 
 export const dpDocumentStatus = asyncHandler(async (req, res) => {
-  const { user_id } = validate(dpValidation.dpDocumentStatusSchema, req.body);
+  validate(dpValidation.dpDocumentStatusSchema, req.body);
+  const user_id = req.user.id;
   const documentStatus = await dpService.getDocuments(user_id);
   return res.json(ApiResponse.success({ documentStatus }, "document status"));
 });
@@ -102,7 +105,7 @@ export const documents = asyncHandler(async (req, res) => {
 });
 
 export const documentsReupload = asyncHandler(async (req, res) => {
-  const { user_id } = req.body;
+  const user_id = req.user.id;
   const success = await dpService.documentsReupload(user_id, req.files);
   if (success) {
     return res.json(ApiResponse.success(null, "documents uploaded"));
@@ -606,7 +609,8 @@ export const online = asyncHandler(async (req, res) => {
 });
 
 export const updateBankDetail = asyncHandler(async (req, res) => {
-  const { user_id } = validate(dpValidation.dpBankDetailsSchema, req.body);
+  validate(dpValidation.dpBankDetailsSchema, req.body);
+  const user_id = req.user.id;
   await dpService.updateBankDetail(user_id, req.body, req.files);
   return res.json(ApiResponse.success(null, "bank details updated"));
 });
@@ -669,7 +673,8 @@ export const findPdcInRoute = asyncHandler(async (req, res) => {
 });
 
 export const editProfile = asyncHandler(async (req, res) => {
-  const { user_id, address } = req.body;
+  const { address } = req.body;
+  const user_id = req.user.id;
   const profileImgPath = req.file ? req.file.path : null;
 
   const profile = await dpService.editDpProfile(
