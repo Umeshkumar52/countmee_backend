@@ -137,36 +137,46 @@ export const submitDocuments = async (userId, bodyData, files) => {
     }
   }
 
-  // Handle coordinates if address has changed
+  // Strictly require latitude and longitude from the frontend
   let latitude = pdc.latitude;
   let longitude = pdc.longitude;
 
-  const addressChanged = bodyData.address_changed === '1' ||
+  // Check if address changed
+  const addressChanged =
+    bodyData.address_changed === '1' ||
     bodyData.address !== pdc.address ||
     bodyData.city !== pdc.city ||
     bodyData.district !== pdc.district ||
     bodyData.state !== pdc.state ||
     bodyData.pincode !== pdc.pincode;
 
-  if (addressChanged) {
-    const fullAddress = [
-      bodyData.address,
-      bodyData.city,
-      bodyData.district,
-      bodyData.state,
-      bodyData.pincode
-    ].filter(Boolean).map(s => s.trim()).join(', ');
+  if (addressChanged || !latitude || !longitude) {
+    const fullAddressParts = [
+      bodyData.address?.trim(),
+      bodyData.city?.trim(),
+      bodyData.district?.trim(),
+      bodyData.state?.trim(),
+      bodyData.pincode?.trim()
+    ].filter(Boolean);
 
+    const fullAddress = fullAddressParts.join(', ');
+    
     if (fullAddress) {
-      try {
-        const [newLat, newLng] = await getLatLongFromAddress(fullAddress);
-        if (newLat !== null && newLng !== null) {
-          latitude = newLat;
-          longitude = newLng;
-        }
-      } catch (err) {
-        console.warn('Geocoding failed during document upload:', err.message);
+      const [newLat, newLng] = await getLatLongFromAddress(fullAddress);
+      if (newLat !== null && newLng !== null) {
+        latitude = newLat;
+        longitude = newLng;
       }
+    }
+  }
+
+  // Final check to make sure we have some coordinates
+  if (!latitude || !longitude) {
+    if (bodyData.latitude && bodyData.longitude) {
+      latitude = Number(bodyData.latitude);
+      longitude = Number(bodyData.longitude);
+    } else {
+      throw new Error('Could not calculate exact location from address. Please ensure your address is accurate.');
     }
   }
 
@@ -186,7 +196,12 @@ export const submitDocuments = async (userId, bodyData, files) => {
     ...uploadResults
   };
 
-  await pdcRepository.updatePdcDocumentByUserId(userId, updateData);
+  console.log("==== DEBUG: SUBMIT DOCUMENTS ====");
+  console.log("Received bodyData:", bodyData);
+  console.log("Received uploadResults:", uploadResults);
+  console.log("Final updateData to save:", updateData);
+
+  await pdcRepository.updatePdcDocumentByUserId(userId, { $set: updateData });
   return true;
 };
 

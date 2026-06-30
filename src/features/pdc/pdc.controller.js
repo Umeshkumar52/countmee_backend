@@ -33,6 +33,8 @@ export const register = asyncHandler(async (req, res) => {
   const refreshToken = generateRefreshToken(user);
   await User.findByIdAndUpdate(user._id, { refreshToken });
 
+  const pdcDoc = await pdcService.getPdcDocument(user._id);
+
   const data = {
     token,
     user: {
@@ -42,6 +44,7 @@ export const register = asyncHandler(async (req, res) => {
       phone: user.phone,
       role: user.role,
     },
+    pdcDocument: pdcDoc,
   };
   return res.json(ApiResponse.success(data, "Registration successful."));
 });
@@ -62,6 +65,8 @@ export const login = asyncHandler(async (req, res) => {
 
   await User.findByIdAndUpdate(user._id, { refreshToken });
 
+  const pdcDoc = await pdcService.getPdcDocument(user._id);
+
   const data = {
     token,
     user: {
@@ -71,6 +76,7 @@ export const login = asyncHandler(async (req, res) => {
       phone: user.phone,
       role: user.role,
     },
+    pdcDocument: pdcDoc,
   };
 
   return res.json(ApiResponse.success(data, "Login successful."));
