@@ -47,10 +47,12 @@ notificationSchema.post("save", async function (doc) {
       order_id: doc.order_id,
       created_at: doc.createdAt || doc.created_at,
     };
-    // sendNotificationToUser(doc.notifiable_id, payload);
+    sendNotificationToUser(doc.notifiable_id, payload);
 
     // 2. Send via Firebase Cloud Messaging (Background push notifications)
-    const user = await User.findById(doc.notifiable_id);
+    const user = await User.findById(doc.notifiable_id)
+      .select("+fcm_tokens")
+      .lean();
     console.log("user finded", user);
     if (user && user.fcm_tokens && user.fcm_tokens.length > 0) {
       await sendPushNotification(user.fcm_tokens, doc.title, doc.message, {

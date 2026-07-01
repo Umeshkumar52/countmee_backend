@@ -310,6 +310,24 @@ export const getAllOrdersPage = async (req, res, next) => {
   }
 };
 
+export const getPaginatedOrdersPage = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const status = req.query.status;
+
+    let statusList = null;
+    if (status && status !== 'all') {
+      statusList = status === 'pending' ? ['pending', 'created'] : [status];
+    }
+    
+    const result = await adminService.getPaginatedOrders(statusList, page, limit);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const getParticularOrderPage = async (req, res, next) => {
   try {
     const { order_id } = req.params;

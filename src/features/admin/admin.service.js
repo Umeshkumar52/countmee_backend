@@ -681,6 +681,11 @@ export const getOrders = async (statusList) => {
   return { orders };
 };
 
+export const getPaginatedOrders = async (statusList, page, limit) => {
+  const query = statusList ? { status: { $in: statusList } } : {};
+  return await adminRepository.findPaginatedOrders(query, page, limit);
+};
+
 export const getPendingOrders = async () => {
   return await getOrders(["pending", "created"]);
 };

@@ -82,6 +82,7 @@ router.post('/broadcast', adminController.postAddBroadcastPoint);
 router.post('/minbroadcast', adminController.postMinBroadcast);
 
 // Order Management
+router.get('/orders/paginated', adminController.getPaginatedOrdersPage);
 router.get('/orders', adminController.getOrdersPage);
 router.get('/orders/delivered', adminController.getDeliveredOrdersPage);
 router.get('/orders/broadcasted', adminController.getBroadcastedOrdersPage);

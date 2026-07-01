@@ -459,3 +459,23 @@ export const findAdminPayouts = async (query = {}) => {
     .populate("user_id")
     .sort({ created_at: -1 });
 };
+
+export const findPaginatedOrders = async (query, page = 1, limit = 10) => {
+  const skip = (page - 1) * limit;
+  const total = await Order.countDocuments(query);
+  const orders = await Order.find(query)
+    .populate("user_id")
+    .populate("pickup_dp_id")
+    .populate("delivery_dp_id")
+    .populate("package_id")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  return {
+    orders,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit)
+  };
+};

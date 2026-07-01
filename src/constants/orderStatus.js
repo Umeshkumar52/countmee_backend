@@ -10,7 +10,8 @@ export const ORDER_STATUS = {
   CANCELLED: "cancelled",
   RETURNED: "returned",
   REFUNDED: "refunded",
-  FAILED: "failed"
+  FAILED: "failed",
+  SCHEDULED: "scheduled"
 };
 
 export const ACTIVE_ORDER_STATUSES = [
