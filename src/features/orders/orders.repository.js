@@ -1,4 +1,5 @@
 import { Order } from "./order.model.js";
+import { ORDER_STATUS, ACTIVE_ORDER_STATUSES } from "../../constants/index.js";
 import { PackageDetail } from "./packageDetail.model.js";
 import { OrderRequest } from "./orderRequest.model.js";
 import { DeliverCharge } from "./deliverCharge.model.js";
@@ -49,12 +50,7 @@ export const updateOrder = async (id, updateData) => {
 export const findActiveOrdersByUserId = async (user_id) => {
   const orders = await Order.find({
     user_id,
-    status: 1,
-    user_action: null,
-    $or: [
-      { status_completed: { $ne: "delivered" } },
-      { status_completed: null },
-    ],
+    status: { $in: ACTIVE_ORDER_STATUSES },
   }).sort({ created_at: -1 });
 
   const result = [];
@@ -77,7 +73,7 @@ export const findActiveOrdersByUserId = async (user_id) => {
 export const findOrderHistoryByUserId = async (user_id) => {
   const orders = await Order.find({
     user_id,
-    $or: [{ user_action: 1 }, { status_completed: "delivered" }],
+    status: { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED] },
   }).sort({ created_at: -1 });
 
   const result = [];
@@ -100,7 +96,7 @@ export const findOrderHistoryByUserId = async (user_id) => {
 export const findCancelledOrdersByUserId = async (user_id) => {
   const orders = await Order.find({
     user_id,
-    user_action: 1,
+    status: ORDER_STATUS.CANCELLED,
   }).sort({ created_at: -1 });
 
   const result = [];

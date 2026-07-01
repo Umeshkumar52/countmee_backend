@@ -15,7 +15,7 @@ import { Notification } from '../notifications/notification.model.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
 import { getLatLongFromAddress } from '../tracking/maps.service.js';
 import { sendNotification } from '../../common/utils/sendNotification.js';
-import { ROLES } from '../../constants/index.js';
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS } from '../../constants/index.js';
 
 export const register = async (firstName, email, phone, password, fcmToken) => {
   const existingUser = await pdcRepository.findUserByPhone(phone);
@@ -212,7 +212,7 @@ export const getDashboardData = async (userId) => {
       { notified_ids: userId },
       { accepted_by: userId }
     ],
-    status: { $in: [null, 0, 1, '0', '1'] }
+    status: { $in: [ORDER_REQUEST_STATUS.PENDING, ORDER_REQUEST_STATUS.REJECTED, ORDER_REQUEST_STATUS.ACCEPTED, '0', '1'] }
   });
 
   const orderRelevantIds = Array.from(new Set(orderRequests.map(r => r.order_id)));
@@ -334,7 +334,7 @@ export const getDashboardData = async (userId) => {
       const acceptedReqs = await OrderRequest.find({
         order_id: order._id,
         broadcast_id: pdcBroadcast._id,
-        status: 1
+        status: ORDER_REQUEST_STATUS.ACCEPTED
       });
 
       acceptedReqs.forEach(req => {
@@ -398,10 +398,7 @@ export const getDashboardData = async (userId) => {
 
   const pendingOrders = await Order.countDocuments({
     _id: { $in: allPdcOrderIds, $nin: pickedUpByDpOrderIds },
-    $or: [
-      { status_completed: null },
-      { status_completed: { $nin: ['delivered', 'cancelled', 'parcel collected', 'delivering to pdc'] } }
-    ]
+    status: { $in: [ORDER_STATUS.CONFIRMED, ORDER_STATUS.PROCESSING] }
   });
 
   const pdcPayouts = await PdcPayout.find({ pdc_auth_id: userId })

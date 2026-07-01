@@ -1,5 +1,5 @@
 import * as authRepository from "./auth.repository.js";
-import { ROLES } from "../../constants/index.js";
+import { ROLES, ORDER_STATUS, ACTIVE_ORDER_STATUSES, ORDER_REQUEST_COMPLETE_STATUS } from "../../constants/index.js";
 import { sendOTPViaSMS } from "../notifications/sms.service.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
@@ -314,9 +314,7 @@ export const deleteAccount = async (userId) => {
     message = "Your customer account has been deleted.";
     const activeOrders = await Order.countDocuments({
       user_id: user._id,
-      status_completed: {
-        $nin: ["delivered", "cancelled", "User cancelled", "Auto cancelled"],
-      },
+      status: { $in: ACTIVE_ORDER_STATUSES },
     });
     if (activeOrders > 0) {
       throw new Error(
@@ -327,7 +325,7 @@ export const deleteAccount = async (userId) => {
     message = "Your delivery partner account has been deleted.";
     const activeRequests = await OrderRequest.countDocuments({
       accepted_by: user._id,
-      complete_status: null,
+      complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING,
     });
     if (activeRequests > 0) {
       throw new Error(

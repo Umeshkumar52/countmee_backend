@@ -1,5 +1,5 @@
 import * as dpRepository from './dp.repository.js';
-import { ROLES } from '../../constants/index.js';
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS } from '../../constants/index.js';
 import { User } from '../users/user.model.js';
 import { Order } from '../orders/order.model.js';
 import { OrderRequest } from '../orders/orderRequest.model.js';
@@ -214,7 +214,7 @@ export const getNewOrders = async (user_id) => {
   // Check if active accepted orders leg exists
   const activeLeg = await OrderRequest.findOne({
     accepted_by: user_id,
-    complete_status: null
+    complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING
   });
 
   if (activeLeg) {
@@ -227,7 +227,7 @@ export const getNewOrders = async (user_id) => {
   // Find requests notifying this DP that are either recent or pdc broadcasts and not rejected
   const reqs = await OrderRequest.find({
     notified_ids: user_id,
-    status: null,
+    status: ORDER_REQUEST_STATUS.PENDING,
     $or: [
       { created_at: { $gte: oneMinuteAgo } },
       { request_type: 'broadcast_pdc' }
@@ -301,7 +301,7 @@ export const orderAccept = async (order_id, status, user_id) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const orderRequest = await OrderRequest.findOne({ order_id, status: null }).session(session);
+    const orderRequest = await OrderRequest.findOne({ order_id, status: ORDER_REQUEST_STATUS.PENDING }).session(session);
 
     if (!orderRequest) {
       await session.commitTransaction();
@@ -319,7 +319,7 @@ export const orderAccept = async (order_id, status, user_id) => {
         throw new Error('Sorry this order cancelled by customer');
       }
 
-      orderRequest.status = 1;
+      orderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
       orderRequest.accepted_by = user_id;
       await orderRequest.save({ session });
 
@@ -332,6 +332,7 @@ export const orderAccept = async (order_id, status, user_id) => {
 
       if (orderRequest.request_type === 'direct') {
         order.status_completed = 'order accepted';
+        order.status = ORDER_STATUS.PROCESSING;
         order.pickup_dp_id = user_id;
         order.dp_accept_time = new Date();
         await order.save({ session });
@@ -342,6 +343,7 @@ export const orderAccept = async (order_id, status, user_id) => {
 
       } else if (orderRequest.request_type === 'broadcast_dp' || orderRequest.request_type === 'broadcast_pdc') {
         order.status_completed = 'broadcast accepted';
+        order.status = ORDER_STATUS.PROCESSING;
         order.delivery_type = 'broadcast';
         await order.save({ session });
 
@@ -558,8 +560,8 @@ export const orderAccept = async (order_id, status, user_id) => {
 export const acceptedOrders = async (user_id) => {
   const reqs = await OrderRequest.find({
     accepted_by: user_id,
-    status: 1,
-    complete_status: null
+    status: ORDER_REQUEST_STATUS.ACCEPTED,
+    complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING
   });
 
   const orderIds = reqs.map(r => r.order_id);
@@ -618,7 +620,7 @@ export const pickupOtp = async (order_id, user_id, otp) => {
       .skip(1);
 
     if (oldOrderRequest) {
-      oldOrderRequest.complete_status = 1;
+      oldOrderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
       await oldOrderRequest.save();
     }
 
@@ -696,6 +698,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       order.pickup_dp_id = user_id;
       order.dp_pickup_time = new Date();
       order.status_completed = 'parcel collected';
+      order.status = ORDER_STATUS.OUT_FOR_DELIVERY;
       await order.save({ session });
 
     } else if (['broadcast_dp', 'broadcast_pdc'].includes(orderRequest.request_type)) {
@@ -731,6 +734,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       }
 
       order.status_completed = 'parcel collected';
+      order.status = ORDER_STATUS.OUT_FOR_DELIVERY;
       await order.save({ session });
     }
 
@@ -802,6 +806,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
   try {
     order.delivery_dp_id = user_id;
     order.status_completed = 'delivered';
+    order.status = ORDER_STATUS.DELIVERED;
     order.dp_deliver_time = new Date();
     await order.save({ session });
 
@@ -824,8 +829,8 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       { session }
     );
 
-    const orderRequest = await OrderRequest.findOne({ order_id: order._id, status: 1 }).sort({ created_at: -1 }).session(session);
-    orderRequest.complete_status = 1;
+    const orderRequest = await OrderRequest.findOne({ order_id: order._id, status: ORDER_REQUEST_STATUS.ACCEPTED }).sort({ created_at: -1 }).session(session);
+    orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
     await orderRequest.save({ session });
 
     const travel = await Travel.findOne({ order_id, user_id }).sort({ created_at: -1 }).session(session);
@@ -931,7 +936,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
 
     const latestLeg = await OrderRequest.findOne({ order_id: order._id }).sort({ created_at: -1 }).session(session);
     if (latestLeg) {
-      latestLeg.complete_status = 1;
+      latestLeg.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
       await latestLeg.save({ session });
     }
 
@@ -978,7 +983,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
 export const getOrderHistory = async (user_id) => {
   const reqs = await OrderRequest.find({
     $or: [
-      { accepted_by: user_id, complete_status: 1 },
+      { accepted_by: user_id, complete_status: ORDER_REQUEST_COMPLETE_STATUS.COMPLETED },
       { rejected_by: user_id }
     ]
   });
@@ -1001,7 +1006,7 @@ export const getOrderHistory = async (user_id) => {
 };
 
 export const getTotalOrdersCount = async (user_id) => {
-  const acceptorder = await OrderRequest.countDocuments({ accepted_by: user_id, status: 1 });
+  const acceptorder = await OrderRequest.countDocuments({ accepted_by: user_id, status: ORDER_REQUEST_STATUS.ACCEPTED });
   const rejectorder = await OrderRequest.countDocuments({ rejected_by: user_id });
   const totalorder = acceptorder + rejectorder;
 

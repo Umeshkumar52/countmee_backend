@@ -1,5 +1,5 @@
 import * as dpService from "./dp.service.js";
-import { ROLES } from "../../constants/index.js";
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS } from "../../constants/index.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
 import { validate } from "../../common/utils/validationHelper.js";
@@ -201,7 +201,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     const orderRequestCheck = await OrderRequest.findOne({
       order_id: order_id,
       broadcast_id: broadcast_id,
-      status: 1,
+      status: ORDER_REQUEST_STATUS.ACCEPTED,
     });
 
     if (orderRequestCheck) {
@@ -323,6 +323,7 @@ export const saveBroadcastPoint = asyncHandler(async (req, res) => {
     order.delivery_type = "broadcast";
     order.broadcast_id = broadcastObj._id;
     order.status_completed = "broadcasted";
+    order.status = ORDER_STATUS.PROCESSING;
     await order.save();
   }
 
@@ -508,10 +509,10 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
       { session },
     );
 
-    const orderRequest = await OrderRequest.findOne({ order_id, status: 1 })
+    const orderRequest = await OrderRequest.findOne({ order_id, status: ORDER_REQUEST_STATUS.ACCEPTED })
       .sort({ created_at: -1 })
       .session(session);
-    orderRequest.complete_status = 1;
+    orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
     await orderRequest.save({ session });
 
     const nextBroadcast = await Broadcast.create(
@@ -533,6 +534,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
     order.broadcast_id = nextBroadcast[0]._id;
     order.delivery_type = "broadcast_pdc";
     order.status_completed = "delivered to pdc";
+    order.status = ORDER_STATUS.PROCESSING;
     await order.save({ session });
 
     await session.commitTransaction();
@@ -780,9 +782,9 @@ export const deliverPdc = asyncHandler(async (req, res) => {
     let orderRequest = await OrderRequest.findOne({
       order_id: order._id,
       notified_ids: pdcAuthId,
-      status: 1,
+      status: ORDER_REQUEST_STATUS.ACCEPTED,
       request_type: "deliver to pdc",
-      complete_status: null,
+      complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING,
     }).session(session);
 
     if (!orderRequest) {
@@ -829,6 +831,7 @@ export const deliverPdc = asyncHandler(async (req, res) => {
       order.broadcast_id = broadcast[0]._id;
       order.delivery_type = "pdc";
       order.status_completed = "delivering to pdc";
+      order.status = ORDER_STATUS.PROCESSING;
       await order.save({ session });
     }
 
@@ -874,10 +877,10 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
     const orderRequest = orderRequests[1];
 
     if (orderRequest && pdcOrderRequest) {
-      orderRequest.complete_status = 1;
+      orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
       await orderRequest.save({ session });
 
-      pdcOrderRequest.status = 1;
+      pdcOrderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
       await pdcOrderRequest.save({ session });
 
       const newOrderRequest = await OrderRequest.findOne({
@@ -1050,6 +1053,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
         order.broadcast_id = nextBroadcast._id;
         order.delivery_type = "broadcast_pdc";
         order.status_completed = "delivered to pdc";
+        order.status = ORDER_STATUS.PROCESSING;
         await order.save({ session });
       }
     }
