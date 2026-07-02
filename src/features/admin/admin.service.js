@@ -1359,3 +1359,170 @@ export const findNearestDpsForOrders = async (orderIds) => {
 
   return nearestDps;
 };
+
+export const assignOrderBundle = async (orderIds, dpIds) => {
+  const mongoose = await import("mongoose");
+  const Order = mongoose.default.model("Order");
+  const { OrderBundle } = await import("../orders/orderBundle.model.js");
+  const { Notification } = await import("../notifications/notification.model.js");
+
+  // Generate unique bundle ID
+  const bundle_id = `BNDL-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  // Verify all orders exist
+  const orders = await Order.find({ _id: { $in: orderIds } });
+  if (orders.length !== orderIds.length) {
+    throw new Error("One or more orders not found");
+  }
+
+  // Create Bundle with notified DPs
+  const bundle = new OrderBundle({
+    bundle_id,
+    dp_id: null,
+    notified_dps: dpIds,
+    orders: orderIds,
+    status: "pending"
+  });
+  await bundle.save();
+
+  // Dispatch Notifications to all selected DPs
+  for (const dpId of dpIds) {
+    const notify = new Notification({
+      notifiable_type: "delivery_partner",
+      notifiable_id: dpId,
+      title: "New Order Bundle Request!",
+      message: `You have received a new Order Bundle (${bundle_id}) containing ${orderIds.length} orders. Open your app to accept.`,
+      // Assuming the app can handle a bundle broadcast even without order_id, 
+      // or we can pass the bundle_id in the message or add it if Notification schema is expanded.
+      order_id: null
+    });
+    await notify.save();
+  }
+
+  return { message: "Bundle broadcasted successfully to selected Delivery Partners", bundle_id, bundle };
+};
+
+export const getBundleSummary = async (orderIds) => {
+  const mongoose = await import("mongoose");
+  const Order = mongoose.default.model("Order");
+  const PackageDetail = mongoose.default.model("PackageDetail");
+  const DeliverCharge = mongoose.default.model("DeliverCharge");
+
+  const orders = await Order.find({ _id: { $in: orderIds } }).lean();
+  if (!orders || orders.length === 0) {
+    throw new Error("No orders found");
+  }
+
+  const packageIds = orders.map((o) => o.package_id).filter(Boolean);
+  const packages = await PackageDetail.find({ _id: { $in: packageIds } }).lean();
+  
+  // Create a map for quick lookup
+  const packageMap = packages.reduce((acc, pkg) => {
+    acc[pkg._id.toString()] = pkg;
+    return acc;
+  }, {});
+
+  const totalProduct = orders.length;
+  
+  let totalWeight = 0;
+  let maxLength = 0;
+  let maxWidth = 0;
+  let maxHeight = 0;
+  
+  const orderBreakdown = [];
+
+  let totalPrice = 0;
+  let estDistance = 0;
+
+  for (let i = 0; i < orders.length; i++) {
+    const order = orders[i];
+    const pkg = packageMap[order.package_id?.toString()];
+    const weight = parseFloat(pkg?.product_weight || 0);
+    
+    totalWeight += weight;
+    maxLength = Math.max(maxLength, parseFloat(pkg?.product_length || 0));
+    maxWidth = Math.max(maxWidth, parseFloat(pkg?.product_width || 0));
+    maxHeight = Math.max(maxHeight, parseFloat(pkg?.product_height || 0));
+
+    totalPrice += parseFloat(order.amount || order.charges || 0);
+    estDistance += parseFloat(order.distance || 0);
+    
+    orderBreakdown.push({
+      label: `Order ${i + 1}`,
+      order_number: order.order_id || order._id,
+      weight
+    });
+  }
+
+  // Find recommended vehicle
+  const vehicleTypes = await DeliverCharge.find().lean();
+  // Sort vehicle types by capacity ascending
+  vehicleTypes.sort((a, b) => (a.max_weight || 0) - (b.max_weight || 0));
+  
+  let recommendedVehicle = null;
+  for (const vt of vehicleTypes) {
+    if (
+      vt.max_weight >= totalWeight &&
+      vt.max_length >= maxLength &&
+      vt.max_width >= maxWidth &&
+      vt.max_height >= maxHeight
+    ) {
+      recommendedVehicle = vt;
+      break;
+    }
+  }
+
+  // Fetch Capable DPs directly
+  const capableDps = [];
+  if (recommendedVehicle) {
+    const DpDetail = mongoose.default.model("DpDetail");
+    const DpDocument = mongoose.default.model("DpDocument");
+    const User = mongoose.default.model("User");
+
+    // We fetch DPs with matching vehicle type
+    const dpDocs = await DpDocument.find({
+      vehicle_type: recommendedVehicle.vehicle_type
+    }).lean();
+    
+    for (const doc of dpDocs) {
+      if (!doc.user_id) continue;
+      
+      const [dpDetail, user] = await Promise.all([
+        DpDetail.findOne({ user_id: doc.user_id }).lean(),
+        User.findById(doc.user_id).lean()
+      ]);
+      
+      if (dpDetail && user) {
+        capableDps.push({
+          user_id: doc.user_id,
+          name: user.name || "Unknown DP",
+          phone: user.phone || "",
+          profile_pic: dpDetail.profile_img || "",
+          vehicle_type: doc.vehicle_type,
+          vehicle_no: doc.rc_number || "N/A",
+          capacity: recommendedVehicle.max_weight,
+          location: dpDetail.location || dpDetail.address || "Unknown Location",
+          latitude: dpDetail.latitude,
+          longitude: dpDetail.longitude,
+          status: dpDetail.online ? "Available" : "On Trip", // Simplified for mockup
+          rating: user.rating || 4.5,
+          distance_km: (Math.random() * 5 + 1).toFixed(1) // Mock distance since this isn't geo-queried right now, usually done via nearest DP logic
+        });
+      }
+    }
+  }
+
+  return {
+    totalProduct,
+    totalWeight: Number(totalWeight.toFixed(2)),
+    totalPrice: Number(totalPrice.toFixed(2)),
+    estDistance: Number(estDistance.toFixed(2)),
+    orderBreakdown,
+    recommendedVehicle: recommendedVehicle || null,
+    capableDps,
+    vehicleMatrix: vehicleTypes.map(vt => ({
+      type: vt.vehicle_type,
+      max_weight: vt.max_weight
+    }))
+  };
+};

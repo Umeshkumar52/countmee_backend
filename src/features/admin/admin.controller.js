@@ -582,3 +582,34 @@ export const postNearestDps = async (req, res, next) => {
     next(err);
   }
 };
+
+export const postAssignBundle = async (req, res, next) => {
+  try {
+    const { orderIds, dp_id } = req.body;
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      throw new Error("Please provide an array of orderIds");
+    }
+    if (!dp_id) {
+      throw new Error("Please provide a dp_id");
+    }
+    const result = await adminService.assignOrderBundle(orderIds, dp_id);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+export const postBundleSummary = async (req, res, next) => {
+  try {
+    const { orderIds } = req.body;
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      throw new Error("Please provide an array of orderIds");
+    }
+    const result = await adminService.getBundleSummary(orderIds);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+

@@ -135,6 +135,7 @@ export const verifyOtp = async (userId, otp) => {
     const refreshToken = generateRefreshToken(user);
     user.refreshToken = refreshToken;
     await authRepository.updateUserTokens(user._id, refreshToken);
+    delete user.otp;
     return { user, token };
   } else {
     throw new Error("Invalid OTP try again!");
@@ -235,6 +236,8 @@ export const dpOtpVerification = async (userId, otp) => {
   if (otp !== dp.otp) {
     throw new Error("Invalid Otp");
   }
+
+  delete dp.otp;
 
   // Generate tokens for all verified sessions so DPs can upload documents
   const token = generateAccessToken(dp);
