@@ -295,9 +295,6 @@ export const addPdcSchema = Joi.object({
   bank_acc_no: Joi.string()
     .trim()
     .allow('', null),
-  shop_name: Joi.string()
-    .trim()
-    .allow('', null),
   password: Joi.string()
     .required()
     .messages({

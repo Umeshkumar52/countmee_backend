@@ -462,7 +462,6 @@ export const addPdc = async (body, files) => {
     bank_name,
     bank_ifsc,
     bank_acc_no,
-    shop_name,
     password,
     confirmPassword,
   } = body;
@@ -522,7 +521,6 @@ export const addPdc = async (body, files) => {
     bank_name,
     ifsc: bank_ifsc,
     account_no: bank_acc_no,
-    shop_name,
     gst_doc: uploadResults.gst_doc || null,
     aadhar_front_image: uploadResults.aadhar_front_image || null,
     aadhar_back_image: uploadResults.aadhar_back_image || null,
