@@ -125,6 +125,17 @@ export const order_accept = asyncHandler(async (req, res) => {
   return res.json(ApiResponse.success(null, result.message));
 });
 
+export const cancelAssignment = asyncHandler(async (req, res) => {
+  const { order_id, cancel_reason } = validate(
+    dpValidation.cancelAssignmentSchema,
+    req.body,
+  );
+  const user_id = req.user._id; 
+  const result = await dpService.cancelAssignment(order_id, user_id, cancel_reason);
+  return res.json(ApiResponse.success(null, result.message));
+});
+
+
 export const acceptedOrders = asyncHandler(async (req, res) => {
   const { user_id } = req.params;
   const acceptedOrders = await dpService.acceptedOrders(user_id);

@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { Order } from "../../features/orders/order.model.js";
+import { cacheDpLocation } from "./redis.service.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -71,21 +72,21 @@ export const init = (httpServer) => {
     });
 
     socket.on("location:update", async ({ orderId, lat, lng }) => {
-      if (orderId && lat != null && lng != null) {
-        // Broadcast location to anyone in this order's room
-        ioInstance
-          .to(`order_${orderId}`)
-          .emit("location:updated", { lat, lng });
+      if (lat != null && lng != null) {
+        // Broadcast location to anyone in this order's room (only if orderId exists)
+        if (orderId) {
+          ioInstance
+            .to(`order_${orderId}`)
+            .emit("location:updated", { lat, lng });
+        }
 
-        // Asynchronously save to DB
+        // Save instantly to Redis RAM (0.1ms), Agenda will flush this to MongoDB later
+        // We do this even if orderId is missing, so the DP's master location stays up to date!
         try {
-          await Order.findByIdAndUpdate(orderId, {
-            current_lat: lat,
-            current_lng: lng,
-          });
+          await cacheDpLocation(userId, orderId || null, lat, lng);
         } catch (err) {
           console.error(
-            `[Socket] Error saving location for order ${orderId}:`,
+            `[Socket] Error saving location to Redis for user ${userIdStr}:`,
             err,
           );
         }

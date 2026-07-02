@@ -20,7 +20,7 @@ import { MassCreditLog } from "../payments/massCreditLog.model.js";
 import { AdminPayout } from "../payments/adminPayout.model.js";
 
 export const findUserByEmailAndType = async (email, role) => {
-  return await User.findOne({ email, role });
+  return await User.findOne({ email, role }).select('+password +fcm_tokens');
 };
 
 export const findUserByPhoneAndType = async (phone, role) => {

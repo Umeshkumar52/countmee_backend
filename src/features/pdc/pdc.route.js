@@ -18,6 +18,8 @@ import {
   reloadPartial,
   rateDp,
   logout,
+  actionDrop,
+  broadcastOrder,
   online,
 } from "./pdc.controller.js";
 import { uploadFields } from "../../common/middlewares/upload.middleware.js";
@@ -70,5 +72,10 @@ router.put("/online/:id/:online", online);
 router.post("/location-update", locationUpdate);
 router.post("/rate-dp", rateDp);
 router.post("/logout", logout);
+
+
+// New Actions
+router.post("/action-drop", actionDrop);
+router.post("/broadcast", broadcastOrder);
 
 export default router;

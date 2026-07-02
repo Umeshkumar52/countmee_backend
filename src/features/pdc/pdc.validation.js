@@ -3,12 +3,12 @@ import Joi from 'joi';
 const objectIdRegex = /^[0-9a-fA-F]{24}$/;
 
 export const registerPdcSchema = Joi.object({
-  first_name: Joi.string()
+  name: Joi.string()
     .trim()
     .required()
     .messages({
-      'string.empty': 'First name is required',
-      'any.required': 'First name is required'
+      'string.empty': 'Name is required',
+      'any.required': 'Name is required'
     }),
   email: Joi.string()
     .email()
