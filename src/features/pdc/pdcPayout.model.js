@@ -25,7 +25,7 @@ const pdcPayoutSchema = new mongoose.Schema(
     earnings: { type: Number, required: true },
     settled: { type: Number, default: 0 },
   },
-  { timestamps: true },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
 );
 
 export const PdcPayout = mongoose.model("PdcPayout", pdcPayoutSchema);

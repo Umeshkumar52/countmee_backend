@@ -7,7 +7,7 @@ import { Rating } from '../deliveryPartner/rating.model.js';
 import { ROLES } from '../../constants/index.js';
 
 export const findUserByPhone = async (phone) => {
-  return await User.findOne({ role: ROLES.PDC, phone });
+  return await User.findOne({ role: ROLES.PDC, phone }).select('+password +fcm_tokens');
 };
 
 export const createUser = async (userData) => {

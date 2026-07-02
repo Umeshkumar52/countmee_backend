@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import * as pdcService from "./pdc.service.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
@@ -13,7 +14,7 @@ import {
 } from "../../common/middlewares/auth.middleware.js";
 
 export const register = asyncHandler(async (req, res) => {
-  const { first_name, email, phone, password, confirmPassword, fcmToken } = validate(
+  const { name, email, phone, password, confirmPassword, fcmToken } = validate(
     pdcValidation.registerPdcSchema,
     req.body,
   );
@@ -23,7 +24,7 @@ export const register = asyncHandler(async (req, res) => {
   }
 
   const { user, pdc } = await pdcService.register(
-    first_name,
+    name,
     email,
     phone,
     password,
@@ -263,4 +264,41 @@ export const logout = asyncHandler(async (req, res) => {
     }
   }
   return res.json(ApiResponse.success(null, "Logout successful"));
+});
+
+// ==================== NEW PDC API ENDPOINTS ====================
+
+// 1. PDC Accept/Reject API
+export const actionDrop = asyncHandler(async (req, res) => {
+    const { order_id, action } = req.body;
+    const pdcId = req.user.id || req.user._id;
+
+    if (!['accept', 'reject'].includes(action)) {
+        throw new ApiError(400, "Invalid action. Use 'accept' or 'reject'.");
+    }
+
+    try {
+        const message = await pdcService.processActionDrop(order_id, pdcId, action);
+        return res.json(ApiResponse.success(null, message));
+    } catch (error) {
+        throw new ApiError(400, error.message);
+    }
+});
+
+// 2. Manual Broadcast API
+export const broadcastOrder = asyncHandler(async (req, res) => {
+    const { order_id } = req.body;
+    const pdcId = req.user.id || req.user._id;
+
+    try {
+        const nearByDpsCount = await pdcService.triggerManualBroadcast(order_id, pdcId);
+
+        if (nearByDpsCount === 0) {
+            return res.json(ApiResponse.success(null, "No delivery partners found nearby. Please try again later."));
+        }
+
+        return res.json(ApiResponse.success(null, `Successfully broadcasted to ${nearByDpsCount} nearby delivery partners.`));
+    } catch (error) {
+        throw new ApiError(400, error.message);
+    }
 });

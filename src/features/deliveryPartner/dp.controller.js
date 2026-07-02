@@ -125,6 +125,17 @@ export const order_accept = asyncHandler(async (req, res) => {
   return res.json(ApiResponse.success(null, result.message));
 });
 
+export const cancelAssignment = asyncHandler(async (req, res) => {
+  const { order_id, cancel_reason } = validate(
+    dpValidation.cancelAssignmentSchema,
+    req.body,
+  );
+  const user_id = req.user._id; 
+  const result = await dpService.cancelAssignment(order_id, user_id, cancel_reason);
+  return res.json(ApiResponse.success(null, result.message));
+});
+
+
 export const acceptedOrders = asyncHandler(async (req, res) => {
   const { user_id } = req.params;
   const acceptedOrders = await dpService.acceptedOrders(user_id);
@@ -505,6 +516,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
         location: pdcObj.address,
         latitude: pdcObj.latitude,
         longitude: pdcObj.longitude,
+        geo_location: { type: "Point", coordinates: [pdcObj.longitude, pdcObj.latitude] }
       },
       { session },
     );
@@ -557,6 +569,8 @@ export const dropOrderToCustomer = asyncHandler(async (req, res) => {
     order_id,
     user_id,
     drop_otp,
+    latitude,
+    longitude
   );
   return res.json(ApiResponse.success(null, result.message));
 });
@@ -898,8 +912,9 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
       }).session(session);
       if (dpDetail && pdc) {
         dpDetail.location = pdc.address;
-        dpDetail.latitude = pdc.latitude;
-        dpDetail.longitude = pdc.longitude;
+        dpDetail.latitude = Number(latitude);
+        dpDetail.longitude = Number(longitude);
+        dpDetail.geo_location = { type: "Point", coordinates: [Number(longitude), Number(latitude)] };
         await dpDetail.save({ session });
       }
 
