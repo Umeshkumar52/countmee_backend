@@ -1,5 +1,5 @@
 import * as dpRepository from './dp.repository.js';
-import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS } from '../../constants/index.js';
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS, ACTIVE_ORDER_STATUSES } from '../../constants/index.js';
 import { User } from '../users/user.model.js';
 import { Order } from '../orders/order.model.js';
 import { OrderRequest } from '../orders/orderRequest.model.js';
@@ -888,7 +888,8 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       {
         location: order.drop_location,
         latitude: order.receiver_latitude,
-        longitude: order.receiver_longitude
+        longitude: order.receiver_longitude,
+        geo_location: { type: "Point", coordinates: [order.receiver_longitude, order.receiver_latitude] }
       },
       { session }
     );
@@ -1436,6 +1437,13 @@ export const checkNearbyDps = async (radius, broadcastId, userId) => {
   ]);
   
   const matchedUserIds = matchedDocs.map(doc => doc.user_id);
+  const activeOrders = await Order.find({ status: { $in: ACTIVE_ORDER_STATUSES } }).select('pickup_dp_id delivery_dp_id');
+  const busyDpUserIds = new Set();
+  activeOrders.forEach(o => {
+    if (o.pickup_dp_id) busyDpUserIds.add(o.pickup_dp_id.toString());
+    if (o.delivery_dp_id) busyDpUserIds.add(o.delivery_dp_id.toString());
+  });
+  const availableMatchedUserIds = matchedUserIds.filter(id => !busyDpUserIds.has(id.toString()));
   const oldDpsArray = oldBroadcasts.map(b => b.broadcasted_by.toString());
   oldDpsArray.push(userId.toString()); // Exclude the PDC broadcasting it
 
@@ -1455,7 +1463,7 @@ export const checkNearbyDps = async (radius, broadcastId, userId) => {
     {
       $match: {
         online: true,
-        user_id: { $in: matchedUserIds }
+        user_id: { $in: availableMatchedUserIds }
       }
     }
   ]);
@@ -1471,3 +1479,4 @@ export const checkNearbyDps = async (radius, broadcastId, userId) => {
 
   return nearestDps;
 };
+

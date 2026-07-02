@@ -516,6 +516,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
         location: pdcObj.address,
         latitude: pdcObj.latitude,
         longitude: pdcObj.longitude,
+        geo_location: { type: "Point", coordinates: [pdcObj.longitude, pdcObj.latitude] }
       },
       { session },
     );
@@ -568,6 +569,8 @@ export const dropOrderToCustomer = asyncHandler(async (req, res) => {
     order_id,
     user_id,
     drop_otp,
+    latitude,
+    longitude
   );
   return res.json(ApiResponse.success(null, result.message));
 });
@@ -909,8 +912,9 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
       }).session(session);
       if (dpDetail && pdc) {
         dpDetail.location = pdc.address;
-        dpDetail.latitude = pdc.latitude;
-        dpDetail.longitude = pdc.longitude;
+        dpDetail.latitude = Number(latitude);
+        dpDetail.longitude = Number(longitude);
+        dpDetail.geo_location = { type: "Point", coordinates: [Number(longitude), Number(latitude)] };
         await dpDetail.save({ session });
       }
 

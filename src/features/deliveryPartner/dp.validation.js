@@ -460,5 +460,13 @@ export const resendOtpSchema = Joi.object({
       'string.empty': 'Order ID cannot be empty',
       'string.pattern.base': 'Invalid Order ID format',
       'any.required': 'Order ID is required'
-    })
+    }),
+  latitude: Joi.number().required().messages({
+    'number.base': 'Latitude must be a valid number',
+    'any.required': 'Latitude is required'
+  }),
+  longitude: Joi.number().required().messages({
+    'number.base': 'Longitude must be a valid number',
+    'any.required': 'Longitude is required'
+  })
 });
