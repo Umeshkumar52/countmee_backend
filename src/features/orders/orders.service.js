@@ -225,6 +225,9 @@ export const createOrder = async (orderData, files) => {
     dimension_unit,
     dimensions_list,
     charges,
+    order_type = "normal",
+    schedule_date,
+    schedule_time,
   } = orderData;
 
   // Upload images to Cloudinary
@@ -290,8 +293,11 @@ export const createOrder = async (orderData, files) => {
           drop_otp,
           charges: Number(charges),
           delivery_type: "direct",
+          order_type,
+          schedule_date,
+          schedule_time,
 
-          status: ORDER_STATUS.CREATED,
+          status: order_type === "scheduled" ? ORDER_STATUS.SCHEDULED : ORDER_STATUS.CREATED,
         },
       ],
       { session, ordered: true },
@@ -347,10 +353,12 @@ export const createOrder = async (orderData, files) => {
     await session.commitTransaction();
     session.endSession();
 
-    // Fire-and-forget broadcast
-    broadcastOrderToNearbyDPs(newOrder, packageDetail[0]).catch((err) =>
-      console.error("[Broadcast] Background execution failed:", err),
-    );
+    // Fire-and-forget broadcast ONLY if it's a normal order
+    if (newOrder.order_type === "normal") {
+      broadcastOrderToNearbyDPs(newOrder, packageDetail[0]).catch((err) =>
+        console.error("[Broadcast] Background execution failed:", err),
+      );
+    }
 
     return { order: newOrder, packageDetails: packageDetail[0] };
   } catch (error) {

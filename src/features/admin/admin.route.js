@@ -82,6 +82,9 @@ router.post('/broadcast', adminController.postAddBroadcastPoint);
 router.post('/minbroadcast', adminController.postMinBroadcast);
 
 // Order Management
+router.get('/orders/paginated', adminController.getPaginatedOrdersPage);
+router.get('/orders/scheduled-stats', adminController.getScheduledOrderStats);
+router.get('/orders/scheduled-filters', adminController.getScheduledFilters);
 router.get('/orders', adminController.getOrdersPage);
 router.get('/orders/delivered', adminController.getDeliveredOrdersPage);
 router.get('/orders/broadcasted', adminController.getBroadcastedOrdersPage);
@@ -140,5 +143,8 @@ router.get('/wallets/mass-credit-recipients/:log_id', adminWalletController.getM
 router.post('/wallets/verify-credentials', adminVerificationController.postVerifyCredentials);
 router.post('/wallets/send-otp', adminVerificationController.postSendOtp);
 router.post('/wallets/verify-otp', adminVerificationController.postVerifyOtp);
+
+// Nearest DP logic
+router.post('/orders/nearest-dps', adminController.postNearestDps);
 
 export default router;

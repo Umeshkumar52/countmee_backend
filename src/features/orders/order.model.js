@@ -43,6 +43,13 @@ const orderSchema = new mongoose.Schema(
     pickup_otp: { type: Number, required: true },
     drop_otp: { type: Number, required: true },
     delivery_type: { type: String, default: "direct" },
+    order_type: {
+      type: String,
+      enum: ["normal", "scheduled"],
+      default: "normal",
+    },
+    schedule_date: { type: String, default: null },
+    schedule_time: { type: String, default: null },
     broadcast_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Broadcast",

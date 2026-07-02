@@ -13,17 +13,29 @@ import { ApiError } from "./ApiError.js";
  * @param {string} [params.orderId] - Optional order ID associated with the notification.
  * @param {Object} [params.session] - Optional mongoose session for transactions.
  */
-export const sendNotification = async ({ role, title, message, userId, orderId, session }) => {
+export const sendNotification = async ({
+  role,
+  title,
+  message,
+  userId,
+  orderId,
+  session,
+}) => {
   try {
     let usersToNotify = [];
 
     if (role === ROLES.ADMIN) {
       // Notification for all admins, ignore userId
-      usersToNotify = await User.find({ role: ROLES.ADMIN }).select('_id');
+      usersToNotify = await User.find({ role: ROLES.ADMIN })
+        .select("_id +fcm_tokens")
+        .lean();
     } else {
       // Notification for other roles requires an ID
       if (!userId) {
-        throw new ApiError(400, `User ID is required when sending notification to role: ${role}`);
+        throw new ApiError(
+          400,
+          `User ID is required when sending notification to role: ${role}`,
+        );
       }
       usersToNotify = [{ _id: userId }];
     }
@@ -33,20 +45,28 @@ export const sendNotification = async ({ role, title, message, userId, orderId, 
       return;
     }
 
-    const notifications = usersToNotify.map(user => ({
+    const notifications = usersToNotify.map((user) => ({
       notifiable_type: role,
       notifiable_id: user._id,
       title,
       message,
-      order_id: orderId || null
+      order_id: orderId || null,
     }));
 
     // Notification.create will automatically trigger the 'save' hooks for Socket & FCM
-    await Notification.create(notifications, session ? { session, ordered: true } : undefined);
+    await Notification.create(
+      notifications,
+      session ? { session, ordered: true } : undefined,
+    );
 
-    console.log(`[Notification] Successfully dispatched ${usersToNotify.length} notifications for role: ${role}.`);
+    console.log(
+      `[Notification] Successfully dispatched ${usersToNotify.length} notifications for role: ${role}.`,
+    );
   } catch (error) {
-    console.error("[Notification Error] Failed to send notification:", error.message);
+    console.error(
+      "[Notification Error] Failed to send notification:",
+      error.message,
+    );
     throw error;
   }
 };
