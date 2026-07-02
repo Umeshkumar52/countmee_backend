@@ -239,7 +239,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
         },
         otp: broadcastObj?.pickup_otp || null,
         ratings: avgRating,
-        status: 1,
+        status: "Approved",
       };
 
       return res.json(
@@ -248,7 +248,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     } else {
       return res.json(
         ApiResponse.success(
-          { status: 0 },
+          { status: "Pending" },
           "No drivers have accepted yet. Please wait...",
         ),
       );
@@ -311,7 +311,7 @@ export const saveBroadcastPoint = asyncHandler(async (req, res) => {
 
   if (!nearestDps.length) {
     return res.json(
-      ApiResponse.success({ status: 0 }, "no dp found in this area"),
+      ApiResponse.success({ status: "Pending" }, "no dp found in this area"),
     );
   }
 
@@ -345,7 +345,7 @@ export const saveBroadcastPoint = asyncHandler(async (req, res) => {
     broadcast_id: broadcastObj._id,
     broadcast: broadcastObj,
     orderRequest: orderReq,
-    status: 0,
+    status: "Pending",
   };
 
   return res.json(ApiResponse.success(data, "dp"));
@@ -360,11 +360,11 @@ export const broadcastDeliver = asyncHandler(async (req, res) => {
   const { broadcastId } = req.params;
   const broadcast = await Broadcast.findById(broadcastId);
   if (broadcast) {
-    if (broadcast.status === "1") {
-      return res.json(ApiResponse.success({ status: 1 }, "Order Delivered"));
+    if (broadcast.status === "Completed") {
+      return res.json(ApiResponse.success({ status: "Completed" }, "Order Delivered"));
     } else {
       return res.json(
-        ApiResponse.success({ status: 0 }, "Order not delivered yet."),
+        ApiResponse.success({ status: "Pending" }, "Order not delivered yet."),
       );
     }
   }
@@ -880,7 +880,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    broadcast.status = "1";
+    broadcast.status = "Completed";
     await broadcast.save({ session });
 
     const orderRequests = await OrderRequest.find({ order_id: order._id })
@@ -912,9 +912,9 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
       }).session(session);
       if (dpDetail && pdc) {
         dpDetail.location = pdc.address;
-        dpDetail.latitude = Number(latitude);
-        dpDetail.longitude = Number(longitude);
-        dpDetail.geo_location = { type: "Point", coordinates: [Number(longitude), Number(latitude)] };
+        dpDetail.latitude = pdc.latitude;
+        dpDetail.longitude = pdc.longitude;
+        dpDetail.geo_location = { type: "Point", coordinates: [pdc.longitude, pdc.latitude] };
         await dpDetail.save({ session });
       }
 
@@ -995,7 +995,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
         let nextBroadcast = await Broadcast.findOne({
           order_id: order._id,
           broadcasted_by: pdc.user_id,
-          status: "0",
+          status: "Active",
         }).session(session);
 
         if (!nextBroadcast) {

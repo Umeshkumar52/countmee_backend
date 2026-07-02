@@ -12,7 +12,7 @@ const pdcAssignedOrderSchema = new mongoose.Schema(
       required: true,
       ref: "User",
     },
-    status: { type: Number, default: 0 },
+    status: { type: String, enum: ["Pending", "Approved", "Rejected"], default: "Pending" },
     otp: { type: String, default: null },
   },
   { timestamps: true },

@@ -1,5 +1,5 @@
 import * as dpRepository from './dp.repository.js';
-import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS, ACTIVE_ORDER_STATUSES } from '../../constants/index.js';
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS, ACTIVE_ORDER_STATUSES, USER_ACTION_STATUS } from '../../constants/index.js';
 import { User } from '../users/user.model.js';
 import { Order } from '../orders/order.model.js';
 import { OrderRequest } from '../orders/orderRequest.model.js';
@@ -316,7 +316,7 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     }
 
     // Revert OrderRequest
-    orderRequest.status = 0; // REJECTED
+    orderRequest.status = "Rejected"; // REJECTED
     orderRequest.accepted_by = null;
     orderRequest.rejected_by.push(user_id);
     await orderRequest.save({ session });
@@ -373,13 +373,13 @@ export const orderAccept = async (order_id, status, user_id) => {
       return { message: 'Sorry!, You have missed this order.' };
     }
 
-    if (Number(status) === 1) {
+    if (status) {
       const orderCheck = await Order.findById(order_id).session(session);
       if (!orderCheck) {
         throw new Error('Order not found');
       }
 
-      if (orderCheck.user_action === 1) {
+      if (orderCheck.user_action === USER_ACTION_STATUS.CANCELLED) {
         throw new Error('Sorry this order cancelled by customer');
       }
 
@@ -586,7 +586,7 @@ export const orderAccept = async (order_id, status, user_id) => {
       const allRejected = [...orderRequest.rejected_by].sort();
 
       if (JSON.stringify(allNotified) === JSON.stringify(allRejected)) {
-        orderRequest.status = 0; // Rejected by all DPs
+        orderRequest.status = "Rejected"; // Rejected by all DPs
         await orderRequest.save({ session });
       }
 
