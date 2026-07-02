@@ -188,18 +188,13 @@ export const reloadPartial = asyncHandler(async (req, res) => {
 
 export const updatePdcStatus = asyncHandler(async (req, res) => {
   const { id, accept_status } = req.params;
-  await pdcService.updatePdcStatus(id, Number(accept_status));
-  return res.json(
-    ApiResponse.success(
-      { status: accept_status },
-      "Status updated successfully",
-    ),
-  );
+  await pdcService.updatePdcStatus(id, accept_status);
+  return res.json(ApiResponse.success(null, "status updated successfully"));
 });
 
 export const online = asyncHandler(async (req, res) => {
   const { id, online } = req.params;
-  const isOnline = online === "true" || online === "1";
+  const isOnline = online === "true";
   await pdcService.toggleOnlineStatus(id, isOnline);
   return res.json(
     ApiResponse.success(

@@ -23,12 +23,16 @@ export const ACTIVE_ORDER_STATUSES = [
 ];
 
 export const ORDER_REQUEST_STATUS = {
-  PENDING: null,
-  REJECTED: 0,
-  ACCEPTED: 1
+  PENDING: "Pending",
+  REJECTED: "Rejected",
+  ACCEPTED: "Accepted"
 };
 
 export const ORDER_REQUEST_COMPLETE_STATUS = {
-  PENDING: null,
-  COMPLETED: 1
+  PENDING: "Pending",
+  COMPLETED: "Completed"
+};
+
+export const USER_ACTION_STATUS = {
+  CANCELLED: "Cancelled"
 };

@@ -603,7 +603,7 @@ export const getOrderHistory = async (userId) => {
 
 export const updatePdcStatus = async (id, acceptStatus) => {
   const updateFields = { status: acceptStatus };
-  if (Number(acceptStatus) === 1) {
+  if (acceptStatus === "Approved") {
     updateFields.otp = String(Math.floor(1000 + Math.random() * 9000));
   }
 
@@ -704,7 +704,7 @@ export const processActionDrop = async (orderId, pdcId, action) => {
     return "Drop-off request accepted successfully";
   } else {
     // action === 'reject'
-    orderRequest.status = 0; // rejected/cancelled
+    orderRequest.status = "Rejected"; // rejected/cancelled
     await orderRequest.save();
 
     await sendNotification({
@@ -728,7 +728,7 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
   }
 
   // Check if a pending broadcast already exists, otherwise create it NOW
-  let broadcast = await Broadcast.findOne({ order_id: orderId, broadcasted_by: pdcId, status: "0" });
+  let broadcast = await Broadcast.findOne({ order_id: orderId, broadcasted_by: pdcId, status: "Active" });
 
   if (!broadcast) {
     const pdcDoc = await PdcDocument.findOne({ user_id: pdcId });

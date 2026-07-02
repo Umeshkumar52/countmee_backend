@@ -4,6 +4,7 @@ import {
   ORDER_STATUS,
   ORDER_REQUEST_STATUS,
   ORDER_REQUEST_COMPLETE_STATUS,
+  USER_ACTION_STATUS,
 } from "../../constants/index.js";
 import { User } from "../users/user.model.js";
 import { Order } from "./order.model.js";
@@ -391,7 +392,7 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
 
   const order = await Order.findById(order_id);
   if (order) {
-    order.user_action = 1;
+    order.user_action = USER_ACTION_STATUS.CANCELLED;
     order.status = ORDER_STATUS.CANCELLED;
     order.cancel_order_reason = cancel_order_reason;
     await order.save();
@@ -547,7 +548,7 @@ export const getAssignedStatus = async (orderId) => {
 
 export const notifyDp = async (orderId, packageDetailsId) => {
   const order = await Order.findById(orderId);
-  if (!order || order.user_action === 1) {
+  if (!order || order.user_action === USER_ACTION_STATUS.CANCELLED) {
     return null;
   }
 

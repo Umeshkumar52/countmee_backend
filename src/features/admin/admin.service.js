@@ -528,7 +528,7 @@ export const addPdc = async (body, files) => {
     passbook_image: uploadResults.passbook_image || null,
     profile_image: uploadResults.profile_image || null,
     shop_image: uploadResults.shop_image || null,
-    status: 1,
+    status: "Approved",
     aadhar_status: "Accept",
     pan_status: "Accept",
     pancard_status: "Accept",
@@ -614,7 +614,7 @@ export const deletePdc = async (id) => {
 
 export const activatePdc = async (id) => {
   await adminRepository.updatePdcDocument(id, {
-    status: 1,
+    status: "Approved",
     aadhar_status: "Accept",
     pan_status: "Accept",
     pancard_status: "Accept",
@@ -626,7 +626,7 @@ export const activatePdc = async (id) => {
 
 export const deactivatePdc = async (id) => {
   await adminRepository.updatePdcDocument(id, {
-    status: 0,
+    status: "Pending",
     aadhar_status: "Reject",
     pan_status: "Reject",
     pancard_status: "Reject",

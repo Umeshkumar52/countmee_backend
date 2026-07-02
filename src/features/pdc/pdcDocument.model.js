@@ -34,7 +34,7 @@ const pdcDocumentSchema = new mongoose.Schema(
     longitude: { type: Number, default: null },
     profile_image: { type: String, default: null },
     shop_image: { type: String, default: null },
-    status: { type: Number, default: 0 },
+    status: { type: String, enum: ["Pending", "Approved", "Rejected"], default: "Pending" },
     online: { type: Boolean, default: false },
     aadhar_reject_reason: { type: String, default: null },
     pan_reject_reason: { type: String, default: null },
