@@ -147,4 +147,10 @@ router.post('/wallets/verify-otp', adminVerificationController.postVerifyOtp);
 // Nearest DP logic
 router.post('/orders/nearest-dps', adminController.postNearestDps);
 
+// Assign Order Bundle
+router.post('/orders/assign-bundle', adminController.postAssignBundle);
+
+// Bundle Summary
+router.post('/orders/bundle-summary', adminController.postBundleSummary);
+
 export default router;
