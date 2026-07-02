@@ -222,14 +222,23 @@ export const addDp = async (body, files) => {
 
   const uploadResults = {};
   const fileFields = [
-    'profile_img', 'aadhar_imgfront', 'aadhar_imgback', 'rc_imgfront', 'rc_imgback',
-    'dl_imgfront', 'dl_imgback', 'residence_img', 'vehicle_img', 'bank_imagefront', 'bank_imageback'
+    "profile_img",
+    "aadhar_imgfront",
+    "aadhar_imgback",
+    "rc_imgfront",
+    "rc_imgback",
+    "dl_imgfront",
+    "dl_imgback",
+    "residence_img",
+    "vehicle_img",
+    "bank_imagefront",
+    "bank_imageback",
   ];
 
   for (const field of fileFields) {
     const fileObj = files?.[field]?.[0] || files?.[field];
     if (fileObj) {
-      const folder = field === 'profile_img' ? 'dp_profiles' : 'dp_documents';
+      const folder = field === "profile_img" ? "dp_profiles" : "dp_documents";
       const uploadResult = await uploadToCloudinary(fileObj.path, folder);
       if (uploadResult) {
         uploadResults[field] = uploadResult.secure_url;
@@ -320,14 +329,23 @@ export const editDp = async (id, body, files) => {
 
   const uploadResults = {};
   const fileFields = [
-    'profile_img', 'aadhar_imgfront', 'aadhar_imgback', 'rc_imgfront', 'rc_imgback',
-    'dl_imgfront', 'dl_imgback', 'residence_img', 'vehicle_img', 'bank_imagefront', 'bank_imageback'
+    "profile_img",
+    "aadhar_imgfront",
+    "aadhar_imgback",
+    "rc_imgfront",
+    "rc_imgback",
+    "dl_imgfront",
+    "dl_imgback",
+    "residence_img",
+    "vehicle_img",
+    "bank_imagefront",
+    "bank_imageback",
   ];
 
   for (const field of fileFields) {
     const fileObj = files?.[field]?.[0] || files?.[field];
     if (fileObj) {
-      const folder = field === 'profile_img' ? 'dp_profiles' : 'dp_documents';
+      const folder = field === "profile_img" ? "dp_profiles" : "dp_documents";
       const uploadResult = await uploadToCloudinary(fileObj.path, folder);
       if (uploadResult) {
         uploadResults[field] = uploadResult.secure_url;
@@ -338,7 +356,7 @@ export const editDp = async (id, body, files) => {
   if (uploadResults.profile_img) {
     detail.profile_img = uploadResults.profile_img;
   }
-  
+
   const dpUpdate = {
     gender,
     address,
@@ -346,7 +364,7 @@ export const editDp = async (id, body, files) => {
   if (detail.profile_img) {
     dpUpdate.profile_img = detail.profile_img;
   }
-  
+
   await adminRepository.updateDpDetail(id, dpUpdate);
 
   // Map remaining file fields to docUpdate
@@ -484,7 +502,8 @@ export const addPdc = async (body, files) => {
   for (const field of fileFields) {
     const fileObj = files?.[field]?.[0] || files?.[field];
     if (fileObj) {
-      const folder = field === 'profile_image' ? 'pdc_profiles' : 'pdc_documents';
+      const folder =
+        field === "profile_image" ? "pdc_profiles" : "pdc_documents";
       const uploadResult = await uploadToCloudinary(fileObj.path, folder);
       if (uploadResult) {
         uploadResults[field] = uploadResult.secure_url;
@@ -569,7 +588,8 @@ export const editPdc = async (pdcid, body, files) => {
   for (const field of fileFields) {
     const fileObj = files?.[field]?.[0] || files?.[field];
     if (fileObj) {
-      const folder = field === 'profile_image' ? 'pdc_profiles' : 'pdc_documents';
+      const folder =
+        field === "profile_image" ? "pdc_profiles" : "pdc_documents";
       const uploadResult = await uploadToCloudinary(fileObj.path, folder);
       if (uploadResult) {
         uploadResults[field] = uploadResult.secure_url;
@@ -681,13 +701,108 @@ export const getOrders = async (statusList) => {
   return { orders };
 };
 
-export const getPaginatedOrders = async (statusList, page, limit) => {
-  const query = statusList ? { status: { $in: statusList } } : {};
+export const getPaginatedOrders = async (
+  statusList,
+  page,
+  limit,
+  orderType,
+  search,
+  scheduleDate,
+  pickupPin,
+  deliveryPin,
+  vehicleType
+) => {
+  const query = {};
+  if (statusList) {
+    query.status = { $in: statusList };
+  }
+  if (orderType) {
+    query.order_type = orderType;
+  }
+  if (search) {
+    query.$or = [
+      { pickup_location: { $regex: search, $options: "i" } },
+      { drop_location: { $regex: search, $options: "i" } },
+      { sender_pin_code: { $regex: search, $options: "i" } },
+      { receiver_pin_code: { $regex: search, $options: "i" } },
+    ];
+  }
+  if (scheduleDate) {
+    query.schedule_date = scheduleDate;
+  }
+  if (pickupPin) {
+    query.sender_pin_code = pickupPin;
+  }
+  if (deliveryPin) {
+    query.receiver_pin_code = deliveryPin;
+  }
+  if (vehicleType) {
+    query.mode_of_transport = vehicleType;
+  }
+
   return await adminRepository.findPaginatedOrders(query, page, limit);
 };
 
 export const getPendingOrders = async () => {
   return await getOrders(["pending", "created"]);
+};
+
+export const getScheduledOrderStats = async () => {
+  const Order = (await import("../orders/order.model.js")).Order;
+  const today = new Date();
+  
+  const formatDate = (date) => {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const getDisplayDate = (date) => {
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); // e.g. "15 Jun 2026"
+  };
+
+  const todayDate = new Date(today);
+  const todayStr = formatDate(todayDate);
+
+  const tomorrowDate = new Date(today);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = formatDate(tomorrowDate);
+
+  const dayAfterDate = new Date(today);
+  dayAfterDate.setDate(dayAfterDate.getDate() + 2);
+  const dayAfterStr = formatDate(dayAfterDate);
+
+  const [totalCount, todayCount, tomorrowCount, dayAfterCount] = await Promise.all([
+    Order.countDocuments({ order_type: "scheduled" }),
+    Order.countDocuments({ order_type: "scheduled", schedule_date: todayStr }),
+    Order.countDocuments({ order_type: "scheduled", schedule_date: tomorrowStr }),
+    Order.countDocuments({ order_type: "scheduled", schedule_date: dayAfterStr }),
+  ]);
+
+  return {
+    total: totalCount,
+    today: { count: todayCount, date: todayStr, display: getDisplayDate(todayDate) },
+    tomorrow: { count: tomorrowCount, date: tomorrowStr, display: getDisplayDate(tomorrowDate) },
+    dayAfter: { count: dayAfterCount, date: dayAfterStr, display: getDisplayDate(dayAfterDate) }
+  };
+};
+
+export const getScheduledFilters = async () => {
+  const Order = (await import("../orders/order.model.js")).Order;
+  const filterQuery = { order_type: "scheduled" };
+  
+  const [pickupPins, deliveryPins, vehicleTypes] = await Promise.all([
+    Order.distinct('sender_pin_code', filterQuery),
+    Order.distinct('receiver_pin_code', filterQuery),
+    Order.distinct('mode_of_transport', filterQuery)
+  ]);
+
+  return {
+    pickupPins: pickupPins.filter(pin => pin !== null && pin !== "").sort(),
+    deliveryPins: deliveryPins.filter(pin => pin !== null && pin !== "").sort(),
+    vehicleTypes: vehicleTypes.filter(type => type !== null && type !== "").sort()
+  };
 };
 
 export const getAssignedOrders = async () => {
@@ -736,9 +851,17 @@ export const getParticularOrder = async (order_id) => {
   return { order: normalizeOrder(order) };
 };
 
-export const getFeedbacks = async () => {
-  const ratings = await adminRepository.findAllRatings();
-  return { ratings };
+export const getFeedbacks = async (role, page = 1, limit = 10) => {
+  const query = {};
+  if (role === 'User') {
+    query.from_customer = { $exists: true, $ne: null };
+  } else if (role === 'Delivery Partner') {
+    query.from_dp = { $exists: true, $ne: null };
+  } else if (role === 'PDC') {
+    query.from_pdc = { $exists: true, $ne: null };
+  }
+  
+  return await adminRepository.findPaginatedRatings(query, page, limit);
 };
 
 export const getPendingPayments = async (type, startDate, endDate) => {
@@ -1137,4 +1260,102 @@ export const deleteVehicleSubcategory = async (id) => {
   const subcat = await VehicleSubcategory.findByIdAndDelete(id);
   if (!subcat) throw new Error("Vehicle subcategory not found");
   return { message: "Vehicle subcategory deleted successfully" };
+};
+
+export const findNearestDpsForOrders = async (orderIds) => {
+  const mongoose = await import("mongoose");
+  const Order = mongoose.default.model("Order");
+  const PackageDetail = mongoose.default.model("PackageDetail");
+  const DeliverCharge = mongoose.default.model("DeliverCharge");
+  const DpDetail = mongoose.default.model("DpDetail");
+  const User = mongoose.default.model("User");
+  const { calculateDistance } = await import("../../common/utils/distance.js");
+
+  // 1. Fetch Orders & Packages
+  const orders = await Order.find({ _id: { $in: orderIds } }).lean();
+  if (!orders || orders.length === 0) {
+    throw new Error("No orders found");
+  }
+
+  const packageIds = orders.map((o) => o.package_id).filter(Boolean);
+  const packages = await PackageDetail.find({ _id: { $in: packageIds } }).lean();
+
+  // 2. Capacity Math
+  let totalWeight = 0;
+  let maxLength = 0;
+  let maxWidth = 0;
+  let maxHeight = 0;
+
+  for (const pkg of packages) {
+    totalWeight += parseFloat(pkg.product_weight || 0);
+    maxLength = Math.max(maxLength, parseFloat(pkg.product_length || 0));
+    maxWidth = Math.max(maxWidth, parseFloat(pkg.product_width || 0));
+    maxHeight = Math.max(maxHeight, parseFloat(pkg.product_height || 0));
+  }
+
+  // 3. Vehicle Filter
+  const vehicleTypes = await DeliverCharge.find().lean();
+  const eligibleVehicleTypes = vehicleTypes
+    .filter(
+      (vt) =>
+        vt.max_weight >= totalWeight &&
+        vt.max_length >= maxLength &&
+        vt.max_width >= maxWidth &&
+        vt.max_height >= maxHeight
+    )
+    .map((vt) => vt.vehicle_type);
+
+  if (eligibleVehicleTypes.length === 0) {
+    throw new Error("No vehicle type has enough capacity for these orders");
+  }
+
+  // 4. Broadcast Range
+  const { distancesByRole } = await getBroadcastDistance();
+  const maxDistanceStr = distancesByRole["Delivery Partner"] || "5 km"; // fallback
+  const maxDistanceKm = parseFloat(maxDistanceStr.replace(/[^0-9.]/g, "")) || 5;
+
+  // 5. Fetch DPs
+  const eligibleDps = await DpDetail.find({
+    online: true,
+    document_approval: "Approved",
+  }).populate("dpDocument").lean();
+
+  // Filter DPs by capable vehicle type
+  const capableDps = eligibleDps.filter(
+    (dp) =>
+      dp.dpDocument &&
+      eligibleVehicleTypes.includes(dp.dpDocument.vehicle_type)
+  );
+
+  // 6. Distance Math
+  const pickupLat = orders[0].sender_latitude;
+  const pickupLon = orders[0].sender_longitude;
+
+  const dpsWithDistance = [];
+  for (const dp of capableDps) {
+    const distanceKm = calculateDistance(
+      pickupLat,
+      pickupLon,
+      dp.latitude,
+      dp.longitude
+    );
+    const user = await User.findById(dp.user_id).select("name phone profile_pic").lean();
+    dpsWithDistance.push({
+      user_id: dp.user_id,
+      name: user?.name || "Unknown DP",
+      phone: user?.phone || "",
+      profile_pic: dp.profile_img || "",
+      distance_km: distanceKm,
+      vehicle_type: dp.dpDocument.vehicle_type,
+      latitude: dp.latitude,
+      longitude: dp.longitude,
+    });
+  }
+
+  // 7. Filter & Sort
+  const nearestDps = dpsWithDistance
+    .filter((dp) => dp.distance_km <= maxDistanceKm)
+    .sort((a, b) => a.distance_km - b.distance_km);
+
+  return nearestDps;
 };

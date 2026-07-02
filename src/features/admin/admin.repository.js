@@ -337,6 +337,26 @@ export const findAllRatings = async () => {
     .populate("from_pdc");
 };
 
+export const findPaginatedRatings = async (query, page = 1, limit = 10) => {
+  const skip = (page - 1) * limit;
+  const total = await Rating.countDocuments(query);
+  const ratings = await Rating.find(query)
+    .populate("order_id")
+    .populate("from_customer")
+    .populate("from_dp")
+    .populate("from_pdc")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  return {
+    ratings,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit)
+  };
+};
+
 export const findOrdersInDateRange = async (startDate, endDate) => {
   return await Order.find({
     createdAt: {
