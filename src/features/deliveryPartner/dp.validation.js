@@ -381,6 +381,23 @@ export const rateUserSchema = Joi.object({
     })
 });
 
+export const cancelAssignmentSchema = Joi.object({
+  order_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'Order ID cannot be empty',
+      'string.pattern.base': 'Invalid Order ID format',
+      'any.required': 'Order ID is required'
+    }),
+  cancel_reason: Joi.string()
+    .trim()
+    .optional()
+    .messages({
+      'string.base': 'Cancel reason must be a string'
+    })
+});
+
 export const orderAcceptSchema = Joi.object({
   order_id: Joi.string()
     .regex(objectIdRegex)
@@ -443,5 +460,13 @@ export const resendOtpSchema = Joi.object({
       'string.empty': 'Order ID cannot be empty',
       'string.pattern.base': 'Invalid Order ID format',
       'any.required': 'Order ID is required'
-    })
+    }),
+  latitude: Joi.number().required().messages({
+    'number.base': 'Latitude must be a valid number',
+    'any.required': 'Latitude is required'
+  }),
+  longitude: Joi.number().required().messages({
+    'number.base': 'Longitude must be a valid number',
+    'any.required': 'Longitude is required'
+  })
 });

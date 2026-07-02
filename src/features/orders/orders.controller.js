@@ -6,10 +6,13 @@ import * as ordersValidation from "./orders.validation.js";
 import { ApiError } from "../../common/utils/ApiError.js";
 
 export const createOrder = asyncHandler(async (req, res) => {
-  if (typeof req.body.different_dimantion === 'string') {
-    req.body.different_dimantion = req.body.different_dimantion === 'true';
+  if (typeof req.body.different_dimantion === "string") {
+    req.body.different_dimantion = req.body.different_dimantion === "true";
   }
-  if (req.body.dimensions_list && typeof req.body.dimensions_list === 'string') {
+  if (
+    req.body.dimensions_list &&
+    typeof req.body.dimensions_list === "string"
+  ) {
     try {
       req.body.dimensions_list = JSON.parse(req.body.dimensions_list);
     } catch (e) {
@@ -18,17 +21,17 @@ export const createOrder = asyncHandler(async (req, res) => {
   }
 
   req.body = validate(ordersValidation.createOrderSchema, req.body);
-  
+
   const fileErrors = {};
-  if (!req.files || !req.files.image1) fileErrors.image1 = ["image1 is required"];
-  if (!req.files || !req.files.image2) fileErrors.image2 = ["image2 is required"];
+  if (!req.files || !req.files.image1)
+    fileErrors.image1 = ["image1 is required"];
+  if (!req.files || !req.files.image2)
+    fileErrors.image2 = ["image2 is required"];
 
   if (Object.keys(fileErrors).length > 0) {
     throw new ApiError(400, "Validation error", fileErrors);
   }
-
   const result = await ordersService.createOrder(req.body, req.files);
-  console.log("Order creation result:", result);
   return res.json(ApiResponse.success(result, "order created"));
 });
 
@@ -68,17 +71,21 @@ export const cancelledOrder = asyncHandler(async (req, res) => {
 });
 
 export const charges = asyncHandler(async (req, res) => {
-  const { mode_of_transport, pickup_lat, pickup_lng, drop_lat, drop_lng, no_of_items } = validate(
-    ordersValidation.calculateChargesSchema,
-    req.body,
-  );
+  const {
+    mode_of_transport,
+    pickup_lat,
+    pickup_lng,
+    drop_lat,
+    drop_lng,
+    no_of_items,
+  } = validate(ordersValidation.calculateChargesSchema, req.body);
   const result = await ordersService.getCharges(
     mode_of_transport,
     Number(pickup_lat),
     Number(pickup_lng),
     Number(drop_lat),
     Number(drop_lng),
-    Number(no_of_items)
+    Number(no_of_items),
   );
   return res.json(
     ApiResponse.success(result, "Charges calculated successfully"),

@@ -310,6 +310,52 @@ export const getAllOrdersPage = async (req, res, next) => {
   }
 };
 
+export const getPaginatedOrdersPage = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const status = req.query.status;
+    const orderType = req.query.orderType;
+    const search = req.query.search;
+    const scheduleDate = req.query.scheduleDate;
+    
+    const pickupPin = req.query.pickupPin;
+    const deliveryPin = req.query.deliveryPin;
+    const vehicleType = req.query.vehicleType;
+
+    let statusList = null;
+    if (status && status !== 'all') {
+      statusList = status === 'pending' ? ['pending', 'created'] : [status];
+    }
+    
+    const result = await adminService.getPaginatedOrders(
+      statusList, page, limit, orderType, search, scheduleDate,
+      pickupPin, deliveryPin, vehicleType
+    );
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getScheduledOrderStats = async (req, res, next) => {
+  try {
+    const result = await adminService.getScheduledOrderStats();
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getScheduledFilters = async (req, res, next) => {
+  try {
+    const result = await adminService.getScheduledFilters();
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const getParticularOrderPage = async (req, res, next) => {
   try {
     const { order_id } = req.params;
@@ -367,7 +413,12 @@ export const getDpCancelledOrdersPage = async (req, res, next) => {
 
 export const getFeedbackPage = async (req, res, next) => {
   try {
-    const result = await adminService.getFeedbacks();
+    const { role, page, limit } = req.query;
+    const result = await adminService.getFeedbacks(
+      role, 
+      page ? parseInt(page) : 1, 
+      limit ? parseInt(limit) : 10
+    );
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -518,3 +569,47 @@ export const deleteVehicleSubcategory = async (req, res, next) => {
     next(err);
   }
 };
+
+export const postNearestDps = async (req, res, next) => {
+  try {
+    const { orderIds } = req.body;
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      throw new Error("Please provide an array of orderIds");
+    }
+    const result = await adminService.findNearestDpsForOrders(orderIds);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const postAssignBundle = async (req, res, next) => {
+  try {
+    const { orderIds, dp_id } = req.body;
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      throw new Error("Please provide an array of orderIds");
+    }
+    if (!dp_id) {
+      throw new Error("Please provide a dp_id");
+    }
+    const result = await adminService.assignOrderBundle(orderIds, dp_id);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+export const postBundleSummary = async (req, res, next) => {
+  try {
+    const { orderIds } = req.body;
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      throw new Error("Please provide an array of orderIds");
+    }
+    const result = await adminService.getBundleSummary(orderIds);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+

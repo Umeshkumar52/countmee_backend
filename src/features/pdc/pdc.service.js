@@ -15,9 +15,12 @@ import { Notification } from '../notifications/notification.model.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
 import { getLatLongFromAddress } from '../tracking/maps.service.js';
 import { sendNotification } from '../../common/utils/sendNotification.js';
-import { ROLES } from '../../constants/index.js';
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS } from '../../constants/index.js';
+import * as dpService from '../deliveryPartner/dp.service.js';
+import * as adminService from '../admin/admin.service.js';
+import { getAgenda } from '../../common/services/agenda.service.js';
 
-export const register = async (firstName, email, phone, password, fcmToken) => {
+export const register = async (name, email, phone, password, fcmToken) => {
   const existingUser = await pdcRepository.findUserByPhone(phone);
   if (existingUser) {
     throw new Error('User already exists');
@@ -25,7 +28,7 @@ export const register = async (firstName, email, phone, password, fcmToken) => {
 
   const hashedPassword = await bcrypt.hash(password, 10);
   const user = await pdcRepository.createUser({
-    name: firstName,
+    name,
     email,
     phone,
     password: hashedPassword,
@@ -34,14 +37,13 @@ export const register = async (firstName, email, phone, password, fcmToken) => {
 
   const pdc = await pdcRepository.createPdcDocument({
     user_id: user._id,
-    name: firstName,
     phone
   });
 
   await sendNotification({
     role: ROLES.ADMIN,
     title: 'New PDC Registered',
-    message: `${firstName} has registered as a Pickup & Delivery Center`,
+    message: `${name} has registered as a Pickup & Delivery Center`,
   });
 
   await sendNotification({
@@ -93,12 +95,11 @@ export const updateInnerForm = async (userId, name, email, phone) => {
   }
 
   let pdcDoc = await pdcRepository.findPdcDocumentByUserId(userId);
-  const pdcUpdateData = { name, email, phone };
+  const pdcUpdateData = { email, phone };
 
   if (!pdcDoc) {
     pdcDoc = await pdcRepository.createPdcDocument({
       user_id: userId,
-      name,
       email,
       phone
     });
@@ -212,7 +213,7 @@ export const getDashboardData = async (userId) => {
       { notified_ids: userId },
       { accepted_by: userId }
     ],
-    status: { $in: [null, 0, 1, '0', '1'] }
+    status: { $in: [ORDER_REQUEST_STATUS.PENDING, ORDER_REQUEST_STATUS.REJECTED, ORDER_REQUEST_STATUS.ACCEPTED, '0', '1'] }
   });
 
   const orderRelevantIds = Array.from(new Set(orderRequests.map(r => r.order_id)));
@@ -334,7 +335,7 @@ export const getDashboardData = async (userId) => {
       const acceptedReqs = await OrderRequest.find({
         order_id: order._id,
         broadcast_id: pdcBroadcast._id,
-        status: 1
+        status: ORDER_REQUEST_STATUS.ACCEPTED
       });
 
       acceptedReqs.forEach(req => {
@@ -398,10 +399,7 @@ export const getDashboardData = async (userId) => {
 
   const pendingOrders = await Order.countDocuments({
     _id: { $in: allPdcOrderIds, $nin: pickedUpByDpOrderIds },
-    $or: [
-      { status_completed: null },
-      { status_completed: { $nin: ['delivered', 'cancelled', 'parcel collected', 'delivering to pdc'] } }
-    ]
+    status: { $in: [ORDER_STATUS.CONFIRMED, ORDER_STATUS.PROCESSING] }
   });
 
   const pdcPayouts = await PdcPayout.find({ pdc_auth_id: userId })
@@ -670,4 +668,137 @@ export const rateDp = async (orderId, fromPdc, toDp, stars, message = '') => {
   });
 
   return dp.name;
+};
+
+export const processActionDrop = async (orderId, pdcId, action) => {
+  const orderRequest = await OrderRequest.findOne({
+    order_id: orderId,
+    notified_ids: pdcId,
+    request_type: "deliver to pdc",
+    status: null // pending
+  });
+
+  if (!orderRequest) {
+    throw new Error("Pending drop-off request not found or already processed.");
+  }
+
+  // Cancel the agenda job
+  const agenda = getAgenda();
+  if (agenda) {
+    await agenda.cancel({ name: 'auto-accept-pdc', 'data.order_request_id': orderRequest._id.toString() });
+  }
+
+  if (action === 'accept') {
+    orderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED; // 1
+    orderRequest.accepted_by = pdcId;
+    await orderRequest.save();
+
+    await sendNotification({
+      role: ROLES.DP,
+      userId: orderRequest.requested_by,
+      title: "Drop-off Accepted",
+      message: "The PDC has accepted your drop-off request.",
+      orderId: orderId
+    });
+
+    return "Drop-off request accepted successfully";
+  } else {
+    // action === 'reject'
+    orderRequest.status = 0; // rejected/cancelled
+    await orderRequest.save();
+
+    await sendNotification({
+      role: ROLES.DP,
+      userId: orderRequest.requested_by,
+      title: "Drop-off Rejected",
+      message: "The selected PDC rejected your drop-off. Please select a different PDC.",
+      orderId: orderId
+    });
+
+    return "Drop-off request rejected successfully";
+  }
+};
+
+export const triggerManualBroadcast = async (orderId, pdcId) => {
+  const order = await Order.findById(orderId);
+  if (!order) throw new Error("Order not found");
+
+  if (order.status_completed !== "delivered to pdc") {
+    throw new Error("Order must be delivered to PDC before broadcasting");
+  }
+
+  // Check if a pending broadcast already exists, otherwise create it NOW
+  let broadcast = await Broadcast.findOne({ order_id: orderId, broadcasted_by: pdcId, status: "0" });
+
+  if (!broadcast) {
+    const pdcDoc = await PdcDocument.findOne({ user_id: pdcId });
+    if (!pdcDoc) throw new Error("PDC location not found");
+
+    // Generate the Broadcast and pickup_otp ONLY when broadcast button is clicked
+    const createdBroadcast = await Broadcast.create([{
+      order_id: order._id,
+      broadcasted_by: pdcId,
+      pickup_location: pdcDoc.address,
+      pickup_latitude: pdcDoc.latitude,
+      pickup_longitude: pdcDoc.longitude,
+      drop_location: order.drop_location,
+      drop_latitude: order.receiver_latitude,
+      drop_longitude: order.receiver_longitude,
+      pickup_otp: Math.floor(1000 + Math.random() * 9000)
+    }]);
+    broadcast = createdBroadcast[0];
+
+    order.broadcast_id = broadcast._id;
+    order.delivery_type = "broadcast_pdc";
+    await order.save();
+  }
+
+  // Fetch dynamic radius from Admin Settings
+  const { distancesByRole } = await adminService.getBroadcastDistance();
+  let maxDistance = 10000; // default 10km
+  if (distancesByRole && distancesByRole['deliverypartner']) {
+    maxDistance = distancesByRole['deliverypartner'] * 1000;
+  }
+
+  // Use the highly-optimized MongoDB $geoNear engine to find closest DPs
+  let nearByDps = await dpService.checkNearbyDps(maxDistance, broadcast._id, pdcId);
+
+  // Optional: Limit to closest 15 DPs for industrial standard (Uber-style dispatch)
+  if (nearByDps.length > 15) {
+    nearByDps = nearByDps.slice(0, 15);
+  }
+
+  if (nearByDps.length === 0) {
+    return 0; // Returning count 0
+  }
+
+  // Create OrderRequest if it doesn't exist
+  const pdcBroadcastOrderRequest = await OrderRequest.findOne({
+    order_id: order._id,
+    broadcast_id: broadcast._id,
+    notified_ids: { $all: nearByDps },
+  });
+
+  if (!pdcBroadcastOrderRequest) {
+    await OrderRequest.create({
+      order_id: order._id,
+      requested_by: pdcId,
+      notified_ids: nearByDps,
+      request_type: "broadcast_pdc",
+      broadcast_id: broadcast._id,
+    });
+
+    // Send push notifications to nearby DPs
+    for (const dpId of nearByDps) {
+      await sendNotification({
+        role: ROLES.DP,
+        userId: dpId,
+        title: "New Pickup Available!",
+        message: `A new parcel (Order #${order._id}) is ready for pickup at a nearby PDC hub.`,
+        orderId: order._id
+      });
+    }
+  }
+
+  return nearByDps.length;
 };

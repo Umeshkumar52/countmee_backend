@@ -1,5 +1,10 @@
 import * as ordersRepository from "./orders.repository.js";
-import { ROLES } from "../../constants/index.js";
+import {
+  ROLES,
+  ORDER_STATUS,
+  ORDER_REQUEST_STATUS,
+  ORDER_REQUEST_COMPLETE_STATUS,
+} from "../../constants/index.js";
 import { User } from "../users/user.model.js";
 import { Order } from "./order.model.js";
 import { OrderRequest } from "./orderRequest.model.js";
@@ -11,11 +16,15 @@ import {
   uploadToCloudinary,
   deleteFromCloudinary,
 } from "../../common/services/cloudinary.service.js";
-import { distanceBetween, haversineGreatCircleDistance } from "../tracking/maps.service.js";
+import {
+  distanceBetween,
+  haversineGreatCircleDistance,
+} from "../tracking/maps.service.js";
 import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
 import { MinBroadcastDist } from "../tracking/minBroadcast.model.js";
 import { sendNotificationToUser } from "../../common/services/socket.service.js";
 import mongoose from "mongoose";
+import { Notification } from "../notifications/notification.model.js";
 
 /**
  * Calculates delivery charges with a hardcoded 5% GST
@@ -46,7 +55,14 @@ export const calculateFinalCharges = (deliverCharge, distance) => {
   };
 };
 
-export const getCharges = async (mode_of_transport, pickup_lat, pickup_lng, drop_lat, drop_lng, no_of_items) => {
+export const getCharges = async (
+  mode_of_transport,
+  pickup_lat,
+  pickup_lng,
+  drop_lat,
+  drop_lng,
+  no_of_items,
+) => {
   const deliverCharge =
     await ordersRepository.findDeliverChargeByVehicle(mode_of_transport);
   if (!deliverCharge) {
@@ -60,7 +76,13 @@ export const getCharges = async (mode_of_transport, pickup_lat, pickup_lng, drop
     googleMapMode = "walking";
   }
 
-  const distanceText = await distanceBetween(pickup_lat, pickup_lng, drop_lat, drop_lng, googleMapMode);
+  const distanceText = await distanceBetween(
+    pickup_lat,
+    pickup_lng,
+    drop_lat,
+    drop_lng,
+    googleMapMode,
+  );
   const distanceValue = parseFloat(distanceText) || 0;
 
   const calc = calculateFinalCharges(deliverCharge, distanceValue);
@@ -87,31 +109,50 @@ export const getCharges = async (mode_of_transport, pickup_lat, pickup_lng, drop
 export const broadcastOrderToNearbyDPs = async (order, packageDetail) => {
   try {
     // 1. Get minimum broadcast distance for DP
-    const minBroadcast = await MinBroadcastDist.findOne({ role: { $regex: /^dp$/i } });
-    const maxDistanceKm = minBroadcast ? minBroadcast.minimum_broadcast_distance : 5;
+    const minBroadcast = await MinBroadcastDist.findOne({
+      role: { $regex: /^dp$/i },
+    });
+    const maxDistanceKm = minBroadcast
+      ? minBroadcast.minimum_broadcast_distance
+      : 5;
     const maxDistanceMeters = maxDistanceKm * 1000;
 
     // 2. Fetch DP Commission logic for the given vehicle type
-    const deliverCharge = await ordersRepository.findDeliverChargeByVehicle(order.mode_of_transport);
+    const deliverCharge = await ordersRepository.findDeliverChargeByVehicle(
+      order.mode_of_transport,
+    );
     if (!deliverCharge) {
-      console.warn(`[Broadcast] No deliver charge found for ${order.mode_of_transport}`);
+      console.warn(
+        `[Broadcast] No deliver charge found for ${order.mode_of_transport}`,
+      );
       return;
     }
 
     // 3. Calculate DP Earning exactly
-    const dp_earning = (order.charges * (deliverCharge.dp_commission / 100)).toFixed(2);
+    const dp_earning = (
+      order.charges *
+      (deliverCharge.dp_commission / 100)
+    ).toFixed(2);
 
     // 4. Find Active DPs whose vehicle matches
-    const activeDps = await DpDetail.find({ online: 1 });
-    const activeDpUserIds = activeDps.map(dp => dp.user_id);
+    const activeDps = await DpDetail.find({
+      online: true,
+      document_approval: "Approved",
+    });
+    console.log("active dp", activeDps);
+    const activeDpUserIds = activeDps.map((dp) => dp.user_id);
 
     const matchingDocuments = await DpDocument.find({
       user_id: { $in: activeDpUserIds },
-      vehicle_type: order.mode_of_transport
+      vehicle_type: order.mode_of_transport,
     });
-    
-    const matchedUserIds = new Set(matchingDocuments.map(doc => doc.user_id.toString()));
-    const targetDps = activeDps.filter(dp => matchedUserIds.has(dp.user_id.toString()));
+
+    const matchedUserIds = new Set(
+      matchingDocuments.map((doc) => doc.user_id.toString()),
+    );
+    const targetDps = activeDps.filter((dp) =>
+      matchedUserIds.has(dp.user_id.toString()),
+    );
 
     let sentCount = 0;
     // 5. Geo-filter and Broadcast
@@ -121,9 +162,9 @@ export const broadcastOrderToNearbyDPs = async (order, packageDetail) => {
           order.sender_latitude,
           order.sender_longitude,
           dp.latitude,
-          dp.longitude
+          dp.longitude,
         );
-
+        console.log("distance", distanceMeters, maxDistanceMeters);
         if (distanceMeters <= maxDistanceMeters) {
           // Fire Socket notification
           sendNotificationToUser(dp.user_id, {
@@ -134,14 +175,16 @@ export const broadcastOrderToNearbyDPs = async (order, packageDetail) => {
             distance: order.distance,
             dp_earning: Number(dp_earning),
             product_description: packageDetail.product_description,
-            no_of_items: packageDetail.no_of_items
+            no_of_items: packageDetail.no_of_items,
           });
           sentCount++;
         }
       }
     }
 
-    console.log(`[Broadcast] Order ${order._id} broadcasted to ${sentCount} nearby DPs`);
+    console.log(
+      `[Broadcast] Order ${order._id} broadcasted to ${sentCount} nearby DPs`,
+    );
   } catch (error) {
     console.error("[Broadcast] Error broadcasting to DPs:", error.message);
   }
@@ -182,6 +225,9 @@ export const createOrder = async (orderData, files) => {
     dimension_unit,
     dimensions_list,
     charges,
+    order_type = "normal",
+    schedule_date,
+    schedule_time,
   } = orderData;
 
   // Upload images to Cloudinary
@@ -247,8 +293,11 @@ export const createOrder = async (orderData, files) => {
           drop_otp,
           charges: Number(charges),
           delivery_type: "direct",
+          order_type,
+          schedule_date,
+          schedule_time,
 
-          status: 0,
+          status: order_type === "scheduled" ? ORDER_STATUS.SCHEDULED : ORDER_STATUS.CREATED,
         },
       ],
       { session, ordered: true },
@@ -290,7 +339,7 @@ export const createOrder = async (orderData, files) => {
       title: "Order Placed",
       message: `Your order of ID : ${newOrder._id} is placed`,
       orderId: newOrder._id,
-      session
+      session,
     });
 
     await sendNotification({
@@ -298,16 +347,18 @@ export const createOrder = async (orderData, files) => {
       title: "New Order Placed",
       message: ` has placed an order of ID : ${newOrder._id}`,
       orderId: newOrder._id,
-      session
+      session,
     });
 
     await session.commitTransaction();
     session.endSession();
 
-    // Fire-and-forget broadcast
-    broadcastOrderToNearbyDPs(newOrder, packageDetail[0]).catch(err => 
-      console.error("[Broadcast] Background execution failed:", err)
-    );
+    // Fire-and-forget broadcast ONLY if it's a normal order
+    if (newOrder.order_type === "normal") {
+      broadcastOrderToNearbyDPs(newOrder, packageDetail[0]).catch((err) =>
+        console.error("[Broadcast] Background execution failed:", err),
+      );
+    }
 
     return { order: newOrder, packageDetails: packageDetail[0] };
   } catch (error) {
@@ -333,12 +384,15 @@ export const createOrder = async (orderData, files) => {
 
 export const cancelOrder = async (order_id, cancel_order_reason) => {
   // Update OrderRequest status to 0
-  await OrderRequest.updateMany({ order_id }, { status: 0 });
+  await OrderRequest.updateMany(
+    { order_id },
+    { status: ORDER_REQUEST_STATUS.REJECTED },
+  );
 
   const order = await Order.findById(order_id);
   if (order) {
     order.user_action = 1;
-    order.status = 5; 
+    order.status = ORDER_STATUS.CANCELLED;
     order.cancel_order_reason = cancel_order_reason;
     await order.save();
 
@@ -347,7 +401,8 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
         role: ROLES.USER,
         userId: order.user_id,
         title: "Order Cancelled",
-        message: "Sorry, No Delivery partners are available this moment. Please try again later!",
+        message:
+          "Sorry, No Delivery partners are available this moment. Please try again later!",
         orderId: order._id,
       });
 
@@ -451,8 +506,8 @@ export const getAssignedStatus = async (orderId) => {
 
   const orderAssignDoc = await OrderRequest.findOne({
     order_id: order._id,
-    status: 1,
-    complete_status: null,
+    status: ORDER_REQUEST_STATUS.ACCEPTED,
+    complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING,
     request_type: "direct",
   });
 
@@ -498,8 +553,8 @@ export const notifyDp = async (orderId, packageDetailsId) => {
 
   // Busy DPs who have already accepted another active order
   const activeRequests = await OrderRequest.find({
-    status: 1,
-    complete_status: null,
+    status: ORDER_REQUEST_STATUS.ACCEPTED,
+    complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING,
   });
   const busyDpIds = activeRequests.map((r) => r.accepted_by).filter(Boolean);
 

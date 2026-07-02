@@ -131,6 +131,27 @@ export const createOrderSchema = Joi.object({
     is: true,
     then: Joi.required(),
     otherwise: Joi.optional()
+  }),
+  order_type: Joi.string().valid('normal', 'scheduled').default('normal'),
+  schedule_date: Joi.string().when('order_type', {
+    is: 'scheduled',
+    then: Joi.required().messages({
+      "string.empty": "Schedule date is required for scheduled orders",
+      "any.required": "Schedule date is required for scheduled orders",
+    }),
+    otherwise: Joi.forbidden().messages({
+      "any.unknown": "Schedule date is not allowed for normal orders"
+    })
+  }),
+  schedule_time: Joi.string().when('order_type', {
+    is: 'scheduled',
+    then: Joi.required().messages({
+      "string.empty": "Schedule time is required for scheduled orders",
+      "any.required": "Schedule time is required for scheduled orders",
+    }),
+    otherwise: Joi.forbidden().messages({
+      "any.unknown": "Schedule time is not allowed for normal orders"
+    })
   })
 });
 

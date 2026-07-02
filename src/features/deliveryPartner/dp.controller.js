@@ -1,5 +1,5 @@
 import * as dpService from "./dp.service.js";
-import { ROLES } from "../../constants/index.js";
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS } from "../../constants/index.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
 import { validate } from "../../common/utils/validationHelper.js";
@@ -128,6 +128,17 @@ export const order_accept = asyncHandler(async (req, res) => {
   return res.json(ApiResponse.success(null, result.message));
 });
 
+export const cancelAssignment = asyncHandler(async (req, res) => {
+  const { order_id, cancel_reason } = validate(
+    dpValidation.cancelAssignmentSchema,
+    req.body,
+  );
+  const user_id = req.user._id; 
+  const result = await dpService.cancelAssignment(order_id, user_id, cancel_reason);
+  return res.json(ApiResponse.success(null, result.message));
+});
+
+
 export const acceptedOrders = asyncHandler(async (req, res) => {
   const { user_id } = req.params;
   const acceptedOrders = await dpService.acceptedOrders(user_id);
@@ -204,7 +215,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     const orderRequestCheck = await OrderRequest.findOne({
       order_id: order_id,
       broadcast_id: broadcast_id,
-      status: 1,
+      status: ORDER_REQUEST_STATUS.ACCEPTED,
     });
 
     if (orderRequestCheck) {
@@ -326,6 +337,7 @@ export const saveBroadcastPoint = asyncHandler(async (req, res) => {
     order.delivery_type = "broadcast";
     order.broadcast_id = broadcastObj._id;
     order.status_completed = "broadcasted";
+    order.status = ORDER_STATUS.PROCESSING;
     await order.save();
   }
 
@@ -507,14 +519,15 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
         location: pdcObj.address,
         latitude: pdcObj.latitude,
         longitude: pdcObj.longitude,
+        geo_location: { type: "Point", coordinates: [pdcObj.longitude, pdcObj.latitude] }
       },
       { session },
     );
 
-    const orderRequest = await OrderRequest.findOne({ order_id, status: 1 })
+    const orderRequest = await OrderRequest.findOne({ order_id, status: ORDER_REQUEST_STATUS.ACCEPTED })
       .sort({ created_at: -1 })
       .session(session);
-    orderRequest.complete_status = 1;
+    orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
     await orderRequest.save({ session });
 
     const nextBroadcast = await Broadcast.create(
@@ -536,6 +549,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
     order.broadcast_id = nextBroadcast[0]._id;
     order.delivery_type = "broadcast_pdc";
     order.status_completed = "delivered to pdc";
+    order.status = ORDER_STATUS.PROCESSING;
     await order.save({ session });
 
     await session.commitTransaction();
@@ -558,6 +572,8 @@ export const dropOrderToCustomer = asyncHandler(async (req, res) => {
     order_id,
     user_id,
     drop_otp,
+    latitude,
+    longitude
   );
   return res.json(ApiResponse.success(null, result.message));
 });
@@ -785,9 +801,9 @@ export const deliverPdc = asyncHandler(async (req, res) => {
     let orderRequest = await OrderRequest.findOne({
       order_id: order._id,
       notified_ids: pdcAuthId,
-      status: 1,
+      status: ORDER_REQUEST_STATUS.ACCEPTED,
       request_type: "deliver to pdc",
-      complete_status: null,
+      complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING,
     }).session(session);
 
     if (!orderRequest) {
@@ -834,6 +850,7 @@ export const deliverPdc = asyncHandler(async (req, res) => {
       order.broadcast_id = broadcast[0]._id;
       order.delivery_type = "pdc";
       order.status_completed = "delivering to pdc";
+      order.status = ORDER_STATUS.PROCESSING;
       await order.save({ session });
     }
 
@@ -879,10 +896,10 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
     const orderRequest = orderRequests[1];
 
     if (orderRequest && pdcOrderRequest) {
-      orderRequest.complete_status = 1;
+      orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
       await orderRequest.save({ session });
 
-      pdcOrderRequest.status = 1;
+      pdcOrderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
       await pdcOrderRequest.save({ session });
 
       const newOrderRequest = await OrderRequest.findOne({
@@ -900,8 +917,9 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
       }).session(session);
       if (dpDetail && pdc) {
         dpDetail.location = pdc.address;
-        dpDetail.latitude = pdc.latitude;
-        dpDetail.longitude = pdc.longitude;
+        dpDetail.latitude = Number(latitude);
+        dpDetail.longitude = Number(longitude);
+        dpDetail.geo_location = { type: "Point", coordinates: [Number(longitude), Number(latitude)] };
         await dpDetail.save({ session });
       }
 
@@ -1055,6 +1073,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
         order.broadcast_id = nextBroadcast._id;
         order.delivery_type = "broadcast_pdc";
         order.status_completed = "delivered to pdc";
+        order.status = ORDER_STATUS.PROCESSING;
         await order.save({ session });
       }
     }

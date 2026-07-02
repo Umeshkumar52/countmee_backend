@@ -1,6 +1,6 @@
 import { User } from "../users/user.model.js";
 import { Customer } from "../users/customer.model.js";
-import { ROLES } from "../../constants/index.js";
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS } from "../../constants/index.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
 import { PdcDocument } from "../pdc/pdcDocument.model.js";
@@ -197,6 +197,7 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
       {
         pickup_dp_id: dp_id,
         status_completed: 'order accepted',
+        status: ORDER_STATUS.PROCESSING,
         dp_accept_time: new Date()
       },
       { session }
@@ -204,8 +205,8 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
 
     // 2. Cancel active uncompleted OrderRequests for this order to prevent conflicts
     await OrderRequest.updateMany(
-      { order_id, complete_status: null },
-      { status: 0 },
+      { order_id, complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING },
+      { status: ORDER_REQUEST_STATUS.REJECTED },
       { session }
     );
 
@@ -215,7 +216,7 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
         order_id,
         requested_by: customer_id,
         notified_ids: [dp_id],
-        status: 1,
+        status: ORDER_REQUEST_STATUS.ACCEPTED,
         request_type: 'direct',
         accepted_by: dp_id
       }],
@@ -291,15 +292,15 @@ export const findAssignedOrders = async () => {
 
 export const findInTransitOrders = async () => {
   const intransitReqs = await OrderRequest.find({
-    status: 1,
-    complete_status: null,
+    status: ORDER_REQUEST_STATUS.ACCEPTED,
+    complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING,
   });
   const orderIds = intransitReqs.map((req) => req.order_id);
   return await populateOrder(Order.find({ _id: { $in: orderIds } }));
 };
 
 export const findDeliveredOrders = async () => {
-  return await populateOrder(Order.find({ status_completed: "delivered" }));
+  return await populateOrder(Order.find({ status: ORDER_STATUS.DELIVERED }));
 };
 
 export const findBroadcastedOrders = async () => {
@@ -307,7 +308,7 @@ export const findBroadcastedOrders = async () => {
 };
 
 export const findCustomerCancelledOrders = async () => {
-  return await populateOrder(Order.find({ user_action: 1 }));
+  return await populateOrder(Order.find({ status: ORDER_STATUS.CANCELLED }));
 };
 
 export const findDpCancelledOrders = async () => {
@@ -334,6 +335,26 @@ export const findAllRatings = async () => {
     .populate("from_customer")
     .populate("from_dp")
     .populate("from_pdc");
+};
+
+export const findPaginatedRatings = async (query, page = 1, limit = 10) => {
+  const skip = (page - 1) * limit;
+  const total = await Rating.countDocuments(query);
+  const ratings = await Rating.find(query)
+    .populate("order_id")
+    .populate("from_customer")
+    .populate("from_dp")
+    .populate("from_pdc")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  return {
+    ratings,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit)
+  };
 };
 
 export const findOrdersInDateRange = async (startDate, endDate) => {
@@ -457,4 +478,24 @@ export const findAdminPayouts = async (query = {}) => {
   return await AdminPayout.find(query)
     .populate("user_id")
     .sort({ created_at: -1 });
+};
+
+export const findPaginatedOrders = async (query, page = 1, limit = 10) => {
+  const skip = (page - 1) * limit;
+  const total = await Order.countDocuments(query);
+  const orders = await Order.find(query)
+    .populate("user_id")
+    .populate("pickup_dp_id")
+    .populate("delivery_dp_id")
+    .populate("package_id")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  return {
+    orders,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit)
+  };
 };

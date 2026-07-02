@@ -1,5 +1,5 @@
 import * as dpRepository from './dp.repository.js';
-import { ROLES } from '../../constants/index.js';
+import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS, ACTIVE_ORDER_STATUSES } from '../../constants/index.js';
 import { User } from '../users/user.model.js';
 import { Order } from '../orders/order.model.js';
 import { OrderRequest } from '../orders/orderRequest.model.js';
@@ -214,7 +214,7 @@ export const getNewOrders = async (user_id) => {
   // Check if active accepted orders leg exists
   const activeLeg = await OrderRequest.findOne({
     accepted_by: user_id,
-    complete_status: null
+    complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING
   });
 
   if (activeLeg) {
@@ -227,7 +227,7 @@ export const getNewOrders = async (user_id) => {
   // Find requests notifying this DP that are either recent or pdc broadcasts and not rejected
   const reqs = await OrderRequest.find({
     notified_ids: user_id,
-    status: null,
+    status: ORDER_REQUEST_STATUS.PENDING,
     $or: [
       { created_at: { $gte: oneMinuteAgo } },
       { request_type: 'broadcast_pdc' }
@@ -297,11 +297,75 @@ export const getNewOrders = async (user_id) => {
   return ordersWithPickup;
 };
 
+export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const order = await Order.findById(order_id).session(session);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.dp_pickup_time) {
+      throw new Error('Cannot cancel assignment after picking up the order. Please contact support.');
+    }
+
+    const orderRequest = await OrderRequest.findOne({ order_id, accepted_by: user_id, status: ORDER_REQUEST_STATUS.ACCEPTED }).session(session);
+    if (!orderRequest) {
+      throw new Error('Active assignment not found');
+    }
+
+    // Revert OrderRequest
+    orderRequest.status = 0; // REJECTED
+    orderRequest.accepted_by = null;
+    orderRequest.rejected_by.push(user_id);
+    await orderRequest.save({ session });
+
+    // Revert Order
+    order.pickup_dp_id = null;
+    order.dp_accept_time = null;
+    order.status_completed = null;
+    order.status = ORDER_STATUS.PENDING;
+    await order.save({ session });
+
+    // Revert Broadcast if it was a broadcast
+    if (orderRequest.broadcast_id) {
+      await Broadcast.findByIdAndUpdate(
+        orderRequest.broadcast_id,
+        { pickup_dp_id: null },
+        { session }
+      );
+    }
+
+    // Clean up any preemptive Travel or DpPayout records created during orderAccept (for broadcast orders)
+    await Travel.deleteMany({ order_id, user_id }).session(session);
+    await DpPayout.deleteMany({ order_id, dp_auth_id: user_id }).session(session);
+
+    // Notify Admin
+    const dpUser = await User.findById(user_id).session(session);
+    await sendNotification({
+      role: ROLES.ADMIN,
+      title: 'Assignment Cancelled',
+      message: `Delivery Partner ${dpUser ? dpUser.name : 'Unknown'} has cancelled their assignment for order ID: ${order_id}. Reason: ${cancel_reason || 'None provided'}`,
+      orderId: order_id,
+      session
+    });
+
+    await session.commitTransaction();
+    session.endSession();
+    return { message: 'Order assignment cancelled successfully' };
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
+  }
+};
+
 export const orderAccept = async (order_id, status, user_id) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const orderRequest = await OrderRequest.findOne({ order_id, status: null }).session(session);
+    const orderRequest = await OrderRequest.findOne({ order_id, status: ORDER_REQUEST_STATUS.PENDING }).session(session);
 
     if (!orderRequest) {
       await session.commitTransaction();
@@ -319,7 +383,7 @@ export const orderAccept = async (order_id, status, user_id) => {
         throw new Error('Sorry this order cancelled by customer');
       }
 
-      orderRequest.status = 1;
+      orderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
       orderRequest.accepted_by = user_id;
       await orderRequest.save({ session });
 
@@ -332,6 +396,7 @@ export const orderAccept = async (order_id, status, user_id) => {
 
       if (orderRequest.request_type === 'direct') {
         order.status_completed = 'order accepted';
+        order.status = ORDER_STATUS.PROCESSING;
         order.pickup_dp_id = user_id;
         order.dp_accept_time = new Date();
         await order.save({ session });
@@ -342,6 +407,7 @@ export const orderAccept = async (order_id, status, user_id) => {
 
       } else if (orderRequest.request_type === 'broadcast_dp' || orderRequest.request_type === 'broadcast_pdc') {
         order.status_completed = 'broadcast accepted';
+        order.status = ORDER_STATUS.PROCESSING;
         order.delivery_type = 'broadcast';
         await order.save({ session });
 
@@ -558,8 +624,8 @@ export const orderAccept = async (order_id, status, user_id) => {
 export const acceptedOrders = async (user_id) => {
   const reqs = await OrderRequest.find({
     accepted_by: user_id,
-    status: 1,
-    complete_status: null
+    status: ORDER_REQUEST_STATUS.ACCEPTED,
+    complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING
   });
 
   const orderIds = reqs.map(r => r.order_id);
@@ -618,7 +684,7 @@ export const pickupOtp = async (order_id, user_id, otp) => {
       .skip(1);
 
     if (oldOrderRequest) {
-      oldOrderRequest.complete_status = 1;
+      oldOrderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
       await oldOrderRequest.save();
     }
 
@@ -627,10 +693,10 @@ export const pickupOtp = async (order_id, user_id, otp) => {
       await broadcast.save();
     }
 
-    return { otp_match: 1 };
+    return { otp_match: true };
   }
 
-  throw new Error('otp Not Matched');
+  return { otp_match: false };
 };
 
 export const pickupOrderImageUpload = async (order_id, user_id, files) => {
@@ -696,6 +762,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       order.pickup_dp_id = user_id;
       order.dp_pickup_time = new Date();
       order.status_completed = 'parcel collected';
+      order.status = ORDER_STATUS.OUT_FOR_DELIVERY;
       await order.save({ session });
 
     } else if (['broadcast_dp', 'broadcast_pdc'].includes(orderRequest.request_type)) {
@@ -731,6 +798,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       }
 
       order.status_completed = 'parcel collected';
+      order.status = ORDER_STATUS.OUT_FOR_DELIVERY;
       await order.save({ session });
     }
 
@@ -802,6 +870,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
   try {
     order.delivery_dp_id = user_id;
     order.status_completed = 'delivered';
+    order.status = ORDER_STATUS.DELIVERED;
     order.dp_deliver_time = new Date();
     await order.save({ session });
 
@@ -819,13 +888,14 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       {
         location: order.drop_location,
         latitude: order.receiver_latitude,
-        longitude: order.receiver_longitude
+        longitude: order.receiver_longitude,
+        geo_location: { type: "Point", coordinates: [order.receiver_longitude, order.receiver_latitude] }
       },
       { session }
     );
 
-    const orderRequest = await OrderRequest.findOne({ order_id: order._id, status: 1 }).sort({ created_at: -1 }).session(session);
-    orderRequest.complete_status = 1;
+    const orderRequest = await OrderRequest.findOne({ order_id: order._id, status: ORDER_REQUEST_STATUS.ACCEPTED }).sort({ created_at: -1 }).session(session);
+    orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
     await orderRequest.save({ session });
 
     const travel = await Travel.findOne({ order_id, user_id }).sort({ created_at: -1 }).session(session);
@@ -931,7 +1001,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
 
     const latestLeg = await OrderRequest.findOne({ order_id: order._id }).sort({ created_at: -1 }).session(session);
     if (latestLeg) {
-      latestLeg.complete_status = 1;
+      latestLeg.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
       await latestLeg.save({ session });
     }
 
@@ -978,7 +1048,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
 export const getOrderHistory = async (user_id) => {
   const reqs = await OrderRequest.find({
     $or: [
-      { accepted_by: user_id, complete_status: 1 },
+      { accepted_by: user_id, complete_status: ORDER_REQUEST_COMPLETE_STATUS.COMPLETED },
       { rejected_by: user_id }
     ]
   });
@@ -1001,7 +1071,7 @@ export const getOrderHistory = async (user_id) => {
 };
 
 export const getTotalOrdersCount = async (user_id) => {
-  const acceptorder = await OrderRequest.countDocuments({ accepted_by: user_id, status: 1 });
+  const acceptorder = await OrderRequest.countDocuments({ accepted_by: user_id, status: ORDER_REQUEST_STATUS.ACCEPTED });
   const rejectorder = await OrderRequest.countDocuments({ rejected_by: user_id });
   const totalorder = acceptorder + rejectorder;
 
@@ -1045,51 +1115,47 @@ export const getEarningHistory = async (userId) => {
     .filter(p => p.created_at >= todayStart && p.created_at <= todayEnd)
     .reduce((acc, curr) => acc + curr.earnings, 0);
 
-  // const payoutDetails = [];
+  const payoutDetails = [];
 
-  // for (const payout of payouts) {
-  //   const order = await Order.findById(payout.order_id);
-  //   if (!order) continue;
+  for (const payout of payouts) {
+    const order = await Order.findById(payout.order_id);
+    let jsonOrder = { my_role: 'unknown' };
 
-  //   const jsonOrder = order.toJSON();
-  //   const packageDetail = order.package_id ? await PackageDetail.findById(order.package_id) : null;
-  //   jsonOrder.packageDetail = packageDetail ? packageDetail.toJSON() : null;
-  //   jsonOrder.my_earning = payout.earnings;
+    if (order) {
+      jsonOrder = order.toJSON();
+      const packageDetail = order.package_id ? await PackageDetail.findById(order.package_id) : null;
+      jsonOrder.packageDetail = packageDetail ? packageDetail.toJSON() : null;
+      if (String(order.pickup_dp_id) === String(userId)) {
+        jsonOrder.my_role = 'pickup';
+      } else if (String(order.delivery_dp_id) === String(userId)) {
+        jsonOrder.my_role = 'delivery';
+      } else {
+        jsonOrder.my_role = 'broadcast_partner';
+      }
+    }
+    jsonOrder.my_earning = payout.earnings;
 
-  //   if (String(order.pickup_dp_id) === String(userId)) {
-  //     jsonOrder.my_role = 'pickup';
-  //   } else if (String(order.delivery_dp_id) === String(userId)) {
-  //     jsonOrder.my_role = 'delivery';
-  //   } else {
-  //     jsonOrder.my_role = 'broadcast_partner';
-  //   }
+    const travel = await Travel.findOne({ order_id: payout.order_id, user_id: userId });
+    if (travel) {
+      jsonOrder.pickup_location = travel.pickup_location;
+      jsonOrder.sender_latitude = travel.pickup_latitude;
+      jsonOrder.sender_longitude = travel.pickup_longitude;
+      jsonOrder.drop_location = travel.drop_location;
+      jsonOrder.receiver_latitude = travel.drop_latitude;
+      jsonOrder.receiver_longitude = travel.drop_longitude;
+      jsonOrder.distance = travel.distance;
+    }
 
-  //   const travel = await Travel.findOne({ order_id: order._id, user_id: userId });
-  //   if (travel) {
-  //     jsonOrder.pickup_location = travel.pickup_location;
-  //     jsonOrder.sender_latitude = travel.pickup_latitude;
-  //     jsonOrder.sender_longitude = travel.pickup_longitude;
-  //     jsonOrder.drop_location = travel.drop_location;
-  //     jsonOrder.receiver_latitude = travel.drop_latitude;
-  //     jsonOrder.receiver_longitude = travel.drop_longitude;
-  //     jsonOrder.distance = travel.distance;
-  //   }
-
-  //   payoutDetails.push({
-  //     order_id: payout.order_id,
-  //     payout_id: payout._id,
-  //     travel_id: payout.travel_id,
-  //     created_at: payout.created_at,
-  //     earnings: payout.earnings,
-  //     order: jsonOrder,
-  //     my_role: jsonOrder.my_role
-  //   });
-  // }
-
-  const payoutDetails = payouts.map(payout => ({
-    order_id: payout.order_id,
-    earnings: payout.earnings
-  }));
+    payoutDetails.push({
+      order_id: payout.order_id,
+      payout_id: payout._id,
+      travel_id: payout.travel_id,
+      created_at: payout.created_at,
+      earnings: payout.earnings,
+      order: jsonOrder,
+      my_role: jsonOrder.my_role
+    });
+  }
 
   return {
     totalEarning: Math.round(totalEarning * 100) / 100,
@@ -1105,7 +1171,8 @@ export const toggleOnlineStatus = async (user_id, online, location, latitude, lo
       online,
       location: location || '',
       latitude,
-      longitude
+      longitude,
+      geo_location: { type: 'Point', coordinates: [longitude, latitude] }
     }
   );
   return true;
@@ -1363,36 +1430,53 @@ export const checkNearbyDps = async (radius, broadcastId, userId) => {
   const order = await Order.findById(broadcast.order_id);
   if (!order) return [];
 
-  const matchedDocs = await DpDocument.find({ vehicle_type: order.mode_of_transport });
-  const matchedUserIds = matchedDocs.map(doc => doc.user_id.toString());
-
-  const onlineDps = await DpDetail.find({
-    user_id: { $in: matchedUserIds },
-    online: true
+  // 1. Fetch matching vehicle types and old broadcasts
+  const [matchedDocs, oldBroadcasts] = await Promise.all([
+    DpDocument.find({ vehicle_type: order.mode_of_transport }),
+    Broadcast.find({ order_id: order._id })
+  ]);
+  
+  const matchedUserIds = matchedDocs.map(doc => doc.user_id);
+  const activeOrders = await Order.find({ status: { $in: ACTIVE_ORDER_STATUSES } }).select('pickup_dp_id delivery_dp_id');
+  const busyDpUserIds = new Set();
+  activeOrders.forEach(o => {
+    if (o.pickup_dp_id) busyDpUserIds.add(o.pickup_dp_id.toString());
+    if (o.delivery_dp_id) busyDpUserIds.add(o.delivery_dp_id.toString());
   });
-
-  const oldBroadcasts = await Broadcast.find({ order_id: order._id });
+  const availableMatchedUserIds = matchedUserIds.filter(id => !busyDpUserIds.has(id.toString()));
   const oldDpsArray = oldBroadcasts.map(b => b.broadcasted_by.toString());
+  oldDpsArray.push(userId.toString()); // Exclude the PDC broadcasting it
 
-  const nearestDps = [];
-  for (const dp of onlineDps) {
-    if (dp.user_id.toString() === userId.toString()) continue;
-
-    const distanceMeters = mapsService.haversineGreatCircleDistance(
-      broadcast.pickup_latitude,
-      broadcast.pickup_longitude,
-      dp.latitude,
-      dp.longitude
-    );
-
-    if (distanceMeters < radius) {
-      const dpUserIdStr = dp.user_id.toString();
-      if (!oldDpsArray.includes(dpUserIdStr) && !nearestDps.includes(dpUserIdStr)) {
-        nearestDps.push(dp.user_id);
+  // 2. Perform ultra-fast $geoNear search
+  const nearestDpsAgg = await DpDetail.aggregate([
+    {
+      $geoNear: {
+        near: {
+          type: "Point",
+          coordinates: [broadcast.pickup_longitude, broadcast.pickup_latitude]
+        },
+        distanceField: "distance_meters",
+        maxDistance: radius,
+        spherical: true
+      }
+    },
+    {
+      $match: {
+        online: true,
+        user_id: { $in: availableMatchedUserIds }
       }
     }
+  ]);
+
+  // 3. Filter out DPs who already had this order
+  const nearestDps = [];
+  for (const dp of nearestDpsAgg) {
+    const dpUserIdStr = dp.user_id.toString();
+    if (!oldDpsArray.includes(dpUserIdStr)) {
+      nearestDps.push(dp.user_id);
+    }
   }
+
   return nearestDps;
 };
-
 

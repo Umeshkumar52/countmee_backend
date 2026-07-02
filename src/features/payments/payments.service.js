@@ -4,7 +4,7 @@ import { User } from "../users/user.model.js";
 import { Wallet } from "./wallet.model.js";
 import { WalletTransaction } from "./walletTransaction.model.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
-import { ROLES } from "../../constants/index.js";
+import { ROLES, ORDER_STATUS } from "../../constants/index.js";
 import { notifyDp } from "../orders/orders.service.js";
 import axios from "axios";
 import mongoose from "mongoose";
@@ -134,7 +134,7 @@ export const payOrder = async (user_id, order_id, amount) => {
     );
 
     // Update order status
-    order.status = 1; // Paid/Active
+    order.status = ORDER_STATUS.CONFIRMED; // Paid/Active
     await order.save({ session });
 
     // Notify DP
@@ -388,7 +388,7 @@ export const processRazorpayPayment = async (paymentData) => {
     if (status === "PAID") {
       const order = await Order.findById(order_id);
       if (order) {
-        order.status = 1;
+        order.status = ORDER_STATUS.CONFIRMED;
         await order.save({ session });
 
         // Notify DP

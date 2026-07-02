@@ -20,6 +20,10 @@ const dpDetailSchema = new mongoose.Schema(
     latitude: { type: Number, default: null },
     longitude: { type: Number, default: null },
     location: { type: String, default: "" },
+    geo_location: {
+      type: { type: String, enum: ['Point'], default: 'Point' },
+      coordinates: { type: [Number], default: [0, 0] } // [longitude, latitude]
+    },
   },
   { 
     timestamps: true,
@@ -34,5 +38,7 @@ dpDetailSchema.virtual("dpDocument", {
   foreignField: "user_id",
   justOne: true,
 });
+
+dpDetailSchema.index({ geo_location: "2dsphere" });
 
 export const DpDetail = mongoose.model("DpDetail", dpDetailSchema);
