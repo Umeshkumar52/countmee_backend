@@ -662,6 +662,9 @@ export const editVehicleSubcategorySchema = Joi.object({
     .trim()
     .optional(),
   is_active: Joi.boolean()
+    .optional(),
+  status: Joi.string()
+    .valid('Approved', 'Pending', 'Rejected')
     .optional()
 });
 

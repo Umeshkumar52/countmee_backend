@@ -223,9 +223,9 @@ export const getDashboardData = async (userId) => {
   const broadcasts = await Broadcast.find({ broadcasted_by: userId });
   const allBroadcastedIds = broadcasts.map(b => b.order_id.toString());
 
-  // IDs of orders currently being broadcasted (waiting for DP, status 0 or Active)
+  // IDs of orders currently being broadcasted (waiting for DP, status Active, Broadcasting, or Pending)
   const currentlyBroadcastingIds = broadcasts
-    .filter(b => b.status === "Active" || Number(b.status) === 0 || b.status === "0")
+    .filter(b => b.status === "Pending" || b.status === "Active" || b.status === "Broadcasting")
     .map(b => b.order_id.toString());
 
   // Orders To Receive = Relevant minus ANY that have been broadcasted
@@ -390,19 +390,10 @@ export const getDashboardData = async (userId) => {
 
   // Count metrics
   const totalOrders = await OrderRequest.countDocuments({
-    $or: [
-      { notified_ids: userId },
-      { accepted_by: userId }
-    ]
+    accepted_by: userId
   });
 
-  const pickedUpByDpOrderIds = broadcasts.filter(b => b.status === "Completed" || Number(b.status) === 1 || b.status === "1").map(b => b.order_id);
-  const allPdcOrderIds = Array.from(new Set([...orderRelevantIds, ...allBroadcastedIds]));
-
-  const pendingOrders = await Order.countDocuments({
-    _id: { $in: allPdcOrderIds, $nin: pickedUpByDpOrderIds },
-    status: { $in: [ORDER_STATUS.CONFIRMED, ORDER_STATUS.PROCESSING] }
-  });
+  const pendingOrders = ordersToReceive.length + broadcastedOrders.length;
 
   const pdcPayouts = await PdcPayout.find({ pdc_auth_id: userId })
     .populate('order_id')
@@ -552,11 +543,11 @@ export const getOrderHistory = async (userId) => {
   const acceptedOrderIds = reqs.map(r => r.order_id);
 
   // According to the new flow: Only show orders in history if the PDC has successfully 
-  // broadcasted them and another DP has accepted the broadcast (status != '0' and status != 'Active').
+  // broadcasted them and another DP has accepted the broadcast (status != 'Pending' and status != 'Active' and status != 'Broadcasting').
   const successfulBroadcasts = await Broadcast.find({
     broadcasted_by: userId,
     order_id: { $in: acceptedOrderIds },
-    status: { $nin: ['0', 0, 'Active'] } // Active/0 means pending broadcast, anything else (like Completed/1) means accepted
+    status: { $nin: ['Pending', 'Active', 'Broadcasting'] } // Pending/Broadcasting means not yet accepted
   });
 
   const broadcastedOrderIds = successfulBroadcasts.map(b => b.order_id.toString());
@@ -754,47 +745,20 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
     throw new Error("Order must be delivered to PDC before broadcasting");
   }
 
-  // Check if a pending broadcast already exists, otherwise create it NOW
-  let broadcast = await Broadcast.findOne({ order_id: orderId, broadcasted_by: pdcId, status: "Active" });
+  // Find the pending broadcast created when DP dropped off at PDC
+  let broadcast = await Broadcast.findOne({ order_id: orderId, broadcasted_by: pdcId, status: "Pending" });
 
   if (!broadcast) {
-    const pdcDoc = await PdcDocument.findOne({ user_id: pdcId });
-    if (!pdcDoc) throw new Error("PDC location not found");
-
-    // Generate the Broadcast and pickup_otp ONLY when broadcast button is clicked
-    const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
-    const distanceValue = await distanceBetween(
-      pdcDoc.latitude,
-      pdcDoc.longitude,
-      order.receiver_latitude,
-      order.receiver_longitude,
-      mode
-    );
-
-    const createdBroadcast = await Broadcast.create([{
-      order_id: order._id,
-      broadcasted_by: pdcId,
-      pickup_location: pdcDoc.address,
-      pickup_latitude: pdcDoc.latitude,
-      pickup_longitude: pdcDoc.longitude,
-      drop_location: order.drop_location,
-      drop_latitude: order.receiver_latitude,
-      drop_longitude: order.receiver_longitude,
-      distance: parseFloat(distanceValue) || 0,
-      pickup_otp: Math.floor(1000 + Math.random() * 9000)
-    }]);
-    broadcast = createdBroadcast[0];
-
-    order.broadcast_id = broadcast._id;
-    order.delivery_type = "broadcast_pdc";
-    await order.save();
+    throw new Error("Pending broadcast not found for this order.");
   }
+
+  const pdcDoc = await PdcDocument.findOne({ user_id: pdcId });
 
   // Fetch dynamic radius from Admin Settings
   const { distancesByRole } = await adminService.getBroadcastDistance();
   let maxDistance = 10000; // default 10km
-  if (distancesByRole && distancesByRole['deliverypartner']) {
-    maxDistance = distancesByRole['deliverypartner'] * 1000;
+  if (distancesByRole && distancesByRole['pdc']) {
+    maxDistance = distancesByRole['pdc'] * 1000;
   }
 
   // Use the highly-optimized MongoDB $geoNear engine to find closest DPs
@@ -805,18 +769,43 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
     nearByDps = nearByDps.slice(0, 15);
   }
 
-  if (nearByDps.length === 0) {
-    return 0; // Returning count 0
-  }
+  // We NO LONGER return 0 if nearByDps is empty. 
+  // We must open the 10-minute broadcasting window regardless!
 
-  // Create OrderRequest if it doesn't exist
-  const pdcBroadcastOrderRequest = await OrderRequest.findOne({
-    order_id: order._id,
-    broadcast_id: broadcast._id,
-    notified_ids: { $all: nearByDps },
+  // Update status to Broadcasting and generate the pickup OTP for the DP
+  broadcast.status = "Broadcasting";
+  broadcast.pickup_otp = Math.floor(1000 + Math.random() * 9000);
+  await broadcast.save();
+
+  // Send real-time socket notification to update PDC Dashboard UI
+  await sendNotification({
+    role: ROLES.PDC,
+    userId: pdcId,
+    title: "Broadcasting Started",
+    message: `Order #${orderId} is now broadcasting to nearby Delivery Partners.`,
+    orderId: orderId
   });
 
+  // Schedule Agenda job to expire this broadcast in 10 minutes
+  const agenda = getAgenda();
+  if (agenda) {
+    await agenda.schedule('in 10 minutes', 'expire-broadcast', {
+      broadcast_id: broadcast._id.toString(),
+      order_id: orderId.toString(),
+      pdc_id: pdcId.toString()
+    });
+  }
+  // Create or Update OrderRequest
+  let pdcBroadcastOrderRequest = await OrderRequest.findOne({
+    order_id: order._id,
+    broadcast_id: broadcast._id,
+    request_type: "broadcast_pdc"
+  });
+
+  let newDpsToNotify = [];
+
   if (!pdcBroadcastOrderRequest) {
+    newDpsToNotify = nearByDps;
     await OrderRequest.create({
       order_id: order._id,
       requested_by: pdcId,
@@ -824,17 +813,26 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
       request_type: "broadcast_pdc",
       broadcast_id: broadcast._id,
     });
+  } else {
+    // It exists from a previous 10-minute broadcast run. Find who is new!
+    const existingNotified = pdcBroadcastOrderRequest.notified_ids.map(id => id.toString());
+    newDpsToNotify = nearByDps.filter(dpId => !existingNotified.includes(dpId.toString()));
 
-    // Send push notifications to nearby DPs
-    for (const dpId of nearByDps) {
-      await sendNotification({
-        role: ROLES.DP,
-        userId: dpId,
-        title: "New Pickup Available!",
-        message: `A new parcel (Order #${order._id}) is ready for pickup at a nearby PDC hub.`,
-        orderId: order._id
-      });
+    if (newDpsToNotify.length > 0) {
+      pdcBroadcastOrderRequest.notified_ids.push(...newDpsToNotify);
+      await pdcBroadcastOrderRequest.save();
     }
+  }
+
+  // Send push notifications ONLY to newly discovered DPs
+  for (const dpId of newDpsToNotify) {
+    await sendNotification({
+      role: ROLES.DP,
+      userId: dpId,
+      title: "New Pickup Available!",
+      message: `A new parcel (Order #${order._id}) is ready for pickup at a nearby PDC hub.`,
+      orderId: order._id
+    });
   }
 
   return nearByDps.length;

@@ -5,6 +5,7 @@ import { DpDetail } from '../../features/deliveryPartner/dpDetail.model.js';
 import { sendNotification } from '../utils/sendNotification.js';
 import { ROLES } from '../../constants/index.js';
 import { PdcDocument } from '../../features/pdc/pdcDocument.model.js';
+import { Broadcast } from '../../features/orders/broadcast.model.js';
 import { getAllCachedDpLocations } from './redis.service.js';
 
 let agenda;
@@ -46,6 +47,33 @@ export const initAgenda = async () => {
             }
         } catch (error) {
             console.error('[Agenda] Error in auto-accept-pdc job:', error);
+        }
+    });
+
+    agenda.define('expire-broadcast', async (job) => {
+        const { broadcast_id, order_id, pdc_id } = job.attrs.data;
+        
+        try {
+            const broadcast = await Broadcast.findById(broadcast_id);
+            if (broadcast && broadcast.status === "Broadcasting") {
+                // The 10-minute window has closed and no DP accepted it
+                broadcast.status = "Pending";
+                broadcast.pickup_otp = null;
+                await broadcast.save();
+
+                // Send a notification to trigger a dashboard refresh for the PDC
+                await sendNotification({
+                    role: ROLES.PDC,
+                    userId: pdc_id,
+                    title: 'Broadcast Expired',
+                    message: `The 10-minute broadcast window for order #${order_id} has expired. Please broadcast again.`,
+                    orderId: order_id
+                });
+                
+                console.log(`[Agenda] Expired broadcast ${broadcast_id} for order ${order_id}`);
+            }
+        } catch (error) {
+            console.error('[Agenda] Error in expire-broadcast job:', error);
         }
     });
 

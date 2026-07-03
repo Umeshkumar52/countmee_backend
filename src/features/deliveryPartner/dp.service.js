@@ -13,6 +13,7 @@ import { PackageDetail } from '../orders/packageDetail.model.js';
 import { PdcDocument } from '../pdc/pdcDocument.model.js';
 import { PdcPackage } from '../pdc/pdcPackage.model.js';
 import { PdcPayout } from '../pdc/pdcPayout.model.js';
+import * as adminService from '../admin/admin.service.js';
 import { sendNotification } from '../../common/utils/sendNotification.js';
 import { DeliverCharge } from '../orders/deliverCharge.model.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
@@ -64,7 +65,7 @@ export const saveDetails = async (user_id, gender, address, profileImgLocalPath)
 
 export const getVehicleSubcategories = async (vehicleType) => {
   const { VehicleSubcategory } = await import('./vehicleSubcategory.model.js');
-  const subcategories = await VehicleSubcategory.find({ vehicle_type: vehicleType, is_active: true }).select('sub_vehicle_type').lean();
+  const subcategories = await VehicleSubcategory.find({ vehicle_type: vehicleType, is_active: true, status: 'Approved' }).select('sub_vehicle_type').lean();
 
   const subCategoryList = subcategories.map(s => s.sub_vehicle_type);
   if (!subCategoryList.includes('Other')) {
@@ -133,6 +134,30 @@ export const saveDocuments = async (user_id, docData, files) => {
     },
     { new: true }
   );
+
+  if (docData.sub_vehicle_type === 'Other' && docData.other_vehicle_details) {
+    const { VehicleSubcategory } = await import('./vehicleSubcategory.model.js');
+    const existing = await VehicleSubcategory.findOne({
+      vehicle_type: docData.vehicle_type,
+      sub_vehicle_type: { $regex: new RegExp(`^${docData.other_vehicle_details}$`, 'i') }
+    });
+    
+    if (!existing) {
+      await VehicleSubcategory.create({
+        vehicle_type: docData.vehicle_type,
+        sub_vehicle_type: docData.other_vehicle_details,
+        is_active: false,
+        status: 'Pending',
+        requested_by: user_id
+      });
+      
+      await sendNotification({
+        role: ROLES.ADMIN,
+        title: 'New Vehicle Subcategory Request',
+        message: `A Delivery Partner requested a new vehicle subcategory: ${docData.other_vehicle_details}`
+      });
+    }
+  }
 
   return true;
 };
@@ -224,16 +249,49 @@ export const getNewOrders = async (user_id) => {
   // COMMENTED OUT FOR TESTING: const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
   const oneMinuteAgo = new Date(Date.now() - 60 * 60 * 1000); // 1 hour for testing
 
-  // Find requests notifying this DP that are either recent or pdc broadcasts and not rejected
-  const reqs = await OrderRequest.find({
-    notified_ids: user_id,
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000); // 10 minute window for broadcasts
+  
+  // Find requests notifying this DP (direct) OR any active PDC broadcast
+  const allReqs = await OrderRequest.find({
     status: ORDER_REQUEST_STATUS.PENDING,
+    rejected_by: { $ne: user_id },
     $or: [
-      { created_at: { $gte: oneMinuteAgo } },
-      { request_type: 'broadcast_pdc' }
-    ],
-    rejected_by: { $ne: user_id }
+      { notified_ids: user_id, created_at: { $gte: oneMinuteAgo } },
+      { request_type: 'broadcast_pdc' } // We will filter by broadcast.updatedAt instead of created_at to support retries!
+    ]
   });
+
+  // For broadcast_pdc, we must dynamically check distance since they aren't hardcoded in notified_ids anymore
+  const reqs = [];
+  const dpLocation = await DpDetail.findOne({ user_id });
+  
+  for (const req of allReqs) {
+    if (req.request_type === 'broadcast_pdc') {
+      const broadcast = await Broadcast.findById(req.broadcast_id);
+      
+      // Only show if still actively broadcasting AND the broadcast was restarted within the last 10 minutes
+      if (!broadcast || broadcast.status !== "Broadcasting") continue; 
+      if (new Date(broadcast.updatedAt).getTime() < tenMinutesAgo.getTime()) continue;
+
+      if (dpLocation) {
+        // Fetch dynamic radius from Admin Settings
+        const { distancesByRole } = await adminService.getBroadcastDistance();
+        let maxDistanceInKm = 10; // default 10km
+        if (distancesByRole && distancesByRole['pdc']) {
+          maxDistanceInKm = distancesByRole['pdc'];
+        }
+
+        // Check if DP is within the dynamic broadcast radius
+        const dist = await mapsService.distanceBetween(
+          dpLocation.latitude, dpLocation.longitude,
+          broadcast.pickup_latitude, broadcast.pickup_longitude
+        );
+        
+        if (parseFloat(dist) > maxDistanceInKm) continue; // Too far away, ignore
+      }
+    }
+    reqs.push(req);
+  }
 
   const orderIds = reqs.map(r => r.order_id);
   const orders = await Order.find({ _id: { $in: orderIds } });
@@ -538,9 +596,23 @@ export const orderAccept = async (order_id, status, user_id) => {
         if (orderRequest.broadcast_id) {
           await Broadcast.findByIdAndUpdate(
             orderRequest.broadcast_id,
-            { pickup_dp_id: user_id },
+            { pickup_dp_id: user_id, status: "Accepted" },
             { session }
           );
+
+          if (orderRequest.request_type === 'broadcast_pdc') {
+            const broadcastDoc = await Broadcast.findById(orderRequest.broadcast_id).session(session);
+            if (broadcastDoc && broadcastDoc.broadcasted_by) {
+              await sendNotification({
+                role: ROLES.PDC,
+                userId: broadcastDoc.broadcasted_by,
+                title: "Broadcast Accepted",
+                message: `Order #${order_id} has been accepted by Delivery Partner ${user_id}.`,
+                orderId: order_id,
+                session
+              });
+            }
+          }
         }
       }
 
@@ -589,7 +661,9 @@ export const orderAccept = async (order_id, status, user_id) => {
       const allRejected = [...orderRequest.rejected_by].sort();
 
       if (JSON.stringify(allNotified) === JSON.stringify(allRejected)) {
-        orderRequest.status = "Rejected"; // Rejected by all DPs
+        if (orderRequest.request_type !== 'broadcast_pdc' && orderRequest.request_type !== 'broadcast_dp') {
+          orderRequest.status = "Rejected"; // Rejected by all DPs
+        }
         await orderRequest.save({ session });
       }
 
@@ -692,7 +766,7 @@ export const pickupOtp = async (order_id, user_id, otp) => {
     }
 
     if (broadcast) {
-      broadcast.status = '1';
+      broadcast.status = 'Completed';
       await broadcast.save();
     }
 
@@ -785,7 +859,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       if (orderRequest.request_type === 'broadcast_pdc') {
         const latestBroadcast = await Broadcast.findOne({ order_id: order._id }).sort({ created_at: -1 }).session(session);
         if (latestBroadcast) {
-          latestBroadcast.status = '1';
+          latestBroadcast.status = 'Completed';
           latestBroadcast.save({ session });
         }
       } else {
@@ -795,7 +869,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
           .session(session);
 
         if (previousBroadcast) {
-          previousBroadcast.status = '1';
+          previousBroadcast.status = 'Completed';
           previousBroadcast.save({ session });
         }
       }
@@ -879,7 +953,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
 
     const broadcast = order.broadcast_id ? await Broadcast.findById(order.broadcast_id).session(session) : null;
     if (broadcast) {
-      broadcast.status = '1';
+      broadcast.status = 'Completed';
       await broadcast.save({ session });
     }
 
@@ -988,7 +1062,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
         );
 
         await PdcPayout.findOneAndUpdate(
-          { order_id: order._id, pdc_id: pdcId }, // key fields
+          { order_id: order._id, pdc_auth_id: pdcId }, // key fields
           {
             pdc_auth_id: pdcId,
             earnings: thisShare,

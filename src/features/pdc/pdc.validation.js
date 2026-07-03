@@ -85,12 +85,14 @@ export const pdcLocationUpdateSchema = Joi.object({
       'any.required': 'PDC Auth ID is required'
     }),
   latitude: Joi.number()
+    .unsafe()
     .required()
     .messages({
       'number.base': 'Latitude must be a valid number',
       'any.required': 'Latitude is required'
     }),
   longitude: Joi.number()
+    .unsafe()
     .required()
     .messages({
       'number.base': 'Longitude must be a valid number',

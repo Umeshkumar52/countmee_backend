@@ -289,10 +289,10 @@ export const broadcastOrder = asyncHandler(async (req, res) => {
         const nearByDpsCount = await pdcService.triggerManualBroadcast(order_id, pdcId);
 
         if (nearByDpsCount === 0) {
-            return res.json(ApiResponse.success(null, "No delivery partners found nearby. Please try again later."));
+            return res.json(ApiResponse.success(null, "Broadcast started! The 10-minute window is open. Waiting for delivery partners to come online or drive nearby."));
         }
 
-        return res.json(ApiResponse.success(null, `Successfully broadcasted to ${nearByDpsCount} nearby delivery partners.`));
+        return res.json(ApiResponse.success(null, `Broadcast started! Notified ${nearByDpsCount} nearby partners. The window will remain open for 10 minutes.`));
     } catch (error) {
         throw new ApiError(400, error.message);
     }

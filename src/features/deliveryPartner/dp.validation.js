@@ -190,12 +190,14 @@ export const broadcastFindDpSchema = Joi.object({
       'any.required': 'Location is required'
     }),
   latitude: Joi.number()
+    .unsafe()
     .required()
     .messages({
       'number.base': 'Latitude must be a valid number',
       'any.required': 'Latitude is required'
     }),
   longitude: Joi.number()
+    .unsafe()
     .required()
     .messages({
       'number.base': 'Longitude must be a valid number',
@@ -234,12 +236,14 @@ export const showNearbyPdcSchema = Joi.object({
       'any.required': 'Location is required'
     }),
   latitude: Joi.number()
+    .unsafe()
     .required()
     .messages({
       'number.base': 'Latitude must be a valid number',
       'any.required': 'Latitude is required'
     }),
   longitude: Joi.number()
+    .unsafe()
     .required()
     .messages({
       'number.base': 'Longitude must be a valid number',
@@ -324,12 +328,14 @@ export const dpOnlineToggleSchema = Joi.object({
       'string.base': 'Location must be a string'
     }),
   latitude: Joi.number()
+    .unsafe()
     .required()
     .messages({
       'number.base': 'Latitude must be a valid number',
       'any.required': 'Latitude is required'
     }),
   longitude: Joi.number()
+    .unsafe()
     .required()
     .messages({
       'number.base': 'Longitude must be a valid number',
@@ -461,11 +467,11 @@ export const resendOtpSchema = Joi.object({
       'string.pattern.base': 'Invalid Order ID format',
       'any.required': 'Order ID is required'
     }),
-  latitude: Joi.number().required().messages({
+  latitude: Joi.number().unsafe().required().messages({
     'number.base': 'Latitude must be a valid number',
     'any.required': 'Latitude is required'
   }),
-  longitude: Joi.number().required().messages({
+  longitude: Joi.number().unsafe().required().messages({
     'number.base': 'Longitude must be a valid number',
     'any.required': 'Longitude is required'
   })

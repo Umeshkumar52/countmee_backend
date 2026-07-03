@@ -579,9 +579,7 @@ export const dropOrderToCustomer = asyncHandler(async (req, res) => {
   const result = await dpService.dropOrderToCustomer(
     order_id,
     user_id,
-    drop_otp,
-    latitude,
-    longitude
+    drop_otp
   );
   return res.json(ApiResponse.success(null, result.message));
 });
@@ -817,7 +815,6 @@ export const deliverPdc = asyncHandler(async (req, res) => {
             drop_latitude: pdc.latitude,
             drop_longitude: pdc.longitude,
             distance: `${distanceValue} km`,
-            pickup_otp: Math.floor(1000 + Math.random() * 9000),
             drop_otp: Math.floor(1000 + Math.random() * 9000),
           },
         ],
@@ -999,7 +996,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
         let nextBroadcast = await Broadcast.findOne({
           order_id: order._id,
           broadcasted_by: pdc.user_id,
-          status: "Active",
+          status: "Pending",
         }).session(session);
 
         if (!nextBroadcast) {
@@ -1023,8 +1020,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
                 drop_latitude: order.receiver_latitude,
                 drop_longitude: order.receiver_longitude,
                 distance: `${broadcastDistanceVal} km`,
-                pickup_otp: Math.floor(1000 + Math.random() * 9000),
-                drop_otp: Math.floor(1000 + Math.random() * 9000),
+                status: "Pending"
               },
             ],
             { session },
@@ -1032,42 +1028,6 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
           nextBroadcast = createdBroadcast[0];
         }
 
-        let radius = 500;
-        let nearByDps = [];
-        do {
-          nearByDps = await dpService.checkNearbyDps(
-            radius,
-            nextBroadcast._id,
-            pdc.user_id,
-          );
-          radius += 500;
-          if (nearByDps.length > 0 && orderRequest.accepted_by) {
-            nearByDps = nearByDps.filter(
-              (dpId) => dpId.toString() !== orderRequest.accepted_by.toString(),
-            );
-          }
-        } while (nearByDps.length === 0 && radius <= 10000);
-
-        let pdcBroadcastOrderRequest = await OrderRequest.findOne({
-          order_id: order._id,
-          broadcast_id: nextBroadcast._id,
-          notified_ids: { $all: nearByDps },
-        }).session(session);
-
-        if (!pdcBroadcastOrderRequest && nearByDps.length > 0) {
-          await OrderRequest.create(
-            [
-              {
-                order_id: order._id,
-                requested_by: pdc.user_id,
-                notified_ids: nearByDps,
-                request_type: "broadcast_pdc",
-                broadcast_id: nextBroadcast._id,
-              },
-            ],
-            { session },
-          );
-        }
 
         order.broadcast_id = nextBroadcast._id;
         order.delivery_type = "broadcast_pdc";

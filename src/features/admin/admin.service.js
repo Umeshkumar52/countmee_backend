@@ -1246,6 +1246,12 @@ export const editVehicleSubcategory = async (id, body) => {
     }
   }
 
+  if (body.status === 'Approved') {
+    body.is_active = true;
+  } else if (body.status === 'Rejected') {
+    body.is_active = false;
+  }
+
   Object.assign(subcat, body);
   await subcat.save();
   return {
