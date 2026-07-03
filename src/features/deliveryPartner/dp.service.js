@@ -411,69 +411,72 @@ export const orderAccept = async (order_id, status, user_id) => {
         order.delivery_type = 'broadcast';
         await order.save({ session });
 
-        // Previous segment leg payout
-        const oldOrderRequest = await OrderRequest.findOne({ order_id: order._id })
-          .sort({ created_at: -1 })
-          .skip(1)
-          .session(session);
-
-        const travel = oldOrderRequest
-          ? await Travel.findOne({ order_id: order._id, user_id: oldOrderRequest.accepted_by }).sort({ created_at: -1 }).session(session)
-          : null;
-
-        let distance = 0;
-
-        const oldDpDetail = oldOrderRequest ? await DpDetail.findOne({ user_id: oldOrderRequest.accepted_by }).session(session) : null;
-
-        if (travel && oldOrderRequest && oldDpDetail) {
-          const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
-          const chkDistance = await mapsService.distanceBetween(
-            travel.pickup_latitude,
-            travel.pickup_longitude,
-            oldDpDetail.latitude,
-            oldDpDetail.longitude,
-            mode
-          );
-          distance = parseFloat(chkDistance) || 0;
-
-          const distToReceiver = parseFloat(await mapsService.distanceBetween(
-            oldDpDetail.latitude,
-            oldDpDetail.longitude,
-            order.receiver_latitude,
-            order.receiver_longitude,
-            mode
-          )) || 0;
-
-          const fraction = (distance + distToReceiver > 0) ? (distance / (distance + distToReceiver)) : 0;
-          const cappedFraction = Math.min(fraction, 1);
-
-          const alreadyDistributed = await DpPayout.find({ order_id: order._id })
+        // Previous segment leg payout - ONLY recalculate for direct DP-to-DP handovers
+        // For broadcast_pdc, the PDC drop-off already locked in the exact PDC coordinates
+        if (orderRequest.request_type === 'broadcast_dp') {
+          const oldOrderRequest = await OrderRequest.findOne({ order_id: order._id })
+            .sort({ created_at: -1 })
+            .skip(1)
             .session(session);
 
-          const sumEarnings = alreadyDistributed
-            .filter(p => p.travel_id !== travel._id)
-            .reduce((acc, curr) => acc + curr.earnings, 0);
+          const travel = oldOrderRequest
+            ? await Travel.findOne({ order_id: order._id, user_id: oldOrderRequest.accepted_by }).sort({ created_at: -1 }).session(session)
+            : null;
 
-          const remainingPot = Math.max(0, totalDpPot - sumEarnings);
-          const earnings = Math.round(remainingPot * cappedFraction * 100) / 100;
+          let distance = 0;
 
-          travel.drop_location = oldDpDetail.location;
-          travel.drop_latitude = oldDpDetail.latitude;
-          travel.drop_longitude = oldDpDetail.longitude;
-          travel.distance = Math.round(distance * 1000) / 1000;
-          travel.earnings = earnings;
-          await travel.save({ session });
+          const oldDpDetail = oldOrderRequest ? await DpDetail.findOne({ user_id: oldOrderRequest.accepted_by }).session(session) : null;
 
-          await DpPayout.findOneAndUpdate(
-            { travel_id: travel._id },
-            {
-              dp_auth_id: travel.user_id,
-              order_id: travel.order_id,
-              broadcast_id: oldOrderRequest.broadcast_id || null,
-              earnings
-            },
-            { upsert: true, session }
-          );
+          if (travel && oldOrderRequest && oldDpDetail) {
+            const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
+            const chkDistance = await mapsService.distanceBetween(
+              travel.pickup_latitude,
+              travel.pickup_longitude,
+              oldDpDetail.latitude,
+              oldDpDetail.longitude,
+              mode
+            );
+            distance = parseFloat(chkDistance) || 0;
+
+            const distToReceiver = parseFloat(await mapsService.distanceBetween(
+              oldDpDetail.latitude,
+              oldDpDetail.longitude,
+              order.receiver_latitude,
+              order.receiver_longitude,
+              mode
+            )) || 0;
+
+            const fraction = (distance + distToReceiver > 0) ? (distance / (distance + distToReceiver)) : 0;
+            const cappedFraction = Math.min(fraction, 1);
+
+            const alreadyDistributed = await DpPayout.find({ order_id: order._id })
+              .session(session);
+
+            const sumEarnings = alreadyDistributed
+              .filter(p => String(p.travel_id) !== String(travel._id))
+              .reduce((acc, curr) => acc + curr.earnings, 0);
+
+            const remainingPot = Math.max(0, totalDpPot - sumEarnings);
+            const earnings = Math.round(remainingPot * cappedFraction * 100) / 100;
+
+            travel.drop_location = oldDpDetail.location;
+            travel.drop_latitude = oldDpDetail.latitude;
+            travel.drop_longitude = oldDpDetail.longitude;
+            travel.distance = Math.round(distance * 1000) / 1000;
+            travel.earnings = earnings;
+            await travel.save({ session });
+
+            await DpPayout.findOneAndUpdate(
+              { travel_id: travel._id },
+              {
+                dp_auth_id: travel.user_id,
+                order_id: travel.order_id,
+                broadcast_id: oldOrderRequest.broadcast_id || null,
+                earnings
+              },
+              { upsert: true, session }
+            );
+          }
         }
 
         // Current DP payout leg segment allocation
@@ -1480,3 +1483,58 @@ export const checkNearbyDps = async (radius, broadcastId, userId) => {
   return nearestDps;
 };
 
+export const findPdcInRouteService = async (pickup_lat, pickup_lng, drop_lat, drop_lng) => {
+  // Padding of 0.05 degrees is roughly 5.5km padding around the bounding box
+  const padding = 0.05;
+  const minLng = Math.min(Number(pickup_lng), Number(drop_lng)) - padding;
+  const maxLng = Math.max(Number(pickup_lng), Number(drop_lng)) + padding;
+  const minLat = Math.min(Number(pickup_lat), Number(drop_lat)) - padding;
+  const maxLat = Math.max(Number(pickup_lat), Number(drop_lat)) + padding;
+
+  // Ultra-fast MongoDB $geoWithin bounding box query
+  const warehouses = await PdcDocument.find({
+    online: true,
+    geo_location: {
+      $geoWithin: {
+        $box: [
+          [minLng, minLat],
+          [maxLng, maxLat]
+        ]
+      }
+    }
+  });
+
+  const warehousesInRoute = [];
+  const totalRouteDistance = mapsService.haversineGreatCircleDistance(
+    Number(pickup_lat),
+    Number(pickup_lng),
+    Number(drop_lat),
+    Number(drop_lng)
+  ) / 1000;
+
+  for (const pdc of warehouses) {
+    // Only proceed if latitude and longitude exist
+    if (!pdc.latitude || !pdc.longitude) continue;
+
+    const distanceToPickup = mapsService.haversineGreatCircleDistance(
+      Number(pickup_lat),
+      Number(pickup_lng),
+      pdc.latitude,
+      pdc.longitude
+    ) / 1000;
+
+    const distanceToDrop = mapsService.haversineGreatCircleDistance(
+      Number(drop_lat),
+      Number(drop_lng),
+      pdc.latitude,
+      pdc.longitude
+    ) / 1000;
+
+    const threshold = 1.0; // 1km threshold deviation
+    if (Math.abs(distanceToPickup + distanceToDrop - totalRouteDistance) < threshold) {
+      warehousesInRoute.push(pdc);
+    }
+  }
+
+  return warehousesInRoute;
+};

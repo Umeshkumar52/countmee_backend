@@ -13,7 +13,7 @@ import { Rating } from '../deliveryPartner/rating.model.js';
 import { DpDetail } from '../deliveryPartner/dpDetail.model.js';
 import { Notification } from '../notifications/notification.model.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
-import { getLatLongFromAddress } from '../tracking/maps.service.js';
+import { getLatLongFromAddress, distanceBetween } from '../tracking/maps.service.js';
 import { sendNotification } from '../../common/utils/sendNotification.js';
 import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS } from '../../constants/index.js';
 import * as dpService from '../deliveryPartner/dp.service.js';
@@ -194,6 +194,7 @@ export const submitDocuments = async (userId, bodyData, files) => {
     address: bodyData.address || null,
     latitude,
     longitude,
+    geo_location: { type: 'Point', coordinates: [Number(longitude), Number(latitude)] },
     ...uploadResults
   };
 
@@ -216,16 +217,16 @@ export const getDashboardData = async (userId) => {
     status: { $in: [ORDER_REQUEST_STATUS.PENDING, ORDER_REQUEST_STATUS.REJECTED, ORDER_REQUEST_STATUS.ACCEPTED, '0', '1'] }
   });
 
-  const orderRelevantIds = Array.from(new Set(orderRequests.map(r => r.order_id)));
+  const orderRelevantIds = Array.from(new Set(orderRequests.map(r => r.order_id.toString())));
 
   // IDs of ALL orders ever broadcasted by THIS PDC
   const broadcasts = await Broadcast.find({ broadcasted_by: userId });
-  const allBroadcastedIds = broadcasts.map(b => b.order_id);
+  const allBroadcastedIds = broadcasts.map(b => b.order_id.toString());
 
-  // IDs of orders currently being broadcasted (waiting for DP, status 0)
+  // IDs of orders currently being broadcasted (waiting for DP, status 0 or Active)
   const currentlyBroadcastingIds = broadcasts
-    .filter(b => Number(b.status) === 0)
-    .map(b => b.order_id);
+    .filter(b => b.status === "Active" || Number(b.status) === 0 || b.status === "0")
+    .map(b => b.order_id.toString());
 
   // Orders To Receive = Relevant minus ANY that have been broadcasted
   const ordersToReceiveIds = orderRelevantIds.filter(id => !allBroadcastedIds.includes(id));
@@ -304,13 +305,14 @@ export const getDashboardData = async (userId) => {
     jsonOrder.packageDetail = packageDetail ? packageDetail.toJSON() : null;
     jsonOrder.broadcast = broadcast ? broadcast.toJSON() : null;
     jsonOrder.orderReq = targetReq;
-    jsonOrder.effectiveDp = effectiveDp;
-    jsonOrder.effectiveDpLoc = effectiveDpLoc;
+    jsonOrder.effectiveDp = effectiveDp ? (effectiveDp.toJSON ? effectiveDp.toJSON() : effectiveDp) : null;
+    jsonOrder.effectiveDpLoc = effectiveDpLoc ? (effectiveDpLoc.toJSON ? effectiveDpLoc.toJSON() : effectiveDpLoc) : null;
     jsonOrder.dpProfileImg = dpProfileImg;
     jsonOrder.stars = stars;
     jsonOrder.fullStars = fullStars;
     jsonOrder.halfStar = halfStar;
     jsonOrder.blankstars = blankStars; // Match lower case used in some templates
+    console.log(`[DEBUG Dashboard] Order ${order._id}: effectiveDp = ${jsonOrder.effectiveDp ? 'EXISTS' : 'NULL'}, effectiveDpLoc = ${jsonOrder.effectiveDpLoc ? 'EXISTS' : 'NULL'}`);
     ordersToReceive.push(jsonOrder);
   }
 
@@ -394,7 +396,7 @@ export const getDashboardData = async (userId) => {
     ]
   });
 
-  const pickedUpByDpOrderIds = broadcasts.filter(b => Number(b.status) === 1).map(b => b.order_id);
+  const pickedUpByDpOrderIds = broadcasts.filter(b => b.status === "Completed" || Number(b.status) === 1 || b.status === "1").map(b => b.order_id);
   const allPdcOrderIds = Array.from(new Set([...orderRelevantIds, ...allBroadcastedIds]));
 
   const pendingOrders = await Order.countDocuments({
@@ -547,9 +549,27 @@ export const getEarnings = async (userId) => {
 
 export const getOrderHistory = async (userId) => {
   const reqs = await OrderRequest.find({ accepted_by: userId });
-  const orderIds = reqs.map(r => r.order_id);
+  const acceptedOrderIds = reqs.map(r => r.order_id);
 
-  const orders = await Order.find({ _id: { $in: orderIds } })
+  // According to the new flow: Only show orders in history if the PDC has successfully 
+  // broadcasted them and another DP has accepted the broadcast (status != '0' and status != 'Active').
+  const successfulBroadcasts = await Broadcast.find({
+    broadcasted_by: userId,
+    order_id: { $in: acceptedOrderIds },
+    status: { $nin: ['0', 0, 'Active'] } // Active/0 means pending broadcast, anything else (like Completed/1) means accepted
+  });
+
+  const broadcastedOrderIds = successfulBroadcasts.map(b => b.order_id.toString());
+
+  // We also include orders that might have been completed directly at the PDC 
+  const completedOrders = await Order.find({
+    _id: { $in: acceptedOrderIds },
+    status_completed: "delivered"
+  });
+
+  const validOrderIds = [...new Set([...broadcastedOrderIds, ...completedOrders.map(o => o._id.toString())])];
+
+  const orders = await Order.find({ _id: { $in: validOrderIds } })
     .sort({ created_at: -1 });
 
   const ordersWithEarning = [];
@@ -628,7 +648,14 @@ export const updateLocation = async (userId, locationData) => {
         pincode: locationData.pincode || pdc.pincode,
         latitude: locationData.latitude ? Number(locationData.latitude) : pdc.latitude,
         longitude: locationData.longitude ? Number(locationData.longitude) : pdc.longitude,
-        district: locationData.district || pdc.district
+        district: locationData.district || pdc.district,
+        geo_location: { 
+          type: 'Point', 
+          coordinates: [
+            locationData.longitude ? Number(locationData.longitude) : pdc.longitude, 
+            locationData.latitude ? Number(locationData.latitude) : pdc.latitude
+          ] 
+        }
       }
     );
     return true;
@@ -675,7 +702,7 @@ export const processActionDrop = async (orderId, pdcId, action) => {
     order_id: orderId,
     notified_ids: pdcId,
     request_type: "deliver to pdc",
-    status: null // pending
+    status: { $in: [null, "Pending"] }
   });
 
   if (!orderRequest) {
@@ -735,6 +762,15 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
     if (!pdcDoc) throw new Error("PDC location not found");
 
     // Generate the Broadcast and pickup_otp ONLY when broadcast button is clicked
+    const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
+    const distanceValue = await distanceBetween(
+      pdcDoc.latitude,
+      pdcDoc.longitude,
+      order.receiver_latitude,
+      order.receiver_longitude,
+      mode
+    );
+
     const createdBroadcast = await Broadcast.create([{
       order_id: order._id,
       broadcasted_by: pdcId,
@@ -744,6 +780,7 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
       drop_location: order.drop_location,
       drop_latitude: order.receiver_latitude,
       drop_longitude: order.receiver_longitude,
+      distance: parseFloat(distanceValue) || 0,
       pickup_otp: Math.floor(1000 + Math.random() * 9000)
     }]);
     broadcast = createdBroadcast[0];

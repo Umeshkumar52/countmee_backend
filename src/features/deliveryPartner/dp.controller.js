@@ -9,6 +9,7 @@ import { Order } from "../orders/order.model.js";
 import { DpDocument } from "./dpDocument.model.js";
 import { DpDetail } from "./dpDetail.model.js";
 import { Broadcast } from "../orders/broadcast.model.js";
+import { getAgenda } from "../../common/services/agenda.service.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
 import * as mapsService from "../tracking/maps.service.js";
 import { PdcDocument } from "../pdc/pdcDocument.model.js";
@@ -434,18 +435,6 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
     const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.7;
     const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
 
-    const previousPayouts = await dpService.findPayoutsByDp(user_id);
-    const sumPrev = previousPayouts
-      .filter(
-        (p) =>
-          String(p.order_id) === String(order._id) &&
-          String(p.travel_id) !== String(travel._id),
-      )
-      .reduce((acc, curr) => acc + curr.earnings, 0);
-
-    const share = Math.round((totalDpPot / 2) * 100) / 100;
-    const earning = Math.max(0, Math.round((share - sumPrev) * 100) / 100);
-
     const pdcObj = await PdcDocument.findOne({ user_id: pdc_id }).session(
       session,
     );
@@ -459,6 +448,25 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
       mode,
     );
     const distanceValue = parseFloat(distance) || 0;
+
+    const distToReceiver = await mapsService.distanceBetween(
+      pdcObj.latitude,
+      pdcObj.longitude,
+      order.receiver_latitude,
+      order.receiver_longitude,
+      mode,
+    );
+    const distToReceiverValue = parseFloat(distToReceiver) || 0;
+
+    const allPayouts = await mongoose.model("DpPayout").find({ order_id: order._id }).session(session);
+    const sumPrev = allPayouts
+      .filter((p) => String(p.travel_id) !== String(travel._id))
+      .reduce((acc, curr) => acc + curr.earnings, 0);
+
+    const fraction = (distanceValue + distToReceiverValue > 0) ? (distanceValue / (distanceValue + distToReceiverValue)) : 0;
+    const cappedFraction = Math.min(fraction, 1);
+    const remainingPot = Math.max(0, totalDpPot - sumPrev);
+    const earning = Math.round(remainingPot * cappedFraction * 100) / 100;
 
     travel.drop_location = pdcObj.address;
     travel.drop_latitude = pdcObj.latitude;
@@ -538,7 +546,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
           pickup_location: pdcObj.address,
           pickup_latitude: pdcObj.latitude,
           pickup_longitude: pdcObj.longitude,
-          distance: 0,
+          distance: distToReceiverValue,
           pickup_otp: Math.floor(1000 + Math.random() * 9000),
           drop_otp: Math.floor(1000 + Math.random() * 9000),
         },
@@ -648,42 +656,12 @@ export const customerLocation = asyncHandler(async (req, res) => {
 export const findPdcInRoute = asyncHandler(async (req, res) => {
   const { pickup_lat, pickup_lng, drop_lat, drop_lng } = req.body;
 
-  const warehouses = await PdcDocument.find({ online: true });
-  const warehousesInRoute = [];
-
-  for (const pdc of warehouses) {
-    const distanceToPickup =
-      mapsService.haversineGreatCircleDistance(
-        Number(pickup_lat),
-        Number(pickup_lng),
-        pdc.latitude,
-        pdc.longitude,
-      ) / 1000;
-
-    const distanceToDrop =
-      mapsService.haversineGreatCircleDistance(
-        Number(drop_lat),
-        Number(drop_lng),
-        pdc.latitude,
-        pdc.longitude,
-      ) / 1000;
-
-    const totalRouteDistance =
-      mapsService.haversineGreatCircleDistance(
-        Number(pickup_lat),
-        Number(pickup_lng),
-        Number(drop_lat),
-        Number(drop_lng),
-      ) / 1000;
-
-    const threshold = 1.0; // 1km threshold
-    if (
-      Math.abs(distanceToPickup + distanceToDrop - totalRouteDistance) <
-      threshold
-    ) {
-      warehousesInRoute.push(pdc);
-    }
-  }
+  const warehousesInRoute = await dpService.findPdcInRouteService(
+    pickup_lat,
+    pickup_lng,
+    drop_lat,
+    drop_lng
+  );
 
   return res.json(ApiResponse.success(warehousesInRoute));
 });
@@ -814,7 +792,6 @@ export const deliverPdc = asyncHandler(async (req, res) => {
             requested_by: dpAuthId,
             notified_ids: [pdc.user_id],
             request_type: "deliver to pdc",
-            accepted_by: pdc.user_id,
           },
         ],
         { session },
@@ -857,6 +834,25 @@ export const deliverPdc = asyncHandler(async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
+    // Send a real-time socket notification to the PDC so their "Orders To Receive" tab updates automatically
+    const { ROLES } = await import("../../constants/index.js");
+    const { sendNotification } = await import("../../common/utils/sendNotification.js");
+    await sendNotification({
+      role: ROLES.PDC,
+      userId: pdc.user_id,
+      title: "New Drop-off Request",
+      message: "A Delivery Partner is heading to your PDC to drop off a package.",
+      orderId: order._id
+    });
+
+    const agenda = getAgenda();
+    if (agenda && orderRequest) {
+      await agenda.schedule('in 5 minutes', 'auto-accept-pdc', {
+        order_id: order._id.toString(),
+        order_request_id: orderRequest[0] ? orderRequest[0]._id.toString() : orderRequest._id.toString()
+      });
+    }
+
     return res.json(
       ApiResponse.success({ pdc, orderId: order._id }, "request success"),
     );
@@ -892,35 +888,38 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
       .sort({ created_at: -1 })
       .session(session);
 
-    const pdcOrderRequest = orderRequests[0];
-    const orderRequest = orderRequests[1];
+    const pdcOrderRequest = orderRequests.find(r => r.request_type === 'deliver to pdc') || orderRequests[0];
+    const orderRequest = orderRequests.find(r => r.request_type !== 'deliver to pdc') || orderRequests[1];
 
-    if (orderRequest && pdcOrderRequest) {
-      orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
-      await orderRequest.save({ session });
+    if (pdcOrderRequest) {
+      if (orderRequest) {
+        orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
+        await orderRequest.save({ session });
+      }
 
       pdcOrderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
+      if (!pdcOrderRequest.accepted_by && pdcOrderRequest.notified_ids && pdcOrderRequest.notified_ids.length > 0) {
+        pdcOrderRequest.accepted_by = pdcOrderRequest.notified_ids[0];
+      }
       await pdcOrderRequest.save({ session });
 
-      const newOrderRequest = await OrderRequest.findOne({
-        order_id: order._id,
-      })
-        .sort({ created_at: -1 })
-        .session(session);
-
+      const pdcUserId = pdcOrderRequest.accepted_by;
+      
       const pdc = await PdcDocument.findOne({
-        user_id: newOrderRequest.accepted_by,
+        user_id: pdcUserId,
       }).session(session);
 
-      const dpDetail = await DpDetail.findOne({
-        user_id: orderRequest.accepted_by,
-      }).session(session);
-      if (dpDetail && pdc) {
-        dpDetail.location = pdc.address;
-        dpDetail.latitude = pdc.latitude;
-        dpDetail.longitude = pdc.longitude;
-        dpDetail.geo_location = { type: "Point", coordinates: [pdc.longitude, pdc.latitude] };
-        await dpDetail.save({ session });
+      if (orderRequest && orderRequest.accepted_by) {
+        const dpDetail = await DpDetail.findOne({
+          user_id: orderRequest.accepted_by,
+        }).session(session);
+        if (dpDetail && pdc) {
+          dpDetail.location = pdc.address;
+          dpDetail.latitude = pdc.latitude;
+          dpDetail.longitude = pdc.longitude;
+          dpDetail.geo_location = { type: "Point", coordinates: [pdc.longitude, pdc.latitude] };
+          await dpDetail.save({ session });
+        }
       }
 
       const travel = await mongoose
@@ -1080,6 +1079,21 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
 
     await session.commitTransaction();
     session.endSession();
+
+    // Send real-time socket notification to the PDC so their UI auto-refreshes
+    const { ROLES } = await import("../../constants/index.js");
+    const { sendNotification } = await import("../../common/utils/sendNotification.js");
+    
+    const pdcOrderReq = await OrderRequest.findOne({ order_id: order._id, request_type: 'deliver to pdc' }).sort({ created_at: -1 });
+    if (pdcOrderReq && pdcOrderReq.accepted_by) {
+      await sendNotification({
+        role: ROLES.PDC,
+        userId: pdcOrderReq.accepted_by,
+        title: "Order Arrived at PDC",
+        message: `Package for Order #${order._id} has been delivered.`,
+        orderId: order._id
+      });
+    }
 
     return res.json(ApiResponse.success(null, "Parcel Delivered to PDC"));
   } catch (error) {

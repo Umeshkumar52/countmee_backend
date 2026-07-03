@@ -20,7 +20,7 @@ export const initAgenda = async () => {
         try {
             const orderRequest = await OrderRequest.findById(order_request_id);
             // Check if it's still pending
-            if (orderRequest && orderRequest.status == null && orderRequest.request_type === 'deliver to pdc') {
+            if (orderRequest && (orderRequest.status === "Pending" || orderRequest.status == null) && orderRequest.request_type === 'deliver to pdc') {
                 orderRequest.status = "Accepted"; // accepted
                 orderRequest.accepted_by = orderRequest.notified_ids[0]; // The PDC who accepted
                 await orderRequest.save();

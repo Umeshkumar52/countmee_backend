@@ -32,6 +32,10 @@ const pdcDocumentSchema = new mongoose.Schema(
     address: { type: String, default: null },
     latitude: { type: Number, default: null },
     longitude: { type: Number, default: null },
+    geo_location: {
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: { type: [Number], default: [0, 0] }, // [longitude, latitude]
+    },
     profile_image: { type: String, default: null },
     shop_image: { type: String, default: null },
     status: { type: String, enum: ["Pending", "Approved", "Rejected"], default: "Pending" },
@@ -43,5 +47,7 @@ const pdcDocumentSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+pdcDocumentSchema.index({ geo_location: "2dsphere" });
 
 export const PdcDocument = mongoose.model("PdcDocument", pdcDocumentSchema);
