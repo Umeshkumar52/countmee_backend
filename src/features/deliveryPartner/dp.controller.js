@@ -600,6 +600,19 @@ export const totalorder = asyncHandler(async (req, res) => {
   );
 });
 
+export const postRespondToBundle = asyncHandler(async (req, res) => {
+  const { bundle_id, response } = req.body;
+  const dp_id = req.user.id || req.user._id;
+
+  if (!bundle_id || !response) {
+    throw new ApiError(400, "bundle_id and response are required");
+  }
+
+  const result = await dpService.respondToBundle(dp_id, bundle_id, response);
+  return res.json(ApiResponse.success(result, result.message));
+});
+
+
 export const earning_history = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const result = await dpService.getEarningHistory(userId);

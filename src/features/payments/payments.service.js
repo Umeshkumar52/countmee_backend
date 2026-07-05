@@ -28,15 +28,16 @@ export const cashfreeWebhook = async (data) => {
     const paymentStatus = data.data.payment.payment_status;
 
     if (paymentStatus === "SUCCESS") {
-      const transaction =
-        await paymentsRepository.findTransactionByGatewayId(orderId);
-      if (transaction && transaction.status === "pending") {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-        try {
-          transaction.status = "completed";
-          await transaction.save({ session });
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+        const transaction = await WalletTransaction.findOneAndUpdate(
+          { transaction_id: orderId, status: "pending" },
+          { status: "completed" },
+          { new: true, session }
+        );
 
+        if (transaction) {
           const wallet = await Wallet.findById(transaction.wallet_id);
           wallet.balance += transaction.amount;
           await wallet.save({ session });
@@ -50,13 +51,16 @@ export const cashfreeWebhook = async (data) => {
           });
 
           await session.commitTransaction();
-          session.endSession();
           console.log(`Cashfree Webhook: Payment Successful for order ${orderId}`);
-        } catch (err) {
+        } else {
           await session.abortTransaction();
-          session.endSession();
-          console.error("Cashfree Webhook Error:", err);
+          console.log(`Cashfree Webhook: Payment already processed for order ${orderId}`);
         }
+      } catch (err) {
+        await session.abortTransaction();
+        console.error("Cashfree Webhook Error:", err);
+      } finally {
+        session.endSession();
       }
     }
   }
@@ -64,12 +68,10 @@ export const cashfreeWebhook = async (data) => {
   // Payment failed
   if (data.type === "PAYMENT_FAILED_WEBHOOK") {
     const orderId = data.data.order.order_id;
-    const transaction =
-      await paymentsRepository.findTransactionByGatewayId(orderId);
-    if (transaction && transaction.status === "pending") {
-      transaction.status = "failed";
-      await transaction.save();
-    }
+    await WalletTransaction.findOneAndUpdate(
+      { transaction_id: orderId, status: "pending" },
+      { status: "failed" }
+    );
     console.log(`Cashfree Webhook: Payment Failed for order ${orderId}`);
   }
 };
@@ -310,15 +312,16 @@ export const verifyCashfreePayment = async (order_id) => {
     const result = response.data;
 
     if (result.order_status === "PAID") {
-      const transaction =
-        await paymentsRepository.findTransactionByGatewayId(order_id);
-      if (transaction && transaction.status === "pending") {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-        try {
-          transaction.status = "completed";
-          await transaction.save({ session });
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+        const transaction = await WalletTransaction.findOneAndUpdate(
+          { transaction_id: order_id, status: "pending" },
+          { status: "completed" },
+          { new: true, session }
+        );
 
+        if (transaction) {
           const wallet = await Wallet.findById(transaction.wallet_id);
           wallet.balance += transaction.amount;
           await wallet.save({ session });
@@ -333,17 +336,19 @@ export const verifyCashfreePayment = async (order_id) => {
 
           await session.commitTransaction();
           session.endSession();
-
           return {
             balance: wallet.balance,
           };
-        } catch (err) {
+        } else {
           await session.abortTransaction();
           session.endSession();
-          throw err;
+          return { already_processed: true };
         }
+      } catch (err) {
+        await session.abortTransaction();
+        session.endSession();
+        throw err;
       }
-      return { already_processed: true };
     }
 
     throw new Error("Payment verification failed");
@@ -356,69 +361,3 @@ export const verifyCashfreePayment = async (order_id) => {
   }
 };
 
-export const processRazorpayPayment = async (paymentData) => {
-  const {
-    customer_auth_id,
-    order_id,
-    razorpay_order_id,
-    razorpay_payment_id,
-    payment_mode,
-    price,
-    currency,
-    status,
-  } = paymentData;
-
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  try {
-    const payment = await paymentsRepository.createPayment(
-      {
-        customer_auth_id,
-        order_id,
-        razorpay_order_id,
-        razorpay_payment_id,
-        payment_mode,
-        price: Number(price),
-        currency,
-        status,
-      },
-      session,
-    );
-
-    if (status === "PAID") {
-      const order = await Order.findById(order_id);
-      if (order) {
-        order.status = ORDER_STATUS.CONFIRMED;
-        await order.save({ session });
-
-        // Notify DP
-        await notifyDp(order._id, order.package_id);
-
-        // Notification logs
-        await sendNotification({
-          role: ROLES.USER,
-          userId: order.user_id,
-          title: "Payment Successful",
-          message: `Payment of ₹${price} for Order #${order._id} completed`,
-          orderId: order._id,
-          session,
-        });
-      }
-
-      await session.commitTransaction();
-      session.endSession();
-
-      return {
-        success: "payment details save successfully",
-      };
-    } else {
-      await session.commitTransaction();
-      session.endSession();
-      throw new Error("payment failed");
-    }
-  } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    throw error;
-  }
-};

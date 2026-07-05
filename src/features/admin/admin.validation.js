@@ -144,6 +144,26 @@ export const addDpSchema = Joi.object({
     .allow('', null),
   reference2_phone: Joi.string()
     .trim()
+    .allow('', null),
+  dl_expiry_date: Joi.string()
+    .allow('', null),
+  sub_vehicle_type: Joi.string()
+    .allow('', null),
+  other_vehicle_details: Joi.string()
+    .allow('', null),
+  vehicle_min_capacity: Joi.any()
+    .allow('', null),
+  vehicle_max_capacity: Joi.any()
+    .allow('', null),
+  insurance_expiry_date: Joi.string()
+    .allow('', null),
+  emission_expiry_date: Joi.string()
+    .allow('', null),
+  is_new_vehicle: Joi.any()
+    .allow('', null),
+  vehicle_registration_date: Joi.string()
+    .allow('', null),
+  travel_permit_states: Joi.string()
     .allow('', null)
 });
 
@@ -216,6 +236,26 @@ export const editDpSchema = Joi.object({
     .allow('', null),
   reference2_phone: Joi.string()
     .trim()
+    .allow('', null),
+  dl_expiry_date: Joi.string()
+    .allow('', null),
+  sub_vehicle_type: Joi.string()
+    .allow('', null),
+  other_vehicle_details: Joi.string()
+    .allow('', null),
+  vehicle_min_capacity: Joi.any()
+    .allow('', null),
+  vehicle_max_capacity: Joi.any()
+    .allow('', null),
+  insurance_expiry_date: Joi.string()
+    .allow('', null),
+  emission_expiry_date: Joi.string()
+    .allow('', null),
+  is_new_vehicle: Joi.any()
+    .allow('', null),
+  vehicle_registration_date: Joi.string()
+    .allow('', null),
+  travel_permit_states: Joi.string()
     .allow('', null)
 });
 
@@ -275,6 +315,18 @@ export const addPdcSchema = Joi.object({
       'any.required': 'Phone number is required'
     }),
   address: Joi.string()
+    .trim()
+    .allow('', null),
+  city: Joi.string()
+    .trim()
+    .allow('', null),
+  state: Joi.string()
+    .trim()
+    .allow('', null),
+  district: Joi.string()
+    .trim()
+    .allow('', null),
+  pincode: Joi.string()
     .trim()
     .allow('', null),
   aadhar: Joi.string()
@@ -444,6 +496,7 @@ const deliverChargeItemSchema = Joi.object({
       'number.base': 'Per-km price must be a number',
       'any.required': 'Per-km price is required'
     }),
+  waiting_charge: Joi.number().min(0).allow('', null).optional(),
   dp_commission: Joi.number()
     .required()
     .messages({

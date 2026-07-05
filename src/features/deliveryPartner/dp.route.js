@@ -60,6 +60,7 @@ router.post('/cancel_assignment', dpController.cancelAssignment);
 router.get('/acceptedOrders/:user_id', dpController.acceptedOrders);
 router.post('/pickupOtp', dpController.pickupOtp);
 router.post('/pickupOrderImageUpload', pickupImageUploadFields, dpController.pickupOrderImageUpload);
+router.post('/bundle-response', dpController.postRespondToBundle);
 
 // Distances and Broadcasters
 router.get('/minbroadcast/:order/:lat/:lon', dpController.minBroadcast);

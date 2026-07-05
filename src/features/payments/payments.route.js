@@ -7,9 +7,6 @@ const router = Router();
 // Cashfree Webhook (Unauthenticated)
 router.post("/cashfree-webhook", paymentsController.cashfreeWebhookController);
 router.use(authenticate);
-// razorpay payment
-router.post("/webhook", paymentsController.razorpayWebhook);
-router.post("/", paymentsController.processRazorpayPayment);
 // Wallet endpoints under `/api/payment` prefix
 // router.get("/wallet/balance/:user_id", paymentsController.getBalance);
 // router.get("/wallet/history/:user_id", paymentsController.getHistory);
@@ -18,8 +15,6 @@ router.post("/", paymentsController.processRazorpayPayment);
 // router.post("/wallet/initiate", paymentsController.initiateCashfreePayment);
 // router.post("/wallet/verify", paymentsController.verifyCashfreePayment);
 
-// Standard Payment (Razorpay) under `/api/payment` prefix
-router.post("/razorpay", paymentsController.processRazorpayPayment);
 
 export default router;
 

@@ -1,11 +1,14 @@
-import * as adminService from './admin.service.js';
-import { validate } from '../../common/utils/validationHelper.js';
-import { ApiResponse } from '../../common/utils/responseFormatter.js';
-import * as adminValidation from './admin.validation.js';
+import * as adminService from "./admin.service.js";
+import { validate } from "../../common/utils/validationHelper.js";
+import { ApiResponse } from "../../common/utils/responseFormatter.js";
+import * as adminValidation from "./admin.validation.js";
 
 export const postLogin = async (req, res, next) => {
   try {
-    const { email, password, fcmToken } = validate(adminValidation.loginSchema, req.body);
+    const { email, password, fcmToken } = validate(
+      adminValidation.loginSchema,
+      req.body,
+    );
     const result = await adminService.loginAdmin(email, password, fcmToken);
     return res.json(ApiResponse.success(result));
   } catch (error) {
@@ -43,8 +46,16 @@ export const getDpDetails = async (req, res, next) => {
 
 export const postUpdateDocumentStatus = async (req, res, next) => {
   try {
-    const { document_id, document_type, status, reason } = validate(adminValidation.updateDocStatusSchema, req.body);
-    const result = await adminService.updateDpDocumentStatus(document_id, document_type, status, reason);
+    const { document_id, document_type, status, reason } = validate(
+      adminValidation.updateDocStatusSchema,
+      req.body,
+    );
+    const result = await adminService.updateDpDocumentStatus(
+      document_id,
+      document_type,
+      status,
+      reason,
+    );
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -53,8 +64,14 @@ export const postUpdateDocumentStatus = async (req, res, next) => {
 
 export const postUpdateAction = async (req, res, next) => {
   try {
-    const { userId, document_approval } = validate(adminValidation.updateActionSchema, req.body);
-    const result = await adminService.updateDpDocumentApproval(userId, document_approval);
+    const { userId, document_approval } = validate(
+      adminValidation.updateActionSchema,
+      req.body,
+    );
+    const result = await adminService.updateDpDocumentApproval(
+      userId,
+      document_approval,
+    );
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -104,7 +121,10 @@ export const getCustomerPage = async (req, res, next) => {
 export const postEditCustomer = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const validatedBody = validate(adminValidation.editCustomerSchema, req.body);
+    const validatedBody = validate(
+      adminValidation.editCustomerSchema,
+      req.body,
+    );
     const result = await adminService.editCustomer(id, validatedBody, req.file);
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -196,22 +216,74 @@ export const postPdcLocationUpdate = async (req, res, next) => {
   try {
     const { pdc_id } = req.params;
     const { latitude, longitude } = req.body;
-    const result = await adminService.updatePdcLocation(pdc_id, Number(latitude), Number(longitude));
+    const result = await adminService.updatePdcLocation(
+      pdc_id,
+      Number(latitude),
+      Number(longitude),
+    );
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
   }
 };
 
-export const postAadharStatus = (req, res, next) => adminService.updatePdcDocStatus(req.params.user, 'aadhar_status', req.params.value).then(d => res.json(ApiResponse.success(d))).catch(next);
-export const postPanStatus = (req, res, next) => adminService.updatePdcDocStatus(req.params.user, 'pan_status', req.params.value).then(d => res.json(ApiResponse.success(d))).catch(next);
-export const postGstStatus = (req, res, next) => adminService.updatePdcDocStatus(req.params.user, 'gst_status', req.params.value).then(d => res.json(ApiResponse.success(d))).catch(next);
-export const postBankStatus = (req, res, next) => adminService.updatePdcDocStatus(req.params.user, 'bank_status', req.params.value).then(d => res.json(ApiResponse.success(d))).catch(next);
+export const postAadharStatus = (req, res, next) =>
+  adminService
+    .updatePdcDocStatus(req.params.user, "aadhar_status", req.params.value)
+    .then((d) => res.json(ApiResponse.success(d)))
+    .catch(next);
+export const postPanStatus = (req, res, next) =>
+  adminService
+    .updatePdcDocStatus(req.params.user, "pan_status", req.params.value)
+    .then((d) => res.json(ApiResponse.success(d)))
+    .catch(next);
+export const postGstStatus = (req, res, next) =>
+  adminService
+    .updatePdcDocStatus(req.params.user, "gst_status", req.params.value)
+    .then((d) => res.json(ApiResponse.success(d)))
+    .catch(next);
+export const postBankStatus = (req, res, next) =>
+  adminService
+    .updatePdcDocStatus(req.params.user, "bank_status", req.params.value)
+    .then((d) => res.json(ApiResponse.success(d)))
+    .catch(next);
 
-export const postAadharReject = (req, res, next) => adminService.updatePdcDocStatus(req.params.pdcid, 'aadhar_reject_reason', req.params.reason).then(d => res.json(ApiResponse.success(d))).catch(next);
-export const postPanReject = (req, res, next) => adminService.updatePdcDocStatus(req.params.pdcid, 'pan_reject_reason', req.params.reason).then(d => res.json(ApiResponse.success(d))).catch(next);
-export const postGstReject = (req, res, next) => adminService.updatePdcDocStatus(req.params.pdcid, 'gst_reject_reason', req.params.reason).then(d => res.json(ApiResponse.success(d))).catch(next);
-export const postBankReject = (req, res, next) => adminService.updatePdcDocStatus(req.params.pdcid, 'bank_reject_reason', req.params.reason).then(d => res.json(ApiResponse.success(d))).catch(next);
+export const postAadharReject = (req, res, next) =>
+  adminService
+    .updatePdcDocStatus(
+      req.params.pdcid,
+      "aadhar_reject_reason",
+      req.params.reason,
+    )
+    .then((d) => res.json(ApiResponse.success(d)))
+    .catch(next);
+export const postPanReject = (req, res, next) =>
+  adminService
+    .updatePdcDocStatus(
+      req.params.pdcid,
+      "pan_reject_reason",
+      req.params.reason,
+    )
+    .then((d) => res.json(ApiResponse.success(d)))
+    .catch(next);
+export const postGstReject = (req, res, next) =>
+  adminService
+    .updatePdcDocStatus(
+      req.params.pdcid,
+      "gst_reject_reason",
+      req.params.reason,
+    )
+    .then((d) => res.json(ApiResponse.success(d)))
+    .catch(next);
+export const postBankReject = (req, res, next) =>
+  adminService
+    .updatePdcDocStatus(
+      req.params.pdcid,
+      "bank_reject_reason",
+      req.params.reason,
+    )
+    .then((d) => res.json(ApiResponse.success(d)))
+    .catch(next);
 
 export const getBroadcastPage = async (req, res, next) => {
   try {
@@ -224,8 +296,14 @@ export const getBroadcastPage = async (req, res, next) => {
 
 export const postMinBroadcast = async (req, res, next) => {
   try {
-    const { role, distance } = validate(adminValidation.minBroadcastSchema, req.body);
-    const result = await adminService.updateMinBroadcastDistance(role, distance);
+    const { role, distance } = validate(
+      adminValidation.minBroadcastSchema,
+      req.body,
+    );
+    const result = await adminService.updateMinBroadcastDistance(
+      role,
+      distance,
+    );
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -235,8 +313,13 @@ export const postMinBroadcast = async (req, res, next) => {
 export const postAddBroadcastPoint = async (req, res, next) => {
   try {
     const { name, radius, lat, lon } = req.body;
-    if (!name || radius === undefined || lat === undefined || lon === undefined) {
-      throw new Error('Missing required fields name, radius, lat, lon');
+    if (
+      !name ||
+      radius === undefined ||
+      lat === undefined ||
+      lon === undefined
+    ) {
+      throw new Error("Missing required fields name, radius, lat, lon");
     }
     const result = await adminService.addBroadcastPoint(name, radius, lat, lon);
     return res.json(ApiResponse.success(result));
@@ -293,7 +376,10 @@ export const getAssignOrdersSelect = async (req, res, next) => {
 
 export const postAssignDeliveryboy = async (req, res, next) => {
   try {
-    const { order_id, dp_id } = validate(adminValidation.assignDeliveryboySchema, req.body);
+    const { order_id, dp_id } = validate(
+      adminValidation.assignDeliveryboySchema,
+      req.body,
+    );
     const result = await adminService.assignDeliveryboy(order_id, dp_id);
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -318,19 +404,26 @@ export const getPaginatedOrdersPage = async (req, res, next) => {
     const orderType = req.query.orderType;
     const search = req.query.search;
     const scheduleDate = req.query.scheduleDate;
-    
+
     const pickupPin = req.query.pickupPin;
     const deliveryPin = req.query.deliveryPin;
     const vehicleType = req.query.vehicleType;
 
     let statusList = null;
-    if (status && status !== 'all') {
-      statusList = status === 'pending' ? ['pending', 'created'] : [status];
+    if (status && status !== "all") {
+      statusList = status === "pending" ? ["pending", "created"] : [status];
     }
-    
+
     const result = await adminService.getPaginatedOrders(
-      statusList, page, limit, orderType, search, scheduleDate,
-      pickupPin, deliveryPin, vehicleType
+      statusList,
+      page,
+      limit,
+      orderType,
+      search,
+      scheduleDate,
+      pickupPin,
+      deliveryPin,
+      vehicleType,
     );
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -415,9 +508,9 @@ export const getFeedbackPage = async (req, res, next) => {
   try {
     const { role, page, limit } = req.query;
     const result = await adminService.getFeedbacks(
-      role, 
-      page ? parseInt(page) : 1, 
-      limit ? parseInt(limit) : 10
+      role,
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 10,
     );
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -426,13 +519,17 @@ export const getFeedbackPage = async (req, res, next) => {
 };
 
 export const getFinancePage = (req, res) => {
-  return res.json(ApiResponse.success({ message: 'Finance page endpoint' }));
+  return res.json(ApiResponse.success({ message: "Finance page endpoint" }));
 };
 
 export const getPendingPaymentsPage = async (req, res, next) => {
   try {
     const { type, startdate, enddate } = req.query;
-    const result = await adminService.getPendingPayments(type, startdate, enddate);
+    const result = await adminService.getPendingPayments(
+      type,
+      startdate,
+      enddate,
+    );
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -451,7 +548,11 @@ export const getViewPaymentsPage = async (req, res, next) => {
 export const postSettlePayments = async (req, res, next) => {
   try {
     const { ids, payable, settlement_amount } = req.body;
-    const result = await adminService.settlePayments(ids, payable, settlement_amount);
+    const result = await adminService.settlePayments(
+      ids,
+      payable,
+      settlement_amount,
+    );
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -479,13 +580,22 @@ export const getPastPaymentsSpecificOrderPage = async (req, res, next) => {
 };
 
 export const getReportsPage = (req, res) => {
-  return res.json(ApiResponse.success({ message: 'Reports configuration endpoint' }));
+  return res.json(
+    ApiResponse.success({ message: "Reports configuration endpoint" }),
+  );
 };
 
 export const postReportDataPage = async (req, res, next) => {
   try {
-    const { report_type, start_date, end_date } = validate(adminValidation.reportDataSchema, req.body);
-    const result = await adminService.getReportData(report_type, start_date, end_date);
+    const { report_type, start_date, end_date } = validate(
+      adminValidation.reportDataSchema,
+      req.body,
+    );
+    const result = await adminService.getReportData(
+      report_type,
+      start_date,
+      end_date,
+    );
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -503,8 +613,17 @@ export const getDeliverChargePage = async (req, res, next) => {
 
 export const postUpdateDeliverCharge = async (req, res, next) => {
   try {
-    const validatedBody = validate(adminValidation.deliverChargeSchema, req.body);
-    const updates = Array.isArray(validatedBody) ? validatedBody : [validatedBody];
+    const validatedBody = validate(
+      adminValidation.deliverChargeSchema,
+      req.body,
+    );
+    console.log(
+      "Validated body inside postUpdateDeliverCharge:",
+      validatedBody,
+    );
+    const updates = Array.isArray(validatedBody)
+      ? validatedBody
+      : [validatedBody];
     const result = await adminService.updateDeliverCharges(updates);
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -512,24 +631,32 @@ export const postUpdateDeliverCharge = async (req, res, next) => {
   }
 };
 
-
-
 export const getVehicleTypes = async (req, res, next) => {
   try {
     const { type } = req.query;
-    const validTypes = ['By Hand', 'Two Wheeler', 'Three Wheeler', 'Four Wheeler'];
+    const validTypes = [
+      "By Hand",
+      "Two Wheeler",
+      "Three Wheeler",
+      "Four Wheeler",
+    ];
 
     if (!type) {
-      return res.json(ApiResponse.success({ vehicleTypes: validTypes }, 'Vehicle types fetched successfully'));
+      return res.json(
+        ApiResponse.success(
+          { vehicleTypes: validTypes },
+          "Vehicle types fetched successfully",
+        ),
+      );
     }
 
-    if (type === 'all') {
+    if (type === "all") {
       const result = await adminService.getVehicleSubcategories();
       return res.json(ApiResponse.success(result));
     }
 
     if (!validTypes.includes(type)) {
-      throw new Error('Invalid vehicle type');
+      throw new Error("Invalid vehicle type");
     }
 
     const result = await adminService.getVehicleSubcategories(type);
@@ -541,7 +668,10 @@ export const getVehicleTypes = async (req, res, next) => {
 
 export const postAddVehicleSubcategory = async (req, res, next) => {
   try {
-    const validatedBody = validate(adminValidation.addVehicleSubcategorySchema, req.body);
+    const validatedBody = validate(
+      adminValidation.addVehicleSubcategorySchema,
+      req.body,
+    );
     const result = await adminService.addVehicleSubcategory(validatedBody);
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -552,7 +682,10 @@ export const postAddVehicleSubcategory = async (req, res, next) => {
 export const postEditVehicleSubcategory = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const validatedBody = validate(adminValidation.editVehicleSubcategorySchema, req.body);
+    const validatedBody = validate(
+      adminValidation.editVehicleSubcategorySchema,
+      req.body,
+    );
     const result = await adminService.editVehicleSubcategory(id, validatedBody);
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -585,20 +718,69 @@ export const postNearestDps = async (req, res, next) => {
 
 export const postAssignBundle = async (req, res, next) => {
   try {
-    const { orderIds, dp_id } = req.body;
+    const { orderIds, dp_id, dp_ids } = req.body;
     if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
       throw new Error("Please provide an array of orderIds");
     }
-    if (!dp_id) {
-      throw new Error("Please provide a dp_id");
+    const targetDps = dp_ids || dp_id;
+    if (!targetDps) {
+      throw new Error("Please provide dp_id or dp_ids");
     }
-    const result = await adminService.assignOrderBundle(orderIds, dp_id);
+
+    // Ensure array for service
+    const dpIdsArray = Array.isArray(targetDps) ? targetDps : [targetDps];
+
+    const result = await adminService.assignOrderBundle(orderIds, dpIdsArray);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
   }
 };
 
+export const getBundleResponses = async (req, res, next) => {
+  try {
+    const { bundle_id } = req.params;
+    const result = await adminService.getBundleResponses(bundle_id);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getBundleTracking = async (req, res, next) => {
+  try {
+    const { bundle_id } = req.params;
+    const result = await adminService.getBundleTracking(bundle_id);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getActiveBundles = async (req, res, next) => {
+  try {
+    const result = await adminService.getActiveBundles();
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const postAssignBundleFinal = async (req, res, next) => {
+  try {
+    const { bundle_id, dp_id } = req.body;
+    if (!bundle_id || !dp_id) {
+      throw new Error("Please provide both bundle_id and dp_id");
+    }
+    const result = await adminService.finalizeBundleAssignment(
+      bundle_id,
+      dp_id,
+    );
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
 
 export const postBundleSummary = async (req, res, next) => {
   try {
@@ -612,4 +794,3 @@ export const postBundleSummary = async (req, res, next) => {
     next(err);
   }
 };
-

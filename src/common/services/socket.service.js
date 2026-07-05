@@ -46,6 +46,12 @@ export const init = (httpServer) => {
       }
       userSockets.get(userIdStr).add(socket.id);
 
+      // If user is Admin, join admin_room
+      if (socket.user.role === 'Admin' || socket.user.role === 'admin') {
+        socket.join("admin_room");
+        console.log(`[Socket] Admin user ${userIdStr} joined admin_room`);
+      }
+
       socket.on("create-order", (data) => {
         socket.to().emit("new-order", data);
       });
@@ -147,4 +153,14 @@ export const sendNotificationToUser = (userId, payload) => {
     `[Socket] User ${userIdStr} is offline. Notification saved only in DB.`,
   );
   return false;
+};
+
+/**
+ * Broadcast event to all connected Admins
+ */
+export const broadcastToAdmins = (event, payload) => {
+  if (!ioInstance) return false;
+  ioInstance.to("admin_room").emit(event, payload);
+  console.log(`[Socket] Broadcasted ${event} to admin_room`);
+  return true;
 };

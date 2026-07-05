@@ -97,9 +97,52 @@ export const initAgenda = async () => {
         }
     });
 
+    agenda.define('rebroadcast-unaccepted-order', async (job) => {
+        const { order_id } = job.attrs.data;
+        try {
+            const { Order } = await import('../../features/orders/order.model.js');
+            const { ORDER_STATUS } = await import('../../constants/orderStatus.js');
+            const order = await Order.findById(order_id);
+
+            // If order still not accepted
+            if (order && order.status === ORDER_STATUS.CREATED) {
+                console.log(`[Agenda] Order ${order_id} not accepted after 5 minutes. Rebroadcasting...`);
+                const { PackageDetail } = await import('../../features/orders/packageDetail.model.js');
+                const packageDetail = await PackageDetail.findById(order.package_id);
+                
+                const { broadcastOrderToNearbyDPs } = await import('../../features/orders/orders.service.js');
+                
+                // Pass true as the third parameter to signify it's a rebroadcast (so it doesn't loop infinitely)
+                await broadcastOrderToNearbyDPs(order, packageDetail, true);
+            }
+        } catch (error) {
+            console.error('[Agenda] Error in rebroadcast-unaccepted-order job:', error);
+        }
+    });
+
     await agenda.start();
     // Run the sync job every 2 minutes
     await agenda.every('2 minutes', 'sync-dp-locations');
+
+    agenda.define('expire-bundle-broadcast', async (job) => {
+        const { bundle_id } = job.attrs.data;
+        try {
+            const { OrderBundle } = await import('../../features/orders/orderBundle.model.js');
+            const bundle = await OrderBundle.findOne({ bundle_id });
+            if (bundle && bundle.status === 'broadcasting') {
+                bundle.status = 'expired';
+                await bundle.save();
+                console.log(`[Agenda] Bundle ${bundle_id} broadcasting expired due to timeout`);
+                
+                // Optionally broadcast to admin about expiration
+                const { broadcastToAdmins } = await import('./socket.service.js');
+                broadcastToAdmins('bundle:expired', { bundle_id });
+            }
+        } catch (error) {
+            console.error('[Agenda] Error in expire-bundle-broadcast job:', error);
+        }
+    });
+
     console.log('[Agenda] Started job scheduler.');
 };
 
