@@ -4,10 +4,6 @@ import { ApiResponse } from "../../common/utils/responseFormatter.js";
 import { validate } from "../../common/utils/validationHelper.js";
 import * as paymentsValidation from "./payments.validation.js";
 
-export const razorpayWebhook = asyncHandler(async (req, res) => {
-  const response = await paymentsService.razorpayWebhook(req, data);
-  return res.json(ApiResponse.success(response, "Payment verify successfully"));
-});
 
 export const cashfreeWebhookController = asyncHandler(async (req, res) => {
   await paymentsService.cashfreeWebhook(req.body);
@@ -82,9 +78,3 @@ export const verifyCashfreePayment = asyncHandler(async (req, res) => {
   return res.json(ApiResponse.success(result, message));
 });
 
-export const processRazorpayPayment = asyncHandler(async (req, res) => {
-  const result = await paymentsService.processRazorpayPayment(req.body);
-  return res.json(
-    ApiResponse.success(result, "payment details save successfully"),
-  );
-});

@@ -462,7 +462,6 @@ export const addPdc = async (body, files) => {
     bank_name,
     bank_ifsc,
     bank_acc_no,
-    shop_name,
     password,
     confirmPassword,
   } = body;
@@ -522,7 +521,6 @@ export const addPdc = async (body, files) => {
     bank_name,
     ifsc: bank_ifsc,
     account_no: bank_acc_no,
-    shop_name,
     gst_doc: uploadResults.gst_doc || null,
     aadhar_front_image: uploadResults.aadhar_front_image || null,
     aadhar_back_image: uploadResults.aadhar_back_image || null,
@@ -1070,14 +1068,13 @@ export const getReportData = async (report_type, start_date, end_date) => {
       customer_name: o.user_id?.name || o.sender_name || "N/A",
       pdc_name: o.pdc_id?.shop_name || "Direct",
       pickup_address: o.pickup_address || o.pickup_location,
-      delivery_address: o.delivery_address || o.delivery_location,
+      delivery_address: o.drop_location || o.receiver_address || "N/A",
       transport_mode: o.mode_of_transport,
       created_at: o.createdAt
         ? new Date(o.createdAt).toISOString().split("T")[0]
         : "N/A",
-      amountWithoutGst: o.charges ? Math.round(o.charges * 100) / 100 : 0,
-      gstAmount: o.gst_charges ? Math.round(o.gst_charges * 100) / 100 : 0,
-      payoutCost: o.payout ? Math.round(o.payout * 100) / 100 : 0,
+      amountWithoutGst: o.charges ? Math.round((o.charges / 1.05) * 100) / 100 : 0,
+      gstAmount: o.charges ? Math.round((o.charges - (o.charges / 1.05)) * 100) / 100 : 0,
       status: o.status,
     }));
   } else if (report_type === "user") {
@@ -1137,6 +1134,7 @@ export const getDeliverCharges = async () => {
     base_distance: c.base_distance,
     base_price: c.base_price,
     per_km_price: c.per_km_price,
+    waiting_charge: c.waiting_charge || 0,
     dp_commission: c.dp_commission !== undefined ? c.dp_commission : 70,
     pdc_commission: c.pdc_commission !== undefined ? c.pdc_commission : 5,
     max_weight: c.max_weight,
@@ -1158,6 +1156,7 @@ export const updateDeliverCharges = async (updates) => {
       base_distance: update.base_distance,
       base_price: update.base_price,
       per_km_price: update.per_km_price,
+      waiting_charge: update.waiting_charge !== undefined ? update.waiting_charge : 0,
       dp_commission: update.dp_commission,
       pdc_commission: update.pdc_commission,
       max_weight: update.max_weight !== undefined ? update.max_weight : 0,
@@ -1387,14 +1386,14 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
     dp_id: null,
     notified_dps: dpIds,
     orders: orderIds,
-    status: "pending"
+    status: "broadcasting"
   });
   await bundle.save();
 
   // Dispatch Notifications to all selected DPs
   for (const dpId of dpIds) {
     const notify = new Notification({
-      notifiable_type: "delivery_partner",
+      notifiable_type: ROLES.DP,
       notifiable_id: dpId,
       title: "New Order Bundle Request!",
       message: `You have received a new Order Bundle (${bundle_id}) containing ${orderIds.length} orders. Open your app to accept.`,
@@ -1405,7 +1404,172 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
     await notify.save();
   }
 
+  // Update order statuses to processing
+  await Order.updateMany(
+    { _id: { $in: orderIds } },
+    { $set: { status: "processing" } }
+  );
+
   return { message: "Bundle broadcasted successfully to selected Delivery Partners", bundle_id, bundle };
+};
+
+export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
+  const mongoose = await import("mongoose");
+  const Order = mongoose.default.model("Order");
+  const { OrderBundle } = await import("../orders/orderBundle.model.js");
+  const { Notification } = await import("../notifications/notification.model.js");
+  const adminRepository = await import("./admin.repository.js");
+  const { broadcastToAdmins, sendNotificationToUser } = await import("../../common/services/socket.service.js");
+  const { ROLES } = await import("../../constants/index.js");
+
+  // 1. Fetch Bundle
+  const bundle = await OrderBundle.findOne({ bundle_id }).populate("orders");
+  if (!bundle) throw new Error("Order bundle not found");
+  if (bundle.status !== "broadcasting" && bundle.status !== "pending") {
+    throw new Error(`Cannot assign bundle in ${bundle.status} status`);
+  }
+
+  // 2. Assign each order safely using repository function
+  for (const order of bundle.orders) {
+    await adminRepository.assignDpToOrder(order._id, dp_id, order.user_id);
+  }
+
+  // 3. Update Bundle status to assigned
+  bundle.status = "assigned";
+  bundle.dp_id = dp_id;
+  await bundle.save();
+
+  // 4. Create Notification for the assigned DP
+  const notify = new Notification({
+    notifiable_type: ROLES.DP,
+    notifiable_id: dp_id,
+    title: "Order Bundle Assigned",
+    message: `Congratulations! Admin has assigned order bundle ${bundle_id} to you.`
+  });
+  await notify.save();
+  sendNotificationToUser(dp_id, { title: notify.title, message: notify.message });
+
+  // 5. Broadcast to Admins to update live tables
+  broadcastToAdmins("BUNDLE_ASSIGNED", { bundle_id, dp_id });
+
+  return { message: "Bundle assigned successfully", bundle };
+};
+
+export const getBundleResponses = async (bundle_id) => {
+  const { OrderBundle } = await import("../orders/orderBundle.model.js");
+  const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
+  const { User } = await import("../users/user.model.js");
+
+  const bundle = await OrderBundle.findOne({ bundle_id })
+    .populate('notified_dps', 'name email phone')
+    .populate('accepted_dps', 'name email phone')
+    .populate('rejected_dps', 'name email phone')
+    .lean();
+
+  if (!bundle) {
+    throw new Error("Bundle not found");
+  }
+
+  // Format responses for the UI
+  const responses = [];
+
+  const addDpToResponses = async (dp, responseStatus) => {
+    if (!dp) return;
+    
+    // Fetch vehicle details
+    const dpDoc = await DpDocument.findOne({ user_id: dp._id }).lean();
+    let vehicleStr = "N/A";
+    if (dpDoc) {
+      const vNo = dpDoc.vehicle_number || dpDoc.rc_number || "N/A";
+      const vType = dpDoc.vehicle_type || "";
+      const cap = dpDoc.vehicle_max_capacity ? `${dpDoc.vehicle_max_capacity}T` : "";
+      vehicleStr = `${vNo}${vType || cap ? ` · ${vType} ${cap}` : ''}`;
+    }
+
+    responses.push({
+      id: dp._id,
+      name: dp.name,
+      phone: dp.phone,
+      response: responseStatus,
+      time: "-", // Not tracked currently
+      vehicle: vehicleStr
+    });
+  };
+
+  const acceptedIds = bundle.accepted_dps.map(d => d._id.toString());
+  const rejectedIds = bundle.rejected_dps.map(d => d._id.toString());
+
+  // Merge all DPs to ensure we don't miss anyone who responded but wasn't originally notified
+  const allDpMap = new Map();
+  if (bundle.notified_dps) bundle.notified_dps.forEach(dp => allDpMap.set(dp._id.toString(), dp));
+  if (bundle.accepted_dps) bundle.accepted_dps.forEach(dp => allDpMap.set(dp._id.toString(), dp));
+  if (bundle.rejected_dps) bundle.rejected_dps.forEach(dp => allDpMap.set(dp._id.toString(), dp));
+
+  const uniqueDps = Array.from(allDpMap.values());
+
+  for (const dp of uniqueDps) {
+    const idStr = dp._id.toString();
+    let status = "Pending";
+    if (acceptedIds.includes(idStr)) status = "Accepted";
+    else if (rejectedIds.includes(idStr)) status = "Rejected";
+
+    await addDpToResponses(dp, status);
+  }
+
+  // Calculate metrics
+  const metrics = {
+    notified: bundle.notified_dps.length,
+    accepted: bundle.accepted_dps.length,
+    rejected: bundle.rejected_dps.length,
+    pending: bundle.notified_dps.length - bundle.accepted_dps.length - bundle.rejected_dps.length
+  };
+
+  return { bundle, responses, metrics };
+};
+
+export const getBundleTracking = async (bundle_id) => {
+  const { OrderBundle } = await import("../orders/orderBundle.model.js");
+  const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
+  const { User } = await import("../users/user.model.js");
+
+  const bundle = await OrderBundle.findOne({ bundle_id })
+    .populate({
+      path: 'orders',
+      populate: { path: 'user_id', select: 'name email phone' }
+    })
+    .populate('dp_id', 'name phone email')
+    .lean();
+
+  if (!bundle) {
+    throw new Error("Bundle not found");
+  }
+
+  let dpDoc = null;
+  if (bundle.dp_id) {
+    dpDoc = await DpDocument.findOne({ user_id: bundle.dp_id._id }).lean();
+  }
+
+  return { bundle, dpDoc };
+};
+
+export const getActiveBundles = async () => {
+  const { OrderBundle } = await import("../orders/orderBundle.model.js");
+  
+  // Fetch bundles that are in broadcasting, pending, or assigned status
+  const bundles = await OrderBundle.find({
+    status: { $in: ['broadcasting', 'pending', 'assigned'] }
+  })
+    .populate('notified_dps', 'name email phone')
+    .populate('accepted_dps', 'name email phone')
+    .populate('rejected_dps', 'name email phone')
+    .populate({
+      path: 'orders',
+      populate: { path: 'package_id' }
+    })
+    .sort({ createdAt: -1 })
+    .lean();
+    
+  return { bundles };
 };
 
 export const getBundleSummary = async (orderIds) => {

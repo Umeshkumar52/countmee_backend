@@ -5,8 +5,10 @@ const OrderBundleSchema = new mongoose.Schema(
     bundle_id: { type: String, required: true, unique: true },
     dp_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     notified_dps: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    accepted_dps: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    rejected_dps: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     orders: [{ type: mongoose.Schema.Types.ObjectId, ref: "Order", required: true }],
-    status: { type: String, default: "pending" },
+    status: { type: String, default: "broadcasting" }, // broadcasting, assigned, expired, cancelled
   },
   { timestamps: true }
 );

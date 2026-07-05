@@ -188,6 +188,11 @@ export const deletePdcDocument = async (userId) => {
 };
 
 export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
+  let customerObjId = customer_id?._id || customer_id;
+  if (!customerObjId) {
+    const rawOrder = await Order.findById(order_id).select('user_id').lean();
+    customerObjId = rawOrder?.user_id;
+  }
   const session = await Order.startSession();
   session.startTransaction();
   try {
@@ -214,7 +219,7 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
     await OrderRequest.create(
       [{
         order_id,
-        requested_by: customer_id,
+        requested_by: customerObjId,
         notified_ids: [dp_id],
         status: ORDER_REQUEST_STATUS.ACCEPTED,
         request_type: 'direct',
@@ -361,18 +366,18 @@ export const findOrdersInDateRange = async (startDate, endDate) => {
   return await Order.find({
     createdAt: {
       $gte: new Date(startDate),
-      $lte: new Date(endDate),
+      $lte: new Date(new Date(endDate).setUTCHours(23, 59, 59, 999)),
     },
   })
     .populate("user_id")
-    .populate("pdc_id");
+    .populate({ path: "pdc_id", strictPopulate: false });
 };
 
 export const findUsersInDateRange = async (startDate, endDate) => {
   return await User.find({
     createdAt: {
       $gte: new Date(startDate),
-      $lte: new Date(endDate),
+      $lte: new Date(new Date(endDate).setUTCHours(23, 59, 59, 999)),
     },
   });
 };
@@ -381,7 +386,7 @@ export const findRatingsInDateRange = async (startDate, endDate) => {
   return await Rating.find({
     createdAt: {
       $gte: new Date(startDate),
-      $lte: new Date(endDate),
+      $lte: new Date(new Date(endDate).setUTCHours(23, 59, 59, 999)),
     },
   })
     .populate("from_customer")

@@ -26,7 +26,11 @@ const broadcastSchema = new mongoose.Schema(
     },
     pickup_otp: { type: Number },
     drop_otp: { type: Number },
-    status: { type: String, enum: ["Pending", "Broadcasting", "Accepted", "Completed", "Active"], default: "Pending" },
+    status: {
+      type: String,
+      enum: ["Pending", "Broadcasting", "Accepted", "Completed", "Active"],
+      default: "Pending",
+    },
   },
   {
     timestamps: true,

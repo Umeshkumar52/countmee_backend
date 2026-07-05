@@ -1,5 +1,10 @@
 import * as dpService from "./dp.service.js";
-import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS } from "../../constants/index.js";
+import {
+  ROLES,
+  ORDER_STATUS,
+  ORDER_REQUEST_STATUS,
+  ORDER_REQUEST_COMPLETE_STATUS,
+} from "../../constants/index.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
 import { validate } from "../../common/utils/validationHelper.js";
@@ -18,10 +23,7 @@ import mongoose from "mongoose";
 import { OrderRequest } from "../orders/orderRequest.model.js";
 
 export const dpDetails = asyncHandler(async (req, res) => {
-  const { gender, address } = validate(
-    dpValidation.dpDetailsSchema,
-    req.body,
-  );
+  const { gender, address } = validate(dpValidation.dpDetailsSchema, req.body);
   const user_id = req.user.id;
   const profileImgPath = req.file ? req.file.path : null;
 
@@ -134,11 +136,14 @@ export const cancelAssignment = asyncHandler(async (req, res) => {
     dpValidation.cancelAssignmentSchema,
     req.body,
   );
-  const user_id = req.user._id; 
-  const result = await dpService.cancelAssignment(order_id, user_id, cancel_reason);
+  const user_id = req.user._id;
+  const result = await dpService.cancelAssignment(
+    order_id,
+    user_id,
+    cancel_reason,
+  );
   return res.json(ApiResponse.success(null, result.message));
 });
-
 
 export const acceptedOrders = asyncHandler(async (req, res) => {
   const { user_id } = req.params;
@@ -302,7 +307,9 @@ export const saveBroadcastPoint = asyncHandler(async (req, res) => {
     });
   }
 
-  const minBroadcast = await mongoose.model("MinBroadcastDist").findOne({ role: "DP" });
+  const minBroadcast = await mongoose
+    .model("MinBroadcastDist")
+    .findOne({ role: "DP" });
   const searchRadius = minBroadcast
     ? minBroadcast.minimum_broadcast_distance * 1000
     : Number(radius) || 1000;
@@ -365,7 +372,9 @@ export const broadcastDeliver = asyncHandler(async (req, res) => {
   const broadcast = await Broadcast.findById(broadcastId);
   if (broadcast) {
     if (broadcast.status === "Completed") {
-      return res.json(ApiResponse.success({ status: "Completed" }, "Order Delivered"));
+      return res.json(
+        ApiResponse.success({ status: "Completed" }, "Order Delivered"),
+      );
     } else {
       return res.json(
         ApiResponse.success({ status: "Pending" }, "Order not delivered yet."),
@@ -432,7 +441,10 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
       .model("DeliverCharge")
       .findOne({ vehicle_type: order.mode_of_transport })
       .session(session);
-    const percentage = chargeConfig && chargeConfig.dp_commission != null ? (chargeConfig.dp_commission / 100) : 0.7;
+    const percentage =
+      chargeConfig && chargeConfig.dp_commission != null
+        ? chargeConfig.dp_commission / 100
+        : 0.7;
     const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
 
     const pdcObj = await PdcDocument.findOne({ user_id: pdc_id }).session(
@@ -458,12 +470,18 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
     );
     const distToReceiverValue = parseFloat(distToReceiver) || 0;
 
-    const allPayouts = await mongoose.model("DpPayout").find({ order_id: order._id }).session(session);
+    const allPayouts = await mongoose
+      .model("DpPayout")
+      .find({ order_id: order._id })
+      .session(session);
     const sumPrev = allPayouts
       .filter((p) => String(p.travel_id) !== String(travel._id))
       .reduce((acc, curr) => acc + curr.earnings, 0);
 
-    const fraction = (distanceValue + distToReceiverValue > 0) ? (distanceValue / (distanceValue + distToReceiverValue)) : 0;
+    const fraction =
+      distanceValue + distToReceiverValue > 0
+        ? distanceValue / (distanceValue + distToReceiverValue)
+        : 0;
     const cappedFraction = Math.min(fraction, 1);
     const remainingPot = Math.max(0, totalDpPot - sumPrev);
     const earning = Math.round(remainingPot * cappedFraction * 100) / 100;
@@ -527,12 +545,18 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
         location: pdcObj.address,
         latitude: pdcObj.latitude,
         longitude: pdcObj.longitude,
-        geo_location: { type: "Point", coordinates: [pdcObj.longitude, pdcObj.latitude] }
+        geo_location: {
+          type: "Point",
+          coordinates: [pdcObj.longitude, pdcObj.latitude],
+        },
       },
       { session },
     );
 
-    const orderRequest = await OrderRequest.findOne({ order_id, status: ORDER_REQUEST_STATUS.ACCEPTED })
+    const orderRequest = await OrderRequest.findOne({
+      order_id,
+      status: ORDER_REQUEST_STATUS.ACCEPTED,
+    })
       .sort({ created_at: -1 })
       .session(session);
     orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
@@ -579,7 +603,7 @@ export const dropOrderToCustomer = asyncHandler(async (req, res) => {
   const result = await dpService.dropOrderToCustomer(
     order_id,
     user_id,
-    drop_otp
+    drop_otp,
   );
   return res.json(ApiResponse.success(null, result.message));
 });
@@ -606,6 +630,18 @@ export const totalorder = asyncHandler(async (req, res) => {
   );
 });
 
+export const postRespondToBundle = asyncHandler(async (req, res) => {
+  const { bundle_id, response } = req.body;
+  const dp_id = req.user.id || req.user._id;
+
+  if (!bundle_id || !response) {
+    throw new ApiError(400, "bundle_id and response are required");
+  }
+
+  const result = await dpService.respondToBundle(dp_id, bundle_id, response);
+  return res.json(ApiResponse.success(result, result.message));
+});
+
 export const earning_history = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const result = await dpService.getEarningHistory(userId);
@@ -625,8 +661,7 @@ export const online = asyncHandler(async (req, res) => {
     Number(longitude),
   );
 
-  const message =
-    online ? "You Are Now Online" : "You Are Offline Now";
+  const message = online ? "You Are Now Online" : "You Are Offline Now";
   return res.json(ApiResponse.success(null, message));
 });
 
@@ -658,7 +693,7 @@ export const findPdcInRoute = asyncHandler(async (req, res) => {
     pickup_lat,
     pickup_lng,
     drop_lat,
-    drop_lng
+    drop_lng,
   );
 
   return res.json(ApiResponse.success(warehousesInRoute));
@@ -833,20 +868,24 @@ export const deliverPdc = asyncHandler(async (req, res) => {
 
     // Send a real-time socket notification to the PDC so their "Orders To Receive" tab updates automatically
     const { ROLES } = await import("../../constants/index.js");
-    const { sendNotification } = await import("../../common/utils/sendNotification.js");
+    const { sendNotification } =
+      await import("../../common/utils/sendNotification.js");
     await sendNotification({
       role: ROLES.PDC,
       userId: pdc.user_id,
       title: "New Drop-off Request",
-      message: "A Delivery Partner is heading to your PDC to drop off a package.",
-      orderId: order._id
+      message:
+        "A Delivery Partner is heading to your PDC to drop off a package.",
+      orderId: order._id,
     });
 
     const agenda = getAgenda();
     if (agenda && orderRequest) {
-      await agenda.schedule('in 5 minutes', 'auto-accept-pdc', {
+      await agenda.schedule("in 5 minutes", "auto-accept-pdc", {
         order_id: order._id.toString(),
-        order_request_id: orderRequest[0] ? orderRequest[0]._id.toString() : orderRequest._id.toString()
+        order_request_id: orderRequest[0]
+          ? orderRequest[0]._id.toString()
+          : orderRequest._id.toString(),
       });
     }
 
@@ -885,8 +924,12 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
       .sort({ created_at: -1 })
       .session(session);
 
-    const pdcOrderRequest = orderRequests.find(r => r.request_type === 'deliver to pdc') || orderRequests[0];
-    const orderRequest = orderRequests.find(r => r.request_type !== 'deliver to pdc') || orderRequests[1];
+    const pdcOrderRequest =
+      orderRequests.find((r) => r.request_type === "deliver to pdc") ||
+      orderRequests[0];
+    const orderRequest =
+      orderRequests.find((r) => r.request_type !== "deliver to pdc") ||
+      orderRequests[1];
 
     if (pdcOrderRequest) {
       if (orderRequest) {
@@ -895,13 +938,17 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
       }
 
       pdcOrderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
-      if (!pdcOrderRequest.accepted_by && pdcOrderRequest.notified_ids && pdcOrderRequest.notified_ids.length > 0) {
+      if (
+        !pdcOrderRequest.accepted_by &&
+        pdcOrderRequest.notified_ids &&
+        pdcOrderRequest.notified_ids.length > 0
+      ) {
         pdcOrderRequest.accepted_by = pdcOrderRequest.notified_ids[0];
       }
       await pdcOrderRequest.save({ session });
 
       const pdcUserId = pdcOrderRequest.accepted_by;
-      
+
       const pdc = await PdcDocument.findOne({
         user_id: pdcUserId,
       }).session(session);
@@ -914,7 +961,10 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
           dpDetail.location = pdc.address;
           dpDetail.latitude = pdc.latitude;
           dpDetail.longitude = pdc.longitude;
-          dpDetail.geo_location = { type: "Point", coordinates: [pdc.longitude, pdc.latitude] };
+          dpDetail.geo_location = {
+            type: "Point",
+            coordinates: [pdc.longitude, pdc.latitude],
+          };
           await dpDetail.save({ session });
         }
       }
@@ -939,9 +989,10 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
           .findOne({ vehicle_type: order.mode_of_transport })
           .session(session);
 
-        const deliveryChargePerKm = vehicleCharge && vehicleCharge.dp_commission != null
-          ? vehicleCharge.dp_commission
-          : 0;
+        const deliveryChargePerKm =
+          vehicleCharge && vehicleCharge.dp_commission != null
+            ? vehicleCharge.dp_commission
+            : 0;
         const vehicleChargePerKm = vehicleCharge
           ? vehicleCharge.per_km_price
           : 0;
@@ -1020,14 +1071,13 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
                 drop_latitude: order.receiver_latitude,
                 drop_longitude: order.receiver_longitude,
                 distance: `${broadcastDistanceVal} km`,
-                status: "Pending"
+                status: "Pending",
               },
             ],
             { session },
           );
           nextBroadcast = createdBroadcast[0];
         }
-
 
         order.broadcast_id = nextBroadcast._id;
         order.delivery_type = "broadcast_pdc";
@@ -1042,16 +1092,20 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
 
     // Send real-time socket notification to the PDC so their UI auto-refreshes
     const { ROLES } = await import("../../constants/index.js");
-    const { sendNotification } = await import("../../common/utils/sendNotification.js");
-    
-    const pdcOrderReq = await OrderRequest.findOne({ order_id: order._id, request_type: 'deliver to pdc' }).sort({ created_at: -1 });
+    const { sendNotification } =
+      await import("../../common/utils/sendNotification.js");
+
+    const pdcOrderReq = await OrderRequest.findOne({
+      order_id: order._id,
+      request_type: "deliver to pdc",
+    }).sort({ created_at: -1 });
     if (pdcOrderReq && pdcOrderReq.accepted_by) {
       await sendNotification({
         role: ROLES.PDC,
         userId: pdcOrderReq.accepted_by,
         title: "Order Arrived at PDC",
         message: `Package for Order #${order._id} has been delivered.`,
-        orderId: order._id
+        orderId: order._id,
       });
     }
 

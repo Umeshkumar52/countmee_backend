@@ -107,7 +107,7 @@ export const getCharges = async (
   };
 };
 
-export const broadcastOrderToNearbyDPs = async (order, packageDetail) => {
+export const broadcastOrderToNearbyDPs = async (order, packageDetail, isRebroadcast = false) => {
   try {
     // 1. Get minimum broadcast distance for DP
     const minBroadcast = await MinBroadcastDist.findOne({
@@ -135,57 +135,88 @@ export const broadcastOrderToNearbyDPs = async (order, packageDetail) => {
       (deliverCharge.dp_commission / 100)
     ).toFixed(2);
 
-    // 4. Find Active DPs whose vehicle matches
-    const activeDps = await DpDetail.find({
-      online: true,
-      document_approval: "Approved",
-    });
-    console.log("active dp", activeDps);
-    const activeDpUserIds = activeDps.map((dp) => dp.user_id);
-
-    const matchingDocuments = await DpDocument.find({
-      user_id: { $in: activeDpUserIds },
-      vehicle_type: order.mode_of_transport,
-    });
-
-    const matchedUserIds = new Set(
-      matchingDocuments.map((doc) => doc.user_id.toString()),
-    );
-    const targetDps = activeDps.filter((dp) =>
-      matchedUserIds.has(dp.user_id.toString()),
-    );
-
-    let sentCount = 0;
-    // 5. Geo-filter and Broadcast
-    for (const dp of targetDps) {
-      if (dp.latitude && dp.longitude) {
-        const distanceMeters = haversineGreatCircleDistance(
-          order.sender_latitude,
-          order.sender_longitude,
-          dp.latitude,
-          dp.longitude,
-        );
-        console.log("distance", distanceMeters, maxDistanceMeters);
-        if (distanceMeters <= maxDistanceMeters) {
-          // Fire Socket notification
-          sendNotificationToUser(dp.user_id, {
-            type: "NEW_ORDER_BROADCAST",
-            order_id: order._id,
-            pickup_location: order.pickup_location,
-            drop_location: order.drop_location,
-            distance: order.distance,
-            dp_earning: Number(dp_earning),
-            product_description: packageDetail.product_description,
-            no_of_items: packageDetail.no_of_items,
-          });
-          sentCount++;
+    // 4. Geo-filter Active DPs whose vehicle matches using Aggregation
+    const targetDps = await DpDetail.aggregate([
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [order.sender_longitude, order.sender_latitude] },
+          distanceField: "distance_meters",
+          maxDistance: maxDistanceMeters,
+          spherical: true,
+          query: { online: true, document_approval: "Approved" }
         }
+      },
+      // Join Vehicle Document to filter by mode_of_transport
+      {
+        $lookup: {
+          from: "dpdocuments",
+          localField: "user_id",
+          foreignField: "user_id",
+          as: "dpDocument"
+        }
+      },
+      { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
+      {
+        $match: {
+          "dpDocument.vehicle_type": order.mode_of_transport
+        }
+      },
+      // Join User details for FCM token
+      {
+        $lookup: {
+          from: "users",
+          localField: "user_id",
+          foreignField: "_id",
+          as: "user"
+        }
+      },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } }
+    ]);
+
+    const { sendPushNotification } = await import("../../common/services/firebase.service.js");
+    let sentCount = 0;
+
+    // 5. Broadcast (Socket + FCM)
+    for (const dp of targetDps) {
+      const payload = {
+        type: "NEW_ORDER_BROADCAST",
+        order_id: order._id.toString(),
+        pickup_location: order.pickup_location,
+        drop_location: order.drop_location,
+        distance: order.distance?.toString() || "0",
+        dp_earning: Number(dp_earning),
+        product_description: packageDetail.product_description,
+        no_of_items: packageDetail.no_of_items?.toString() || "1",
+      };
+
+      // Fire Socket notification
+      sendNotificationToUser(dp.user_id, payload);
+
+      // Fire FCM silent/push notification fallback
+      if (dp.user.fcm_tokens && dp.user.fcm_tokens.length > 0) {
+        await sendPushNotification(
+          dp.user.fcm_tokens,
+          "New Order Request!",
+          `Pickup: ${order.pickup_location}`,
+          payload
+        );
       }
+      sentCount++;
     }
 
     console.log(
-      `[Broadcast] Order ${order._id} broadcasted to ${sentCount} nearby DPs`,
+      `[Broadcast] Order ${order._id} broadcasted to ${sentCount} nearby DPs. Rebroadcast: ${isRebroadcast}`
     );
+
+    // 6. Schedule Rebroadcast if this is the first broadcast
+    if (!isRebroadcast) {
+      const { getAgenda } = await import("../../common/services/agenda.service.js");
+      const agenda = getAgenda();
+      if (agenda) {
+        // Schedule rebroadcast for 5 minutes
+        await agenda.schedule('in 5 minutes', 'rebroadcast-unaccepted-order', { order_id: order._id.toString() });
+      }
+    }
   } catch (error) {
     console.error("[Broadcast] Error broadcasting to DPs:", error.message);
   }

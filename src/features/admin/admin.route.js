@@ -20,7 +20,10 @@ const dpUploadFields = uploadFields([
   { name: 'residence_img', maxCount: 1 },
   { name: 'vehicle_img', maxCount: 1 },
   { name: 'bank_imagefront', maxCount: 1 },
-  { name: 'bank_imageback', maxCount: 1 }
+  { name: 'bank_imageback', maxCount: 1 },
+  { name: 'insurance_document', maxCount: 1 },
+  { name: 'emission_certificate_document', maxCount: 1 },
+  { name: 'permit_document', maxCount: 1 }
 ]);
 
 const pdcUploadFields = uploadFields([
@@ -149,6 +152,11 @@ router.post('/orders/nearest-dps', adminController.postNearestDps);
 
 // Assign Order Bundle
 router.post('/orders/assign-bundle', adminController.postAssignBundle);
+
+router.get('/orders/bundles', adminController.getActiveBundles);
+router.get('/orders/bundle-responses/:bundle_id', adminController.getBundleResponses);
+router.get('/orders/bundle-tracking/:bundle_id', adminController.getBundleTracking);
+router.post('/orders/assign-bundle-final', adminController.postAssignBundleFinal);
 
 // Bundle Summary
 router.post('/orders/bundle-summary', adminController.postBundleSummary);
