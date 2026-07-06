@@ -1,25 +1,32 @@
-import * as dpRepository from './dp.repository.js';
-import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS, ACTIVE_ORDER_STATUSES, USER_ACTION_STATUS } from '../../constants/index.js';
-import { User } from '../users/user.model.js';
-import { Order } from '../orders/order.model.js';
-import { OrderRequest } from '../orders/orderRequest.model.js';
-import { DpDetail } from './dpDetail.model.js';
-import { DpDocument } from './dpDocument.model.js';
-import { DpPayout } from './dpPayout.model.js';
-import { Travel } from '../orders/travel.model.js';
-import { Rating } from './rating.model.js';
-import { Broadcast } from '../orders/broadcast.model.js';
-import { PackageDetail } from '../orders/packageDetail.model.js';
-import { PdcDocument } from '../pdc/pdcDocument.model.js';
-import { PdcPackage } from '../pdc/pdcPackage.model.js';
-import { PdcPayout } from '../pdc/pdcPayout.model.js';
-import * as adminService from '../admin/admin.service.js';
-import { sendNotification } from '../../common/utils/sendNotification.js';
-import { DeliverCharge } from '../orders/deliverCharge.model.js';
-import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
-import { sendOTPViaSMS } from '../notifications/sms.service.js';
-import * as mapsService from '../tracking/maps.service.js';
-import mongoose from 'mongoose';
+import * as dpRepository from "./dp.repository.js";
+import {
+  ROLES,
+  ORDER_STATUS,
+  ORDER_REQUEST_STATUS,
+  ORDER_REQUEST_COMPLETE_STATUS,
+  ACTIVE_ORDER_STATUSES,
+  USER_ACTION_STATUS,
+} from "../../constants/index.js";
+import { User } from "../users/user.model.js";
+import { Order } from "../orders/order.model.js";
+import { OrderRequest } from "../orders/orderRequest.model.js";
+import { DpDetail } from "./dpDetail.model.js";
+import { DpDocument } from "./dpDocument.model.js";
+import { DpPayout } from "./dpPayout.model.js";
+import { Travel } from "../orders/travel.model.js";
+import { Rating } from "./rating.model.js";
+import { Broadcast } from "../orders/broadcast.model.js";
+import { PackageDetail } from "../orders/packageDetail.model.js";
+import { PdcDocument } from "../pdc/pdcDocument.model.js";
+import { PdcPackage } from "../pdc/pdcPackage.model.js";
+import { PdcPayout } from "../pdc/pdcPayout.model.js";
+import * as adminService from "../admin/admin.service.js";
+import { sendNotification } from "../../common/utils/sendNotification.js";
+import { DeliverCharge } from "../orders/deliverCharge.model.js";
+import { uploadToCloudinary } from "../../common/services/cloudinary.service.js";
+import { sendOTPViaSMS } from "../notifications/sms.service.js";
+import * as mapsService from "../tracking/maps.service.js";
+import mongoose from "mongoose";
 export const getDPById = async (id) => {
   const user = await User.findById(id);
   if (user) {
@@ -76,11 +83,10 @@ export const getVehicleSubcategories = async (vehicleType) => {
   const subcategories = await VehicleSubcategory.find({
     vehicle_type: vehicleType,
     is_active: true,
+    status: "Approved",
   })
     .select("sub_vehicle_type")
     .lean();
-  const { VehicleSubcategory } = await import('./vehicleSubcategory.model.js');
-  const subcategories = await VehicleSubcategory.find({ vehicle_type: vehicleType, is_active: true, status: 'Approved' }).select('sub_vehicle_type').lean();
 
   const subCategoryList = subcategories.map((s) => s.sub_vehicle_type);
   if (!subCategoryList.includes("Other")) {
@@ -161,26 +167,29 @@ export const saveDocuments = async (user_id, docData, files) => {
     { new: true },
   );
 
-  if (docData.sub_vehicle_type === 'Other' && docData.other_vehicle_details) {
-    const { VehicleSubcategory } = await import('./vehicleSubcategory.model.js');
+  if (docData.sub_vehicle_type === "Other" && docData.other_vehicle_details) {
+    const { VehicleSubcategory } =
+      await import("./vehicleSubcategory.model.js");
     const existing = await VehicleSubcategory.findOne({
       vehicle_type: docData.vehicle_type,
-      sub_vehicle_type: { $regex: new RegExp(`^${docData.other_vehicle_details}$`, 'i') }
+      sub_vehicle_type: {
+        $regex: new RegExp(`^${docData.other_vehicle_details}$`, "i"),
+      },
     });
-    
+
     if (!existing) {
       await VehicleSubcategory.create({
         vehicle_type: docData.vehicle_type,
         sub_vehicle_type: docData.other_vehicle_details,
         is_active: false,
-        status: 'Pending',
-        requested_by: user_id
+        status: "Pending",
+        requested_by: user_id,
       });
-      
+
       await sendNotification({
         role: ROLES.ADMIN,
-        title: 'New Vehicle Subcategory Request',
-        message: `A Delivery Partner requested a new vehicle subcategory: ${docData.other_vehicle_details}`
+        title: "New Vehicle Subcategory Request",
+        message: `A Delivery Partner requested a new vehicle subcategory: ${docData.other_vehicle_details}`,
       });
     }
   }
@@ -280,86 +289,134 @@ export const getNewOrders = async (user_id) => {
   if (activeLeg) {
     throw new Error("Please complete your current orders");
   }
-  //const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-  // COMMENTED OUT FOR TESTING: const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-  const oneMinuteAgo = new Date(Date.now() - 60 * 60 * 1000); // 1 hour for testing
 
+  const oneMinuteAgo = new Date(Date.now() - 60 * 1000); // 1 minute window for direct orders
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000); // 10 minute window for broadcasts
-  
+
   // Find requests notifying this DP (direct) OR any active PDC broadcast
   const allReqs = await OrderRequest.find({
     status: ORDER_REQUEST_STATUS.PENDING,
     rejected_by: { $ne: user_id },
     $or: [
-      { created_at: { $gte: oneMinuteAgo } },
+      { notified_ids: user_id, created_at: { $gte: oneMinuteAgo } },
       { request_type: "broadcast_pdc" },
     ],
-    rejected_by: { $ne: user_id },
-  });
-      { notified_ids: user_id, created_at: { $gte: oneMinuteAgo } },
-      { request_type: 'broadcast_pdc' } // We will filter by broadcast.updatedAt instead of created_at to support retries!
-    ]
-  });
+  }).lean();
 
-  // For broadcast_pdc, we must dynamically check distance since they aren't hardcoded in notified_ids anymore
-  const reqs = [];
-  const dpLocation = await DpDetail.findOne({ user_id });
-  
-  for (const req of allReqs) {
-    if (req.request_type === 'broadcast_pdc') {
-      const broadcast = await Broadcast.findById(req.broadcast_id);
-      
-      // Only show if still actively broadcasting AND the broadcast was restarted within the last 10 minutes
-      if (!broadcast || broadcast.status !== "Broadcasting") continue; 
-      if (new Date(broadcast.updatedAt).getTime() < tenMinutesAgo.getTime()) continue;
+  const dpLocation = await DpDetail.findOne({ user_id }).lean();
 
-      if (dpLocation) {
-        // Fetch dynamic radius from Admin Settings
-        const { distancesByRole } = await adminService.getBroadcastDistance();
-        let maxDistanceInKm = 10; // default 10km
-        if (distancesByRole && distancesByRole['pdc']) {
-          maxDistanceInKm = distancesByRole['pdc'];
-        }
+  // 1. Fetch all broadcast PDC requirements at once to solve N+1
+  const broadcastIds = allReqs
+    .filter((req) => req.request_type === "broadcast_pdc" && req.broadcast_id)
+    .map((req) => req.broadcast_id);
 
-        // Check if DP is within the dynamic broadcast radius
-        const dist = await mapsService.distanceBetween(
-          dpLocation.latitude, dpLocation.longitude,
-          broadcast.pickup_latitude, broadcast.pickup_longitude
-        );
-        
-        if (parseFloat(dist) > maxDistanceInKm) continue; // Too far away, ignore
+  const uniqueBroadcastIds = [...new Set(broadcastIds)];
+  let broadcasts = [];
+  let distancesByRole = null;
+
+  if (uniqueBroadcastIds.length > 0) {
+    broadcasts = await Broadcast.find({
+      _id: { $in: uniqueBroadcastIds },
+      status: "Broadcasting",
+      updatedAt: { $gte: tenMinutesAgo },
+    }).lean();
+
+    // Fetch dynamic radius from Admin Settings only once
+    const distanceConfig = await adminService.getBroadcastDistance();
+    distancesByRole = distanceConfig?.distancesByRole;
+  }
+
+  const broadcastMap = new Map(broadcasts.map((b) => [b._id.toString(), b]));
+  const maxDistanceInKm = distancesByRole?.pdc || 10;
+
+  // Parallelize the map distance checks for the PDC broadcasts
+  const validBroadcasts = new Set();
+
+  if (dpLocation && broadcasts.length > 0) {
+    const distancePromises = broadcasts.map(async (broadcast) => {
+      const dist = await mapsService.distanceBetween(
+        dpLocation.latitude,
+        dpLocation.longitude,
+        broadcast.pickup_latitude,
+        broadcast.pickup_longitude,
+      );
+      if (parseFloat(dist) <= maxDistanceInKm) {
+        validBroadcasts.add(broadcast._id.toString());
       }
+    });
+    await Promise.all(distancePromises);
+  }
+
+  const reqs = [];
+  for (const req of allReqs) {
+    if (req.request_type === "broadcast_pdc") {
+      // If we can't determine DP location, they should not see the broadcast
+      if (!dpLocation) continue;
+
+      const broadcast = broadcastMap.get(req.broadcast_id?.toString());
+      if (!broadcast) continue;
+
+      if (!validBroadcasts.has(broadcast._id.toString())) continue;
     }
     reqs.push(req);
   }
 
   const orderIds = reqs.map((r) => r.order_id);
-  const orders = await Order.find({ _id: { $in: orderIds } });
+  const orders = await Order.find({ _id: { $in: orderIds } }).lean();
 
-  const allCharges = await DeliverCharge.find({});
-  const chargeMap = {};
-  allCharges.forEach((c) => (chargeMap[c.vehicle_type] = c));
+  // 2. Pre-fetch all related data to prevent N+1 in the orders loop
+  const packageIds = orders.map((o) => o.package_id).filter(Boolean);
+  const broadcastIdsForOrders = orders
+    .map((o) => o.broadcast_id)
+    .filter(Boolean);
 
-  const ordersWithPickup = [];
-  for (const order of orders) {
-    const jsonOrder = order.toJSON();
-    const packageDetail = order.package_id
-      ? await PackageDetail.findById(order.package_id)
-      : null;
-    const broadcast = order.broadcast_id
-      ? await Broadcast.findById(order.broadcast_id)
-      : null;
+  const [packages, allCharges, dpPayouts, orderBroadcasts] = await Promise.all([
+    PackageDetail.find({ _id: { $in: packageIds } }).lean(),
+    DeliverCharge.find({}).lean(),
+    DpPayout.find({ order_id: { $in: orderIds } }).lean(),
+    Broadcast.find({ _id: { $in: broadcastIdsForOrders } }).lean(),
+  ]);
+
+  const packageMap = new Map(packages.map((p) => [p._id.toString(), p]));
+  const chargeMap = new Map(allCharges.map((c) => [c.vehicle_type, c]));
+
+  const payoutMap = new Map();
+  for (const p of dpPayouts) {
+    const oId = p.order_id?.toString();
+    if (oId) {
+      if (!payoutMap.has(oId)) payoutMap.set(oId, 0);
+      payoutMap.set(oId, payoutMap.get(oId) + p.earnings);
+    }
+  }
+
+  const broadcastOrderMap = new Map(
+    orderBroadcasts.map((b) => [b._id.toString(), b]),
+  );
+
+  const broadcasterIds = orderBroadcasts
+    .map((b) => b.broadcasted_by)
+    .filter(Boolean);
+  const broadcasters = await User.find({ _id: { $in: broadcasterIds } }).lean();
+  const broadcasterMap = new Map(
+    broadcasters.map((u) => [u._id.toString(), u]),
+  );
+
+  // 3. Construct the response concurrently
+  const ordersWithPickupPromises = orders.map(async (order) => {
+    const jsonOrder = { ...order };
+    const packageDetail = packageMap.get(order.package_id?.toString()) || null;
+    const broadcast =
+      broadcastOrderMap.get(order.broadcast_id?.toString()) || null;
 
     let broadcastObj = null;
     if (broadcast) {
-      broadcastObj = broadcast.toJSON();
-      const broadcaster = broadcast.broadcasted_by
-        ? await User.findById(broadcast.broadcasted_by)
-        : null;
-      broadcastObj.broadcaster = broadcaster ? broadcaster.toJSON() : null;
+      broadcastObj = { ...broadcast };
+      const broadcaster =
+        broadcasterMap.get(broadcast.broadcasted_by?.toString()) || null;
+      broadcastObj.broadcaster = broadcaster;
     }
 
-    jsonOrder.packageDetail = packageDetail ? packageDetail.toJSON() : null;
+    jsonOrder.packageDetail = packageDetail;
     jsonOrder.broadcast = broadcastObj;
 
     jsonOrder.pickup_name =
@@ -372,18 +429,14 @@ export const getNewOrders = async (user_id) => {
       jsonOrder.broadcast?.pickup_longitude || order.sender_longitude;
     jsonOrder.dist = jsonOrder.broadcast?.distance || `${order.distance} km`;
 
-    const chargeConfig = chargeMap[order.mode_of_transport];
+    const chargeConfig = chargeMap.get(order.mode_of_transport);
     const percentage =
       chargeConfig && chargeConfig.dp_commission != null
         ? chargeConfig.dp_commission / 100
         : 0.7;
 
     const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
-    const distributedDpAmount = await DpPayout.find({ order_id: order._id });
-    const sumEarnings = distributedDpAmount.reduce(
-      (acc, curr) => acc + curr.earnings,
-      0,
-    );
+    const sumEarnings = payoutMap.get(order._id?.toString()) || 0;
     const remainingPot = Math.max(0, totalDpPot - sumEarnings);
 
     jsonOrder.estimated_earnings = remainingPot;
@@ -412,9 +465,13 @@ export const getNewOrders = async (user_id) => {
         ? Math.round((remainingPot / remaining_distance) * 100) / 100
         : 0;
 
-    ordersWithPickup.push(jsonOrder);
-  }
+    // Convert _id objects to string for final output like .toJSON() did
+    if (jsonOrder._id) jsonOrder._id = jsonOrder._id.toString();
 
+    return jsonOrder;
+  });
+
+  const ordersWithPickup = await Promise.all(ordersWithPickupPromises);
   return ordersWithPickup;
 };
 
@@ -507,6 +564,7 @@ export const orderAccept = async (order_id, status, user_id) => {
     }
 
     if (status) {
+    }
     if (status) {
       const orderCheck = await Order.findById(order_id).session(session);
       if (!orderCheck) {
@@ -514,7 +572,7 @@ export const orderAccept = async (order_id, status, user_id) => {
       }
 
       if (orderCheck.user_action === USER_ACTION_STATUS.CANCELLED) {
-        throw new Error('Sorry this order cancelled by customer');
+        throw new Error("Sorry this order cancelled by customer");
       }
 
       orderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
@@ -561,310 +619,337 @@ export const orderAccept = async (order_id, status, user_id) => {
           .session(session);
         // Previous segment leg payout - ONLY recalculate for direct DP-to-DP handovers
         // For broadcast_pdc, the PDC drop-off already locked in the exact PDC coordinates
-        if (orderRequest.request_type === 'broadcast_dp') {
-          const oldOrderRequest = await OrderRequest.findOne({ order_id: order._id })
+        if (orderRequest.request_type === "broadcast_dp") {
+          const oldOrderRequest = await OrderRequest.findOne({
+            order_id: order._id,
+          })
             .sort({ created_at: -1 })
             .skip(1)
             .session(session);
 
-        const travel = oldOrderRequest
-          ? await Travel.findOne({
-              order_id: order._id,
-              user_id: oldOrderRequest.accepted_by,
-            })
-              .sort({ created_at: -1 })
-              .session(session)
-          : null;
+          // const travel = oldOrderRequest
+          //   ? await Travel.findOne({
+          //       order_id: order._id,
+          //       user_id: oldOrderRequest.accepted_by,
+          //     })
+          //       .sort({ created_at: -1 })
+          //       .session(session)
+          //   : null;
           const travel = oldOrderRequest
-            ? await Travel.findOne({ order_id: order._id, user_id: oldOrderRequest.accepted_by }).sort({ created_at: -1 }).session(session)
+            ? await Travel.findOne({
+                order_id: order._id,
+                user_id: oldOrderRequest.accepted_by,
+              })
+                .sort({ created_at: -1 })
+                .session(session)
             : null;
 
           let distance = 0;
 
-        const oldDpDetail = oldOrderRequest
-          ? await DpDetail.findOne({
-              user_id: oldOrderRequest.accepted_by,
-            }).session(session)
-          : null;
-          const oldDpDetail = oldOrderRequest ? await DpDetail.findOne({ user_id: oldOrderRequest.accepted_by }).session(session) : null;
+          // const oldDpDetail = oldOrderRequest
+          //   ? await DpDetail.findOne({
+          //       user_id: oldOrderRequest.accepted_by,
+          //     }).session(session)
+          //   : null;
+          const oldDpDetail = oldOrderRequest
+            ? await DpDetail.findOne({
+                user_id: oldOrderRequest.accepted_by,
+              }).session(session)
+            : null;
 
-        if (travel && oldOrderRequest && oldDpDetail) {
-          const mode =
-            order.mode_of_transport === "By Hand" ? "walking" : "driving";
-          const chkDistance = await mapsService.distanceBetween(
-            travel.pickup_latitude,
-            travel.pickup_longitude,
-            oldDpDetail.latitude,
-            oldDpDetail.longitude,
-            mode,
-          );
-          distance = parseFloat(chkDistance) || 0;
           if (travel && oldOrderRequest && oldDpDetail) {
-            const mode = order.mode_of_transport === 'By Hand' ? 'walking' : 'driving';
+            const mode =
+              order.mode_of_transport === "By Hand" ? "walking" : "driving";
             const chkDistance = await mapsService.distanceBetween(
               travel.pickup_latitude,
               travel.pickup_longitude,
               oldDpDetail.latitude,
               oldDpDetail.longitude,
-              mode
+              mode,
             );
             distance = parseFloat(chkDistance) || 0;
+            if (travel && oldOrderRequest && oldDpDetail) {
+              const mode =
+                order.mode_of_transport === "By Hand" ? "walking" : "driving";
+              const chkDistance = await mapsService.distanceBetween(
+                travel.pickup_latitude,
+                travel.pickup_longitude,
+                oldDpDetail.latitude,
+                oldDpDetail.longitude,
+                mode,
+              );
+              distance = parseFloat(chkDistance) || 0;
+
+              const distToReceiver =
+                parseFloat(
+                  await mapsService.distanceBetween(
+                    oldDpDetail.latitude,
+                    oldDpDetail.longitude,
+                    order.receiver_latitude,
+                    order.receiver_longitude,
+                    mode,
+                  ),
+                ) || 0;
+              // const distToReceiver = parseFloat(await mapsService.distanceBetween(
+              //   oldDpDetail.latitude,
+              //   oldDpDetail.longitude,
+              //   order.receiver_latitude,
+              //   order.receiver_longitude,
+              //   mode
+              // )) || 0;
+
+              // const fraction =
+              //   distance + distToReceiver > 0
+              //     ? distance / (distance + distToReceiver)
+              //     : 0;
+              // const cappedFraction = Math.min(fraction, 1);
+              const fraction =
+                distance + distToReceiver > 0
+                  ? distance / (distance + distToReceiver)
+                  : 0;
+              const cappedFraction = Math.min(fraction, 1);
+
+              // const alreadyDistributed = await DpPayout.find({
+              //   order_id: order._id,
+              // }).session(session);
+              const alreadyDistributed = await DpPayout.find({
+                order_id: order._id,
+              }).session(session);
+
+              // // const sumEarnings = alreadyDistributed
+              //   .filter((p) => p.travel_id !== travel._id)
+              //   .reduce((acc, curr) => acc + curr.earnings, 0);
+              const sumEarnings = alreadyDistributed
+                .filter((p) => String(p.travel_id) !== String(travel._id))
+                .reduce((acc, curr) => acc + curr.earnings, 0);
+
+              // const remainingPot = Math.max(0, totalDpPot - sumEarnings);
+              // const earnings =
+              //   Math.round(remainingPot * cappedFraction * 100) / 100;
+              const remainingPot = Math.max(0, totalDpPot - sumEarnings);
+              const earnings =
+                Math.round(remainingPot * cappedFraction * 100) / 100;
+
+              travel.drop_location = oldDpDetail.location;
+              travel.drop_latitude = oldDpDetail.latitude;
+              travel.drop_longitude = oldDpDetail.longitude;
+              travel.distance = Math.round(distance * 1000) / 1000;
+              travel.earnings = earnings;
+              await travel.save({ session });
+
+              await DpPayout.findOneAndUpdate(
+                { travel_id: travel._id },
+                {
+                  dp_auth_id: travel.user_id,
+                  order_id: travel.order_id,
+                  broadcast_id: oldOrderRequest.broadcast_id || null,
+                  earnings,
+                },
+                { upsert: true, session },
+              );
+              await DpPayout.findOneAndUpdate(
+                { travel_id: travel._id },
+                {
+                  dp_auth_id: travel.user_id,
+                  order_id: travel.order_id,
+                  broadcast_id: oldOrderRequest.broadcast_id || null,
+                  earnings,
+                },
+                { upsert: true, session },
+              );
+            }
+          }
+
+          // Current DP payout leg segment allocation
+          const distributedDpAmount = await DpPayout.find({
+            order_id: order._id,
+          }).session(session);
+          const sumEarnings = distributedDpAmount.reduce(
+            (acc, curr) => acc + curr.earnings,
+            0,
+          );
+          const remainingPot = Math.max(0, totalDpPot - sumEarnings);
+
+          const mode =
+            order.mode_of_transport === "By Hand" ? "walking" : "driving";
+          const activeBroadcast = await Broadcast.findById(
+            orderRequest.broadcast_id,
+          ).session(session);
+
+          const pickupLatitude =
+            activeBroadcast?.pickup_latitude || order.sender_latitude;
+          const pickupLongitude =
+            activeBroadcast?.pickup_longitude || order.sender_longitude;
+          const pickupLocation =
+            activeBroadcast?.pickup_location || order.pickup_location;
 
           const distToReceiver =
             parseFloat(
               await mapsService.distanceBetween(
-                oldDpDetail.latitude,
-                oldDpDetail.longitude,
+                pickupLatitude,
+                pickupLongitude,
                 order.receiver_latitude,
                 order.receiver_longitude,
                 mode,
               ),
             ) || 0;
-            const distToReceiver = parseFloat(await mapsService.distanceBetween(
-              oldDpDetail.latitude,
-              oldDpDetail.longitude,
-              order.receiver_latitude,
-              order.receiver_longitude,
-              mode
-            )) || 0;
 
+          const pickupToDrop = parseFloat(activeBroadcast?.distance) || 0;
           const fraction =
-            distance + distToReceiver > 0
-              ? distance / (distance + distToReceiver)
-              : 0;
-          const cappedFraction = Math.min(fraction, 1);
-            const fraction = (distance + distToReceiver > 0) ? (distance / (distance + distToReceiver)) : 0;
-            const cappedFraction = Math.min(fraction, 1);
+            pickupToDrop + distToReceiver > 0
+              ? pickupToDrop / (pickupToDrop + distToReceiver)
+              : 0.5;
+          const currentDpEarnings =
+            Math.round(remainingPot * Math.min(fraction, 1) * 100) / 100;
 
-          const alreadyDistributed = await DpPayout.find({
+          // Check if travel log exists, else create it
+          let currentTravel = await Travel.findOne({
             order_id: order._id,
+            user_id,
+            pickup_latitude: pickupLatitude,
+            pickup_longitude: pickupLongitude,
           }).session(session);
-            const alreadyDistributed = await DpPayout.find({ order_id: order._id })
-              .session(session);
 
-          const sumEarnings = alreadyDistributed
-            .filter((p) => p.travel_id !== travel._id)
-            .reduce((acc, curr) => acc + curr.earnings, 0);
-            const sumEarnings = alreadyDistributed
-              .filter(p => String(p.travel_id) !== String(travel._id))
-              .reduce((acc, curr) => acc + curr.earnings, 0);
-
-          const remainingPot = Math.max(0, totalDpPot - sumEarnings);
-          const earnings =
-            Math.round(remainingPot * cappedFraction * 100) / 100;
-            const remainingPot = Math.max(0, totalDpPot - sumEarnings);
-            const earnings = Math.round(remainingPot * cappedFraction * 100) / 100;
-
-            travel.drop_location = oldDpDetail.location;
-            travel.drop_latitude = oldDpDetail.latitude;
-            travel.drop_longitude = oldDpDetail.longitude;
-            travel.distance = Math.round(distance * 1000) / 1000;
-            travel.earnings = earnings;
-            await travel.save({ session });
+          if (!currentTravel) {
+            currentTravel = await Travel.create(
+              [
+                {
+                  order_id: order._id,
+                  user_id,
+                  pickup_latitude: pickupLatitude,
+                  pickup_longitude: pickupLongitude,
+                  order_cost: order.charges,
+                  pickup_location: pickupLocation,
+                  earnings: currentDpEarnings,
+                },
+              ],
+              { session },
+            );
+            currentTravel = currentTravel[0];
+          }
 
           await DpPayout.findOneAndUpdate(
-            { travel_id: travel._id },
+            { travel_id: currentTravel._id },
             {
-              dp_auth_id: travel.user_id,
-              order_id: travel.order_id,
-              broadcast_id: oldOrderRequest.broadcast_id || null,
-              earnings,
+              dp_auth_id: user_id,
+              order_id: order._id,
+              broadcast_id: orderRequest.broadcast_id,
+              earnings: currentDpEarnings,
             },
             { upsert: true, session },
           );
-            await DpPayout.findOneAndUpdate(
-              { travel_id: travel._id },
-              {
-                dp_auth_id: travel.user_id,
-                order_id: travel.order_id,
-                broadcast_id: oldOrderRequest.broadcast_id || null,
-                earnings
-              },
-              { upsert: true, session }
+
+          if (orderRequest.broadcast_id) {
+            await Broadcast.findByIdAndUpdate(
+              orderRequest.broadcast_id,
+              { pickup_dp_id: user_id },
+              { session },
+              { pickup_dp_id: user_id, status: "Accepted" },
+              { session },
             );
-          }
-        }
 
-        // Current DP payout leg segment allocation
-        const distributedDpAmount = await DpPayout.find({
-          order_id: order._id,
-        }).session(session);
-        const sumEarnings = distributedDpAmount.reduce(
-          (acc, curr) => acc + curr.earnings,
-          0,
-        );
-        const remainingPot = Math.max(0, totalDpPot - sumEarnings);
-
-        const mode =
-          order.mode_of_transport === "By Hand" ? "walking" : "driving";
-        const activeBroadcast = await Broadcast.findById(
-          orderRequest.broadcast_id,
-        ).session(session);
-
-        const pickupLatitude =
-          activeBroadcast?.pickup_latitude || order.sender_latitude;
-        const pickupLongitude =
-          activeBroadcast?.pickup_longitude || order.sender_longitude;
-        const pickupLocation =
-          activeBroadcast?.pickup_location || order.pickup_location;
-
-        const distToReceiver =
-          parseFloat(
-            await mapsService.distanceBetween(
-              pickupLatitude,
-              pickupLongitude,
-              order.receiver_latitude,
-              order.receiver_longitude,
-              mode,
-            ),
-          ) || 0;
-
-        const pickupToDrop = parseFloat(activeBroadcast?.distance) || 0;
-        const fraction =
-          pickupToDrop + distToReceiver > 0
-            ? pickupToDrop / (pickupToDrop + distToReceiver)
-            : 0.5;
-        const currentDpEarnings =
-          Math.round(remainingPot * Math.min(fraction, 1) * 100) / 100;
-
-        // Check if travel log exists, else create it
-        let currentTravel = await Travel.findOne({
-          order_id: order._id,
-          user_id,
-          pickup_latitude: pickupLatitude,
-          pickup_longitude: pickupLongitude,
-        }).session(session);
-
-        if (!currentTravel) {
-          currentTravel = await Travel.create(
-            [
-              {
-                order_id: order._id,
-                user_id,
-                pickup_latitude: pickupLatitude,
-                pickup_longitude: pickupLongitude,
-                order_cost: order.charges,
-                pickup_location: pickupLocation,
-                earnings: currentDpEarnings,
-              },
-            ],
-            { session },
-          );
-          currentTravel = currentTravel[0];
-        }
-
-        await DpPayout.findOneAndUpdate(
-          { travel_id: currentTravel._id },
-          {
-            dp_auth_id: user_id,
-            order_id: order._id,
-            broadcast_id: orderRequest.broadcast_id,
-            earnings: currentDpEarnings,
-          },
-          { upsert: true, session },
-        );
-
-        if (orderRequest.broadcast_id) {
-          await Broadcast.findByIdAndUpdate(
-            orderRequest.broadcast_id,
-            { pickup_dp_id: user_id },
-            { session },
-            { pickup_dp_id: user_id, status: "Accepted" },
-            { session }
-          );
-
-          if (orderRequest.request_type === 'broadcast_pdc') {
-            const broadcastDoc = await Broadcast.findById(orderRequest.broadcast_id).session(session);
-            if (broadcastDoc && broadcastDoc.broadcasted_by) {
-              await sendNotification({
-                role: ROLES.PDC,
-                userId: broadcastDoc.broadcasted_by,
-                title: "Broadcast Accepted",
-                message: `Order #${order_id} has been accepted by Delivery Partner ${user_id}.`,
-                orderId: order_id,
-                session
-              });
+            if (orderRequest.request_type === "broadcast_pdc") {
+              const broadcastDoc = await Broadcast.findById(
+                orderRequest.broadcast_id,
+              ).session(session);
+              if (broadcastDoc && broadcastDoc.broadcasted_by) {
+                await sendNotification({
+                  role: ROLES.PDC,
+                  userId: broadcastDoc.broadcasted_by,
+                  title: "Broadcast Accepted",
+                  message: `Order #${order_id} has been accepted by Delivery Partner ${user_id}.`,
+                  orderId: order_id,
+                  session,
+                });
+              }
             }
           }
         }
-      }
 
-      // Trigger notifications
-      const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
-      const dpUser = await User.findById(user_id).session(session);
+        // Trigger notifications
+        const admin = await User.findOne({ role: ROLES.ADMIN }).session(
+          session,
+        );
+        const dpUser = await User.findById(user_id).session(session);
 
-      await sendNotification({
-        role: ROLES.ADMIN,
-        title:
-          orderRequest.request_type === "direct"
-            ? "Order Accepted"
-            : "Broadcast Accepted",
-        message: `The order of ID : ${order_id} has been accepted by ${dpUser.name}`,
-        orderId: order_id,
-        session,
-      });
-
-      await sendNotification({
-        role: ROLES.DP,
-        userId: user_id,
-        title: "Order Accepted",
-        message: `You have accpeted the order of ID : ${order_id}`,
-        orderId: order_id,
-        session,
-      });
-
-      if (orderRequest.request_type === "direct") {
         await sendNotification({
-          role: ROLES.USER,
-          userId: orderCheck.user_id,
-          title: "Order Update",
-          message: `Your order of ID : ${order_id} is accepted by ${dpUser.name}`,
+          role: ROLES.ADMIN,
+          title:
+            orderRequest.request_type === "direct"
+              ? "Order Accepted"
+              : "Broadcast Accepted",
+          message: `The order of ID : ${order_id} has been accepted by ${dpUser.name}`,
           orderId: order_id,
           session,
         });
-      }
 
-      await session.commitTransaction();
-      session.endSession();
-      return { message: "Order Accepted" };
-    } else {
-      // Reject Order request logic
-      orderRequest.rejected_by.push(user_id);
-      await orderRequest.save({ session });
+        await sendNotification({
+          role: ROLES.DP,
+          userId: user_id,
+          title: "Order Accepted",
+          message: `You have accpeted the order of ID : ${order_id}`,
+          orderId: order_id,
+          session,
+        });
 
-      const allNotified = [...orderRequest.notified_ids].sort();
-      const allRejected = [...orderRequest.rejected_by].sort();
-
-      if (JSON.stringify(allNotified) === JSON.stringify(allRejected)) {
-        if (orderRequest.request_type !== 'broadcast_pdc' && orderRequest.request_type !== 'broadcast_dp') {
-          orderRequest.status = "Rejected"; // Rejected by all DPs
+        if (orderRequest.request_type === "direct") {
+          await sendNotification({
+            role: ROLES.USER,
+            userId: orderCheck.user_id,
+            title: "Order Update",
+            message: `Your order of ID : ${order_id} is accepted by ${dpUser.name}`,
+            orderId: order_id,
+            session,
+          });
         }
+
+        await session.commitTransaction();
+        session.endSession();
+        return { message: "Order Accepted" };
+      } else {
+        // Reject Order request logic
+        orderRequest.rejected_by.push(user_id);
         await orderRequest.save({ session });
+
+        const allNotified = [...orderRequest.notified_ids].sort();
+        const allRejected = [...orderRequest.rejected_by].sort();
+
+        if (JSON.stringify(allNotified) === JSON.stringify(allRejected)) {
+          if (
+            orderRequest.request_type !== "broadcast_pdc" &&
+            orderRequest.request_type !== "broadcast_dp"
+          ) {
+            orderRequest.status = "Rejected"; // Rejected by all DPs
+          }
+          await orderRequest.save({ session });
+        }
+
+        const admin = await User.findOne({ role: ROLES.ADMIN }).session(
+          session,
+        );
+        const dpUser = await User.findById(user_id).session(session);
+
+        await sendNotification({
+          role: ROLES.ADMIN,
+          title: "Order Rejected",
+          message: `The order of ID : ${order_id} has been rejected by ${dpUser.name}`,
+          orderId: order_id,
+          session,
+        });
+
+        await sendNotification({
+          role: ROLES.DP,
+          userId: user_id,
+          title: "Order Rejected",
+          message: `You have rejected the order of ID : ${order_id}`,
+          orderId: order_id,
+          session,
+        });
+
+        await session.commitTransaction();
+        session.endSession();
+        return { message: "Order Rejected" };
       }
-
-      const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
-      const dpUser = await User.findById(user_id).session(session);
-
-      await sendNotification({
-        role: ROLES.ADMIN,
-        title: "Order Rejected",
-        message: `The order of ID : ${order_id} has been rejected by ${dpUser.name}`,
-        orderId: order_id,
-        session,
-      });
-
-      await sendNotification({
-        role: ROLES.DP,
-        userId: user_id,
-        title: "Order Rejected",
-        message: `You have rejected the order of ID : ${order_id}`,
-        orderId: order_id,
-        session,
-      });
-
-      await session.commitTransaction();
-      session.endSession();
-      return { message: "Order Rejected" };
     }
   } catch (error) {
     await session.abortTransaction();
@@ -958,7 +1043,7 @@ export const pickupOtp = async (order_id, user_id, otp) => {
 
     if (broadcast) {
       broadcast.status = "1";
-      broadcast.status = 'Completed';
+      broadcast.status = "Completed";
       await broadcast.save();
     }
 
@@ -1074,7 +1159,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
           .session(session);
         if (latestBroadcast) {
           latestBroadcast.status = "1";
-          latestBroadcast.status = 'Completed';
+          latestBroadcast.status = "Completed";
           latestBroadcast.save({ session });
         }
       } else {
@@ -1087,7 +1172,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
 
         if (previousBroadcast) {
           previousBroadcast.status = "1";
-          previousBroadcast.status = 'Completed';
+          previousBroadcast.status = "Completed";
           previousBroadcast.save({ session });
         }
       }
@@ -1173,7 +1258,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       : null;
     if (broadcast) {
       broadcast.status = "1";
-      broadcast.status = 'Completed';
+      broadcast.status = "Completed";
       await broadcast.save({ session });
     }
 
@@ -1941,7 +2026,12 @@ export const checkNearbyDps = async (radius, broadcastId, userId) => {
   return nearestDps;
 };
 
-export const findPdcInRouteService = async (pickup_lat, pickup_lng, drop_lat, drop_lng) => {
+export const findPdcInRouteService = async (
+  pickup_lat,
+  pickup_lng,
+  drop_lat,
+  drop_lng,
+) => {
   // Padding of 0.05 degrees is roughly 5.5km padding around the bounding box
   const padding = 0.05;
   const minLng = Math.min(Number(pickup_lng), Number(drop_lng)) - padding;
@@ -1956,40 +2046,46 @@ export const findPdcInRouteService = async (pickup_lat, pickup_lng, drop_lat, dr
       $geoWithin: {
         $box: [
           [minLng, minLat],
-          [maxLng, maxLat]
-        ]
-      }
-    }
+          [maxLng, maxLat],
+        ],
+      },
+    },
   });
 
   const warehousesInRoute = [];
-  const totalRouteDistance = mapsService.haversineGreatCircleDistance(
-    Number(pickup_lat),
-    Number(pickup_lng),
-    Number(drop_lat),
-    Number(drop_lng)
-  ) / 1000;
+  const totalRouteDistance =
+    mapsService.haversineGreatCircleDistance(
+      Number(pickup_lat),
+      Number(pickup_lng),
+      Number(drop_lat),
+      Number(drop_lng),
+    ) / 1000;
 
   for (const pdc of warehouses) {
     // Only proceed if latitude and longitude exist
     if (!pdc.latitude || !pdc.longitude) continue;
 
-    const distanceToPickup = mapsService.haversineGreatCircleDistance(
-      Number(pickup_lat),
-      Number(pickup_lng),
-      pdc.latitude,
-      pdc.longitude
-    ) / 1000;
+    const distanceToPickup =
+      mapsService.haversineGreatCircleDistance(
+        Number(pickup_lat),
+        Number(pickup_lng),
+        pdc.latitude,
+        pdc.longitude,
+      ) / 1000;
 
-    const distanceToDrop = mapsService.haversineGreatCircleDistance(
-      Number(drop_lat),
-      Number(drop_lng),
-      pdc.latitude,
-      pdc.longitude
-    ) / 1000;
+    const distanceToDrop =
+      mapsService.haversineGreatCircleDistance(
+        Number(drop_lat),
+        Number(drop_lng),
+        pdc.latitude,
+        pdc.longitude,
+      ) / 1000;
 
     const threshold = 1.0; // 1km threshold deviation
-    if (Math.abs(distanceToPickup + distanceToDrop - totalRouteDistance) < threshold) {
+    if (
+      Math.abs(distanceToPickup + distanceToDrop - totalRouteDistance) <
+      threshold
+    ) {
       warehousesInRoute.push(pdc);
     }
   }
