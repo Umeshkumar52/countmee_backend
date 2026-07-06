@@ -5,7 +5,9 @@ const deliverChargeSchema = new mongoose.Schema({
   base_distance: { type: Number, default: 0 },
   base_price: { type: Number, default: 0 },
   per_km_price: { type: Number, default: 0 }, // Represents price per km
-  waiting_charge: { type: Number, default: 0 },
+  extra_min_charge: { type: Number, default: 0 },
+  grace_period: { type: Number, default: 5 },
+  pickup_geofence_radius: { type: Number, default: 100 },
   dp_commission: { type: Number, default: 50 }, // DP earning percentage
   pdc_commission: { type: Number, default: 5 }, // PDC earning percentage
   max_weight: { type: Number, default: 0 },

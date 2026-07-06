@@ -265,35 +265,51 @@ export const logout = asyncHandler(async (req, res) => {
 
 // 1. PDC Accept/Reject API
 export const actionDrop = asyncHandler(async (req, res) => {
-    const { order_id, action } = req.body;
-    const pdcId = req.user.id || req.user._id;
+  const { order_id, action } = req.body;
+  const pdcId = req.user.id || req.user._id;
 
-    if (!['accept', 'reject'].includes(action)) {
-        throw new ApiError(400, "Invalid action. Use 'accept' or 'reject'.");
-    }
+  if (!['accept', 'reject'].includes(action)) {
+    throw new ApiError(400, "Invalid action. Use 'accept' or 'reject'.");
+  }
 
-    try {
-        const message = await pdcService.processActionDrop(order_id, pdcId, action);
-        return res.json(ApiResponse.success(null, message));
-    } catch (error) {
-        throw new ApiError(400, error.message);
-    }
+  try {
+    const message = await pdcService.processActionDrop(order_id, pdcId, action);
+    return res.json(ApiResponse.success(null, message));
+  } catch (error) {
+    throw new ApiError(400, error.message);
+  }
 });
 
 // 2. Manual Broadcast API
 export const broadcastOrder = asyncHandler(async (req, res) => {
-    const { order_id } = req.body;
-    const pdcId = req.user.id || req.user._id;
+  const { order_id } = req.body;
+  const pdcId = req.user.id || req.user._id;
 
-    try {
-        const nearByDpsCount = await pdcService.triggerManualBroadcast(order_id, pdcId);
+  try {
+    const nearByDpsCount = await pdcService.triggerManualBroadcast(order_id, pdcId);
 
-        if (nearByDpsCount === 0) {
-            return res.json(ApiResponse.success(null, "Broadcast started! The 10-minute window is open. Waiting for delivery partners to come online or drive nearby."));
-        }
-
-        return res.json(ApiResponse.success(null, `Broadcast started! Notified ${nearByDpsCount} nearby partners. The window will remain open for 10 minutes.`));
-    } catch (error) {
-        throw new ApiError(400, error.message);
+    if (nearByDpsCount === 0) {
+      return res.json(ApiResponse.success(null, "Broadcast started! The 10-minute window is open. Waiting for delivery partners to come online or drive nearby."));
     }
+
+    return res.json(ApiResponse.success(null, `Broadcast started! Notified ${nearByDpsCount} nearby partners. The window will remain open for 10 minutes.`));
+  } catch (error) {
+    throw new ApiError(400, error.message);
+  }
+});
+
+// 3. PDC Ratings API
+export const myRatings = asyncHandler(async (req, res) => {
+  const userId = req.user.id || req.user._id;
+
+  // console.log("==== DEBUG PDC RATINGS ====");
+  // console.log("Logged in PDC User ID from Token:", userId);
+
+  const ratings = await pdcService.findRatingsForPdc(userId);
+  const avgRating = await pdcService.getPdcAverageRating(userId);
+  // console.log("Calculated Average:", avgRating);
+
+  return res.json(
+    ApiResponse.success({ averageRating: avgRating, ratings }, "PDC Ratings"),
+  );
 });

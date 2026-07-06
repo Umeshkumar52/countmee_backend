@@ -496,7 +496,9 @@ const deliverChargeItemSchema = Joi.object({
       'number.base': 'Per-km price must be a number',
       'any.required': 'Per-km price is required'
     }),
-  waiting_charge: Joi.number().min(0).allow('', null).optional(),
+  extra_min_charge: Joi.number().min(0).allow('', null).optional(),
+  grace_period: Joi.number().min(0).allow('', null).optional(),
+  pickup_geofence_radius: Joi.number().min(0).allow('', null).optional(),
   dp_commission: Joi.number()
     .required()
     .messages({

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import * as pdcRepository from "./pdc.repository.js";
 import { User } from "../users/user.model.js";
@@ -978,4 +979,41 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
   }
 
   return nearByDps.length;
+};
+
+export const findRatingsForPdc = async (pdcId) => {
+  const ratings = await Rating.find({ to_pdc: pdcId }).sort({ created_at: -1 });
+  
+  const formattedRatings = [];
+  for (const rating of ratings) {
+    const jsonRating = rating.toJSON();
+    if (rating.from_dp) {
+      const dpUser = await User.findById(rating.from_dp);
+      jsonRating.rater = dpUser ? dpUser.toJSON() : null;
+      jsonRating.raterType = "Delivery Partner";
+    } else if (rating.from_customer) {
+      const customer = await User.findById(rating.from_customer);
+      jsonRating.rater = customer ? customer.toJSON() : null;
+      jsonRating.raterType = "Customer";
+    }
+    
+    if (rating.order_id) {
+      const order = await Order.findById(rating.order_id);
+      jsonRating.order = order ? order.toJSON() : null;
+    }
+    
+    formattedRatings.push(jsonRating);
+  }
+  
+  return formattedRatings;
+};
+
+export const getPdcAverageRating = async (pdcId) => {
+  const ratingAvg = await Rating.aggregate([
+    { $match: { to_pdc: new mongoose.Types.ObjectId(pdcId) } },
+    { $group: { _id: null, avgStars: { $avg: "$stars" } } },
+  ]);
+  
+  const avg = ratingAvg.length > 0 ? ratingAvg[0].avgStars : 0;
+  return Math.round(avg * 10) / 10; // Round to 1 decimal place
 };

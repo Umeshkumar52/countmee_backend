@@ -54,7 +54,7 @@ router.get('/travelStates', dpController.getTravelStates);
 ///////////////////////////////////
 
 // Order workflows
-router.get('/new_order/:user_id', dpController.new_order);
+router.get('/new_order/:order_id', dpController.new_order);
 router.post('/order_accept', dpController.order_accept);
 router.post('/cancel_assignment', dpController.cancelAssignment);
 router.get('/acceptedOrders/:user_id', dpController.acceptedOrders);

@@ -117,9 +117,10 @@ export const documentsReupload = asyncHandler(async (req, res) => {
 });
 
 export const new_order = asyncHandler(async (req, res) => {
-  const { user_id } = req.params;
-  const data = await dpService.getNewOrders(user_id);
-  return res.json(ApiResponse.success(data, "New Orders"));
+  const { order_id } = req.params;
+  const user_id = req.user.id || req.user._id;
+  const data = await dpService.getNewOrderDetails(order_id, user_id);
+  return res.json(ApiResponse.success(data, "Order Details"));
 });
 
 export const order_accept = asyncHandler(async (req, res) => {

@@ -21,6 +21,7 @@ import {
   actionDrop,
   broadcastOrder,
   online,
+  myRatings,
 } from "./pdc.controller.js";
 import { uploadFields } from "../../common/middlewares/upload.middleware.js";
 import {
@@ -77,5 +78,6 @@ router.post("/logout", logout);
 // New Actions
 router.post("/action-drop", actionDrop);
 router.post("/broadcast", broadcastOrder);
+router.get("/myRatings", myRatings);
 
 export default router;
