@@ -145,7 +145,7 @@ export const initAgenda = async () => {
       const order = await Order.findById(order_id);
 
       // If order still not accepted
-      if (order && order.status === ORDER_STATUS.CREATED) {
+      if (order && order.status === ORDER_STATUS.CONFIRMED) {
         console.log(
           `[Agenda] Order ${order_id} not accepted after 5 minutes. Rebroadcasting...`,
         );
