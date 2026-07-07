@@ -228,6 +228,13 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
       { session, ordered: true }
     );
 
+    // Lock the DP by adding this order to their active array
+    await DpDetail.findOneAndUpdate(
+      { user_id: dp_id },
+      { $addToSet: { active_order_ids: order_id } },
+      { session }
+    );
+
     await session.commitTransaction();
     session.endSession();
   } catch (error) {
