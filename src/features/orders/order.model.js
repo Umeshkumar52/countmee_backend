@@ -60,6 +60,16 @@ const orderSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    payment_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Payment",
+      default: null,
+    },
+    wallet_transaction_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "WalletTransaction",
+      default: null,
+    },
     delivery_dp_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

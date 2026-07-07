@@ -97,3 +97,40 @@ export const verifyPaymentSchema = Joi.object({
       'any.required': 'Order ID is required'
     })
 });
+
+export const initiateOrderPaymentSchema = Joi.object({
+  user_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'User ID cannot be empty',
+      'string.pattern.base': 'Invalid User ID format',
+      'any.required': 'User ID is required'
+    }),
+  order_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'Order ID cannot be empty',
+      'string.pattern.base': 'Invalid Order ID format',
+      'any.required': 'Order ID is required'
+    })
+});
+
+export const verifyOrderPaymentSchema = Joi.object({
+  cf_order_id: Joi.string()
+    .trim()
+    .required()
+    .messages({
+      'string.empty': 'Cashfree Order ID is required',
+      'any.required': 'Cashfree Order ID is required'
+    }),
+  order_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'Order ID cannot be empty',
+      'string.pattern.base': 'Invalid Order ID format',
+      'any.required': 'Order ID is required'
+    })
+});

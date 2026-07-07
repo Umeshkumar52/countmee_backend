@@ -2,7 +2,7 @@ import { Router } from 'express';
 import * as adminController from './admin.controller.js';
 import * as adminWalletController from './adminWallet.controller.js';
 import * as adminVerificationController from './adminVerification.controller.js';
-import { uploadSingle, uploadFields } from '../../common/middlewares/upload.middleware.js';
+import { uploadSingle, uploadFields, uploadAny } from '../../common/middlewares/upload.middleware.js';
 import { authenticate, authorize } from '../../common/middlewares/auth.middleware.js';
 import { ROLES } from '../../constants/index.js';
 
@@ -51,6 +51,7 @@ router.get('/dpDetails/:id', adminController.getDpDetails);
 router.post('/update-document-status', adminController.postUpdateDocumentStatus);
 router.post('/update-action', adminController.postUpdateAction);
 router.post('/adddp', dpUploadFields, adminController.postAddDp);
+router.post('/bulk-adddp', uploadAny(), adminController.postBulkAddDp);
 router.delete('/delete_dp/:id', adminController.deleteDp);
 router.put('/editdp/:id', dpUploadFields, adminController.postEditDp);
 
@@ -89,6 +90,7 @@ router.get('/orders/paginated', adminController.getPaginatedOrdersPage);
 router.get('/orders/scheduled-stats', adminController.getScheduledOrderStats);
 router.get('/orders/scheduled-filters', adminController.getScheduledFilters);
 router.get('/orders', adminController.getOrdersPage);
+router.post('/refund-order', adminController.processManualRefund);
 router.get('/orders/delivered', adminController.getDeliveredOrdersPage);
 router.get('/orders/broadcasted', adminController.getBroadcastedOrdersPage);
 router.get('/assignordersselect/:orderId', adminController.getAssignOrdersSelect);

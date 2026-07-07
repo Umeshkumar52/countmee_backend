@@ -88,6 +88,28 @@ export const postAddDp = async (req, res, next) => {
   }
 };
 
+export const postBulkAddDp = async (req, res, next) => {
+  try {
+    let dps = [];
+    if (req.body.data) {
+      dps = JSON.parse(req.body.data);
+    } else {
+      dps = req.body;
+    }
+    
+    if (!Array.isArray(dps) || dps.length === 0) {
+      throw new Error("No data provided or invalid format");
+    }
+    const result = await adminService.bulkAddDp(dps, req.files);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    if (err.errors) {
+       return res.status(400).json({ success: false, message: "Validation Failed", errors: err.errors });
+    }
+    next(err);
+  }
+};
+
 export const postEditDp = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -790,6 +812,23 @@ export const postBundleSummary = async (req, res, next) => {
     }
     const result = await adminService.getBundleSummary(orderIds);
     return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const processManualRefund = async (req, res, next) => {
+  try {
+    const { order_id, amount, reason } = req.body;
+    if (!order_id || !amount) {
+      throw new Error("order_id and amount are required");
+    }
+    const result = await adminService.processManualRefund(
+      order_id,
+      amount,
+      reason
+    );
+    return res.json(ApiResponse.success(result, "Manual refund processed successfully"));
   } catch (err) {
     next(err);
   }

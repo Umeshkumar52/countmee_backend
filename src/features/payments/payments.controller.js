@@ -78,3 +78,23 @@ export const verifyCashfreePayment = asyncHandler(async (req, res) => {
   return res.json(ApiResponse.success(result, message));
 });
 
+export const initiateOrderPayment = asyncHandler(async (req, res) => {
+  const { user_id, order_id } = validate(
+    paymentsValidation.initiateOrderPaymentSchema,
+    req.body,
+  );
+  const result = await paymentsService.initiateOrderPayment(user_id, order_id);
+  return res.json(ApiResponse.success(result, "Order payment initiated successfully"));
+});
+
+export const verifyOrderPayment = asyncHandler(async (req, res) => {
+  const { cf_order_id, order_id } = validate(
+    paymentsValidation.verifyOrderPaymentSchema,
+    req.body,
+  );
+  const result = await paymentsService.verifyOrderPayment(cf_order_id, order_id);
+  const message = result.already_processed
+    ? "Payment already processed"
+    : "Order payment verified successfully";
+  return res.json(ApiResponse.success(result, message));
+});
