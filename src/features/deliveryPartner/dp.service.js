@@ -679,6 +679,43 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
   }
 };
 
+export const markArrival = async (order_id, user_id, location_type, lat, lng) => {
+  const order = await Order.findById(order_id);
+  if (!order) throw new Error("Order not found");
+
+  const deliverCharge = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport });
+  if (!deliverCharge) throw new Error("DeliverCharge config not found");
+
+  let targetLat, targetLng;
+  if (location_type === 'pickup') {
+    if (order.dp_pickup_arrival_time) throw new Error("Pickup arrival already marked");
+    const broadcast = order.broadcast_id ? await Broadcast.findById(order.broadcast_id) : null;
+    targetLat = broadcast ? broadcast.pickup_latitude : order.sender_latitude;
+    targetLng = broadcast ? broadcast.pickup_longitude : order.sender_longitude;
+  } else {
+    if (order.dp_drop_arrival_time) throw new Error("Drop arrival already marked");
+    targetLat = order.receiver_latitude;
+    targetLng = order.receiver_longitude;
+  }
+
+  const distanceInMeters = await mapsService.haversineGreatCircleDistance(lat, lng, targetLat, targetLng);
+  
+  if (distanceInMeters > deliverCharge.pickup_geofence_radius) {
+    throw new Error(`You are too far (${Math.round(distanceInMeters)}m) from the location to mark arrival. Must be within ${deliverCharge.pickup_geofence_radius}m.`);
+  }
+
+  if (location_type === 'pickup') {
+    order.dp_pickup_arrival_time = new Date();
+    await sendOTPViaSMS(order.sender_phone, `Your Delivery Partner has arrived at the pickup location. Please handover the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`);
+  } else {
+    order.dp_drop_arrival_time = new Date();
+    await sendOTPViaSMS(order.receiver_phone, `Your Delivery Partner has arrived at the drop location. Please collect the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`);
+  }
+
+  await order.save();
+  return { message: "Arrival marked successfully" };
+};
+
 export const orderAccept = async (order_id, status, user_id) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -1236,6 +1273,17 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       .sort({ created_at: -1 })
       .session(session);
 
+    const deliverCharge = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).session(session);
+    if (order.dp_pickup_arrival_time && deliverCharge) {
+      const waitTimeMins = Math.floor((new Date() - order.dp_pickup_arrival_time) / 60000);
+      if (waitTimeMins > deliverCharge.grace_period) {
+        const extraMins = waitTimeMins - deliverCharge.grace_period;
+        const waitingCharge = extraMins * (deliverCharge.extra_min_charge || 0);
+        order.pickup_waiting_charges = waitingCharge;
+        order.charges += waitingCharge;
+      }
+    }
+
     if (orderRequest.request_type === "direct") {
       let travel = await Travel.findOne({
         order_id: order._id,
@@ -1311,6 +1359,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
       }
 
       order.status_completed = "parcel collected";
+      order.dp_pickup_time = new Date();
       order.status = ORDER_STATUS.OUT_FOR_DELIVERY;
       await order.save({ session });
     }
@@ -1380,6 +1429,17 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    const deliverCharge = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).session(session);
+    if (order.dp_drop_arrival_time && deliverCharge) {
+      const waitTimeMins = Math.floor((new Date() - order.dp_drop_arrival_time) / 60000);
+      if (waitTimeMins > deliverCharge.grace_period) {
+        const extraMins = waitTimeMins - deliverCharge.grace_period;
+        const waitingCharge = extraMins * (deliverCharge.extra_min_charge || 0);
+        order.drop_waiting_charges = waitingCharge;
+        order.charges += waitingCharge;
+      }
+    }
+
     order.delivery_dp_id = user_id;
     order.status_completed = "delivered";
     order.status = ORDER_STATUS.DELIVERED;

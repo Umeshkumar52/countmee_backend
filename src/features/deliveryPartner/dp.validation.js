@@ -476,3 +476,29 @@ export const resendOtpSchema = Joi.object({
     'any.required': 'Longitude is required'
   })
 });
+
+export const dpArrivalSchema = Joi.object({
+  order_id: Joi.string()
+    .regex(objectIdRegex)
+    .required()
+    .messages({
+      'string.empty': 'Order ID cannot be empty',
+      'string.pattern.base': 'Invalid Order ID format',
+      'any.required': 'Order ID is required'
+    }),
+  location_type: Joi.string()
+    .valid('pickup', 'drop')
+    .required()
+    .messages({
+      'any.only': 'Location type must be either pickup or drop',
+      'any.required': 'Location type is required'
+    }),
+  latitude: Joi.number().unsafe().required().messages({
+    'number.base': 'Latitude must be a valid number',
+    'any.required': 'Latitude is required'
+  }),
+  longitude: Joi.number().unsafe().required().messages({
+    'number.base': 'Longitude must be a valid number',
+    'any.required': 'Longitude is required'
+  })
+});

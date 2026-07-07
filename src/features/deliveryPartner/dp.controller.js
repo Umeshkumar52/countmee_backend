@@ -132,6 +132,16 @@ export const order_accept = asyncHandler(async (req, res) => {
   return res.json(ApiResponse.success(null, result.message));
 });
 
+export const arrival = asyncHandler(async (req, res) => {
+  const { order_id, location_type, latitude, longitude } = validate(
+    dpValidation.dpArrivalSchema,
+    req.body,
+  );
+  const user_id = req.user._id;
+  const result = await dpService.markArrival(order_id, user_id, location_type, latitude, longitude);
+  return res.json(ApiResponse.success(null, result.message));
+});
+
 export const cancelAssignment = asyncHandler(async (req, res) => {
   const { order_id, cancel_reason } = validate(
     dpValidation.cancelAssignmentSchema,
