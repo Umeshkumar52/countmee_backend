@@ -632,12 +632,18 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
 
     // Revert OrderRequest
     orderRequest.status = "Rejected"; // REJECTED
-    orderRequest.status = "Rejected"; // REJECTED
     orderRequest.accepted_by = null;
     orderRequest.rejected_by.push(user_id);
     await orderRequest.save({ session });
 
-    // Revert Order
+    // Unlock the DP by removing this order from their active array
+    await DpDetail.findOneAndUpdate(
+      { user_id },
+      { $pull: { active_order_ids: order_id } },
+      { session }
+    );
+
+    // Revert Order fields
     order.pickup_dp_id = null;
     order.dp_accept_time = null;
     order.status_completed = null;
@@ -709,6 +715,13 @@ export const orderAccept = async (order_id, status, user_id) => {
       orderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
       orderRequest.accepted_by = user_id;
       await orderRequest.save({ session });
+
+      // Lock the DP by adding this order to their active array
+      await DpDetail.findOneAndUpdate(
+        { user_id },
+        { $addToSet: { active_order_ids: order_id } },
+        { session }
+      );
 
       const order = await Order.findById(order_id).session(session);
 
@@ -1420,6 +1433,13 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       .session(session);
     orderRequest.complete_status = ORDER_REQUEST_COMPLETE_STATUS.COMPLETED;
     await orderRequest.save({ session });
+
+    // Unlock the DP by removing this order from their active array
+    await DpDetail.findOneAndUpdate(
+      { user_id },
+      { $pull: { active_order_ids: order_id } },
+      { session }
+    );
 
     const travel = await Travel.findOne({ order_id, user_id })
       .sort({ created_at: -1 })

@@ -24,6 +24,7 @@ const dpDetailSchema = new mongoose.Schema(
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], default: [0, 0] } // [longitude, latitude]
     },
+    active_order_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Order' }],
   },
   { 
     timestamps: true,

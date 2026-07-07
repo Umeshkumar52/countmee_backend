@@ -841,6 +841,13 @@ export const processActionDrop = async (orderId, pdcId, action) => {
     orderRequest.accepted_by = pdcId;
     await orderRequest.save();
 
+    // Unlock the DP who dropped off the order
+    const { DpDetail } = await import("../deliveryPartner/dpDetail.model.js");
+    await DpDetail.findOneAndUpdate(
+      { user_id: orderRequest.requested_by },
+      { $pull: { active_order_ids: orderId } }
+    );
+
     await sendNotification({
       role: ROLES.DP,
       userId: orderRequest.requested_by,

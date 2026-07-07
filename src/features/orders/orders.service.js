@@ -182,31 +182,10 @@ export const broadcastOrderToNearbyDPs = async (
         },
       },
       { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } },
-      // Check for active (pending) orders for the DP
-      {
-        $lookup: {
-          from: "orderrequests",
-          let: { dp_id: "$user_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$accepted_by", "$$dp_id"] },
-                    { $eq: ["$status", ORDER_REQUEST_STATUS.ACCEPTED] },
-                    { $eq: ["$complete_status", ORDER_REQUEST_COMPLETE_STATUS.PENDING] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: "activeOrders"
-        }
-      },
-      // Filter out any DP that has at least one active order
+      // Filter out any DP that has at least one active order in their active_order_ids array
       {
         $match: {
-          activeOrders: { $size: 0 }
+          active_order_ids: { $size: 0 }
         }
       }
     ]);
