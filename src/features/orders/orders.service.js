@@ -26,6 +26,10 @@ import { MinBroadcastDist } from "../tracking/minBroadcast.model.js";
 import { sendNotificationToUser } from "../../common/services/socket.service.js";
 import mongoose from "mongoose";
 import { Notification } from "../notifications/notification.model.js";
+import { Payment } from "../payments/payment.model.js";
+import { Wallet } from "../payments/wallet.model.js";
+import { WalletTransaction } from "../payments/walletTransaction.model.js";
+import { createRefund } from "../../common/services/refund.service.js";
 
 /**
  * Calculates delivery charges with a hardcoded 5% GST
@@ -107,7 +111,11 @@ export const getCharges = async (
   };
 };
 
-export const broadcastOrderToNearbyDPs = async (order, packageDetail, isRebroadcast = false) => {
+export const broadcastOrderToNearbyDPs = async (
+  order,
+  packageDetail,
+  isRebroadcast = false,
+) => {
   try {
     // 1. Get minimum broadcast distance for DP
     const minBroadcast = await MinBroadcastDist.findOne({
@@ -139,12 +147,15 @@ export const broadcastOrderToNearbyDPs = async (order, packageDetail, isRebroadc
     const targetDps = await DpDetail.aggregate([
       {
         $geoNear: {
-          near: { type: "Point", coordinates: [order.sender_longitude, order.sender_latitude] },
+          near: {
+            type: "Point",
+            coordinates: [order.sender_longitude, order.sender_latitude],
+          },
           distanceField: "distance_meters",
           maxDistance: maxDistanceMeters,
           spherical: true,
-          query: { online: true, document_approval: "Approved" }
-        }
+          query: { online: true, document_approval: "Approved" },
+        },
       },
       // Join Vehicle Document to filter by mode_of_transport
       {
@@ -152,14 +163,14 @@ export const broadcastOrderToNearbyDPs = async (order, packageDetail, isRebroadc
           from: "dpdocuments",
           localField: "user_id",
           foreignField: "user_id",
-          as: "dpDocument"
-        }
+          as: "dpDocument",
+        },
       },
       { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
       {
         $match: {
-          "dpDocument.vehicle_type": order.mode_of_transport
-        }
+          "dpDocument.vehicle_type": order.mode_of_transport,
+        },
       },
       // Join User details for FCM token
       {
@@ -167,13 +178,41 @@ export const broadcastOrderToNearbyDPs = async (order, packageDetail, isRebroadc
           from: "users",
           localField: "user_id",
           foreignField: "_id",
-          as: "user"
+          as: "user",
+        },
+      },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } },
+      // Check for active (pending) orders for the DP
+      {
+        $lookup: {
+          from: "orderrequests",
+          let: { dp_id: "$user_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$accepted_by", "$$dp_id"] },
+                    { $eq: ["$status", ORDER_REQUEST_STATUS.ACCEPTED] },
+                    { $eq: ["$complete_status", ORDER_REQUEST_COMPLETE_STATUS.PENDING] }
+                  ]
+                }
+              }
+            }
+          ],
+          as: "activeOrders"
         }
       },
-      { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } }
+      // Filter out any DP that has at least one active order
+      {
+        $match: {
+          activeOrders: { $size: 0 }
+        }
+      }
     ]);
 
-    const { sendPushNotification } = await import("../../common/services/firebase.service.js");
+    const { sendPushNotification } =
+      await import("../../common/services/firebase.service.js");
     let sentCount = 0;
 
     // 5. Broadcast (Socket + FCM)
@@ -198,23 +237,26 @@ export const broadcastOrderToNearbyDPs = async (order, packageDetail, isRebroadc
           dp.user.fcm_tokens,
           "New Order Request!",
           `Pickup: ${order.pickup_location}`,
-          payload
+          payload,
         );
       }
       sentCount++;
     }
 
     console.log(
-      `[Broadcast] Order ${order._id} broadcasted to ${sentCount} nearby DPs. Rebroadcast: ${isRebroadcast}`
+      `[Broadcast] Order ${order._id} broadcasted to ${sentCount} nearby DPs. Rebroadcast: ${isRebroadcast}`,
     );
 
     // 6. Schedule Rebroadcast if this is the first broadcast
     if (!isRebroadcast) {
-      const { getAgenda } = await import("../../common/services/agenda.service.js");
+      const { getAgenda } =
+        await import("../../common/services/agenda.service.js");
       const agenda = getAgenda();
       if (agenda) {
         // Schedule rebroadcast for 5 minutes
-        await agenda.schedule('in 5 minutes', 'rebroadcast-unaccepted-order', { order_id: order._id.toString() });
+        await agenda.schedule("in 5 minutes", "rebroadcast-unaccepted-order", {
+          order_id: order._id.toString(),
+        });
       }
     }
   } catch (error) {
@@ -329,7 +371,10 @@ export const createOrder = async (orderData, files) => {
           schedule_date,
           schedule_time,
 
-          status: order_type === "scheduled" ? ORDER_STATUS.SCHEDULED : ORDER_STATUS.CREATED,
+          status:
+            order_type === "scheduled"
+              ? ORDER_STATUS.SCHEDULED
+              : ORDER_STATUS.CREATED,
         },
       ],
       { session, ordered: true },
@@ -374,23 +419,16 @@ export const createOrder = async (orderData, files) => {
       session,
     });
 
-    await sendNotification({
-      role: ROLES.ADMIN,
-      title: "New Order Placed",
-      message: ` has placed an order of ID : ${newOrder._id}`,
-      orderId: newOrder._id,
-      session,
-    });
+    // await sendNotification({
+    //   role: ROLES.ADMIN,
+    //   title: "New Order Placed",
+    //   message: ` has placed an order of ID : ${newOrder._id}`,
+    //   orderId: newOrder._id,
+    //   session,
+    // });
 
     await session.commitTransaction();
     session.endSession();
-
-    // Fire-and-forget broadcast ONLY if it's a normal order
-    if (newOrder.order_type === "normal") {
-      broadcastOrderToNearbyDPs(newOrder, packageDetail[0]).catch((err) =>
-        console.error("[Broadcast] Background execution failed:", err),
-      );
-    }
 
     return { order: newOrder, packageDetails: packageDetail[0] };
   } catch (error) {
@@ -415,14 +453,65 @@ export const createOrder = async (orderData, files) => {
 };
 
 export const cancelOrder = async (order_id, cancel_order_reason) => {
-  // Update OrderRequest status to 0
-  await OrderRequest.updateMany(
-    { order_id },
-    { status: ORDER_REQUEST_STATUS.REJECTED },
-  );
-
   const order = await Order.findById(order_id);
   if (order) {
+    if (order.status === ORDER_STATUS.CANCELLED) return true;
+
+    // Process Refund if order was paid
+    if (order.status === ORDER_STATUS.CONFIRMED) {
+      if (order.payment_id) {
+        // Direct Payment Refund
+        const payment = await Payment.findById(order.payment_id);
+        if (payment && payment.status === "SUCCESS") {
+          try {
+            await createRefund({
+              paymentId: payment.cf_order_id,
+              amount: payment.amount,
+              notes: { reason: cancel_order_reason || "User cancelled order" },
+            });
+            payment.status = "REFUNDED";
+            await payment.save();
+          } catch (err) {
+            console.error(
+              "Direct payment refund failed during cancellation:",
+              err.message,
+            );
+          }
+        }
+      } else {
+        // Wallet Payment Refund
+        const wTx = await WalletTransaction.findOne({
+          reference_id: order._id,
+          transaction_type: "order_payment",
+          type: "debit",
+        });
+        if (wTx) {
+          const wallet = await Wallet.findById(wTx.wallet_id);
+          if (wallet) {
+            wallet.balance += wTx.amount;
+            await wallet.save();
+            await WalletTransaction.create({
+              wallet_id: wallet._id,
+              amount: wTx.amount,
+              type: "credit",
+              description: `Refund for Cancelled Order #${order._id}`,
+              transaction_type: "refund",
+              reference_id: order._id,
+              status: "completed",
+            });
+
+            await sendNotification({
+              role: ROLES.USER,
+              userId: order.user_id,
+              title: "Refund Processed",
+              message: `₹${wTx.amount} has been refunded to your wallet for Order #${order._id}.`,
+              orderId: order._id,
+            });
+          }
+        }
+      }
+    }
+
     order.user_action = USER_ACTION_STATUS.CANCELLED;
     order.status = ORDER_STATUS.CANCELLED;
     order.cancel_order_reason = cancel_order_reason;

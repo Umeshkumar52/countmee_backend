@@ -284,6 +284,160 @@ export const addDp = async (body, files) => {
   return { message: "Delivery Partner registered successfully" };
 };
 
+export const bulkAddDp = async (dps, files) => {
+  const errors = [];
+  
+  for (let i = 0; i < dps.length; i++) {
+    const dp = dps[i];
+    const row = dp.row || (i + 1);
+
+    // Basic Details
+    if (!dp.name) errors.push({ row, error: "Name is required" });
+    if (!dp.phone) errors.push({ row, error: "Phone is required" });
+    if (!dp.email) errors.push({ row, error: "Email is required" });
+    if (!dp.dob) errors.push({ row, error: "DOB is required" });
+    if (!dp.gender) errors.push({ row, error: "Gender is required" });
+    if (!dp.address) errors.push({ row, error: "Address is required" });
+
+    // Vehicle Details
+    if (!dp.vehicle_type) errors.push({ row, error: "Vehicle Type is required" });
+    if (!dp.vehicle_number) errors.push({ row, error: "Vehicle Number is required" });
+
+    // Document Text Fields
+    if (!dp.aadhar_number) errors.push({ row, error: "Aadhar Number is required" });
+    if (!dp.rc_number) errors.push({ row, error: "RC Number is required" });
+    if (!dp.dl_number) errors.push({ row, error: "DL Number is required" });
+    if (!dp.bank_name) errors.push({ row, error: "Bank Name is required" });
+    if (!dp.bank_acc_number) errors.push({ row, error: "Bank Account Number is required" });
+    if (!dp.bank_ifsc) errors.push({ row, error: "Bank IFSC is required" });
+
+    // Document Images
+    if (!dp.profile_img) errors.push({ row, error: "Profile Image Filename is required" });
+    if (!dp.aadhar_imgfront) errors.push({ row, error: "Aadhar Front Image Filename is required" });
+    if (!dp.aadhar_imgback) errors.push({ row, error: "Aadhar Back Image Filename is required" });
+    if (!dp.rc_imgfront) errors.push({ row, error: "RC Front Image Filename is required" });
+    if (!dp.rc_imgback) errors.push({ row, error: "RC Back Image Filename is required" });
+    if (!dp.dl_imgfront) errors.push({ row, error: "DL Front Image Filename is required" });
+    if (!dp.dl_imgback) errors.push({ row, error: "DL Back Image Filename is required" });
+    if (!dp.bank_imagefront) errors.push({ row, error: "Bank Front Image Filename is required" });
+    if (!dp.bank_imageback) errors.push({ row, error: "Bank Back Image Filename is required" });
+    if (!dp.residence_img) errors.push({ row, error: "Residence Image Filename is required" });
+    if (!dp.vehicle_img) errors.push({ row, error: "Vehicle Image Filename is required" });
+
+    if (dp.phone) {
+       const existing = await adminRepository.findUserByPhoneAndType(dp.phone, ROLES.DP);
+       if (existing) {
+         errors.push({ row, error: `Phone number ${dp.phone} already exists` });
+       }
+    }
+  }
+
+  if (errors.length > 0) {
+    const errorObj = new Error("Bulk Upload Validation Failed");
+    errorObj.errors = errors;
+    throw errorObj;
+  }
+
+  let successCount = 0;
+  for (let i = 0; i < dps.length; i++) {
+    const dp = dps[i];
+    try {
+      const uploadResults = {};
+      const fileFields = [
+        "profile_img",
+        "aadhar_imgfront",
+        "aadhar_imgback",
+        "rc_imgfront",
+        "rc_imgback",
+        "dl_imgfront",
+        "dl_imgback",
+        "residence_img",
+        "vehicle_img",
+        "bank_imagefront",
+        "bank_imageback",
+      ];
+
+      if (files && Array.isArray(files)) {
+        for (const field of fileFields) {
+           const expectedFieldName = `row_${i}_${field}`;
+           const matchedFile = files.find(f => f.fieldname === expectedFieldName);
+           if (matchedFile) {
+             const folder = field === "profile_img" ? "dp_profiles" : "dp_documents";
+             const uploadResult = await uploadToCloudinary(matchedFile.path, folder);
+             if (uploadResult) {
+               uploadResults[field] = uploadResult.secure_url;
+             }
+           }
+        }
+      }
+
+      const newUser = await adminRepository.createUser({
+        name: dp.name,
+        phone: dp.phone,
+        email: dp.email || "",
+        dob: dp.dob || null,
+        role: ROLES.DP,
+      });
+
+      await adminRepository.createDpDetail({
+        user_id: newUser._id,
+        dob: dp.dob || null,
+        gender: dp.gender || "Other",
+        address: dp.address || "",
+        profile_img: uploadResults.profile_img || dp.profile_img || null,
+        online: false,
+        document_approval: "Approved",
+        status: "Verified",
+      });
+
+      await adminRepository.createDpDocument({
+        user_id: newUser._id,
+        vehicle_type: dp.vehicle_type,
+        aadhar_number: dp.aadhar_number || null,
+        aadhar_imgfront: uploadResults.aadhar_imgfront || dp.aadhar_imgfront || null,
+        aadhar_imgback: uploadResults.aadhar_imgback || dp.aadhar_imgback || null,
+        rc_number: dp.rc_number || null,
+        rc_imgfront: uploadResults.rc_imgfront || dp.rc_imgfront || null,
+        rc_imgback: uploadResults.rc_imgback || dp.rc_imgback || null,
+        dl_number: dp.dl_number || null,
+        dl_imgfront: uploadResults.dl_imgfront || dp.dl_imgfront || null,
+        dl_imgback: uploadResults.dl_imgback || dp.dl_imgback || null,
+        bank_name: dp.bank_name || null,
+        bank_acc_number: dp.bank_acc_number || null,
+        bank_ifsc: dp.bank_ifsc || null,
+        bank_imagefront: uploadResults.bank_imagefront || dp.bank_imagefront || null,
+        bank_imageback: uploadResults.bank_imageback || dp.bank_imageback || null,
+        vehicle_number: dp.vehicle_number,
+        residence_img: uploadResults.residence_img || dp.residence_img || null,
+        vehicle_img: uploadResults.vehicle_img || dp.vehicle_img || null,
+        reference1_name: dp.reference1_name || null,
+        reference1_phone: dp.reference1_phone || null,
+        status: "Verified",
+        adhar_status: "Accept",
+        rc_status: "Accept",
+        dl_status: "Accept",
+        bank_status: "Accept",
+        rv_status: "Accept"
+      });
+      successCount++;
+    } catch (err) {
+      console.error(`Failed to insert DP at row ${dp.row}:`, err);
+      errors.push({ row: dp.row, error: err.message || "Database insertion failed" });
+    }
+  }
+
+  if (errors.length > 0 && successCount === 0) {
+    const errorObj = new Error("All rows failed to register");
+    errorObj.errors = errors;
+    throw errorObj;
+  }
+
+  return { 
+    message: `Successfully registered ${successCount} Delivery Partners`,
+    insertionErrors: errors.length > 0 ? errors : undefined 
+  };
+};
+
 export const editDp = async (id, body, files) => {
   const detail = await adminRepository.findDpDetailById(id);
   if (!detail) throw new Error("DP not found");
@@ -723,6 +877,10 @@ export const getPaginatedOrders = async (
       { drop_location: { $regex: search, $options: "i" } },
       { sender_pin_code: { $regex: search, $options: "i" } },
       { receiver_pin_code: { $regex: search, $options: "i" } },
+      { sender_name: { $regex: search, $options: "i" } },
+      { sender_phone: { $regex: search, $options: "i" } },
+      { receiver_name: { $regex: search, $options: "i" } },
+      { receiver_phone: { $regex: search, $options: "i" } },
     ];
   }
   if (scheduleDate) {
@@ -1694,5 +1852,83 @@ export const getBundleSummary = async (orderIds) => {
       type: vt.vehicle_type,
       max_weight: vt.max_weight
     }))
+  };
+};
+
+export const processManualRefund = async (order_id, amount, reason) => {
+  const mongoose = await import("mongoose");
+  const Order = mongoose.default.model("Order");
+  const Payment = mongoose.default.model("Payment");
+  const WalletTransaction = mongoose.default.model("WalletTransaction");
+  const Wallet = mongoose.default.model("Wallet");
+  const { sendNotification } = await import("../../common/services/firebase.service.js");
+  const { ROLES } = await import("../../constants/index.js");
+
+  const order = await Order.findById(order_id);
+  if (!order) throw new Error("Order not found");
+
+  const refundAmount = Number(amount);
+  if (isNaN(refundAmount) || refundAmount <= 0) {
+    throw new Error("Invalid refund amount");
+  }
+
+  if (refundAmount > order.charges) {
+    throw new Error(`Refund amount cannot exceed the order charges (₹${order.charges})`);
+  }
+
+  let refundType = null;
+
+  if (order.payment_id) {
+    // Cashfree Refund
+    const payment = await Payment.findById(order.payment_id);
+    if (!payment || payment.status !== "SUCCESS") {
+      throw new Error("No successful direct payment found for this order");
+    }
+    const { createRefund } = await import("../../common/services/refund.service.js");
+    await createRefund({
+      paymentId: payment.cf_order_id,
+      amount: refundAmount,
+      notes: { reason: reason || "Admin manual refund" },
+    });
+    refundType = "Cashfree";
+  } else if (order.wallet_transaction_id) {
+    // Wallet Refund
+    const wTx = await WalletTransaction.findById(order.wallet_transaction_id);
+    if (!wTx) {
+      throw new Error("Wallet transaction not found for this order");
+    }
+    const wallet = await Wallet.findById(wTx.wallet_id);
+    if (!wallet) throw new Error("User wallet not found");
+
+    wallet.balance += refundAmount;
+    await wallet.save();
+    await WalletTransaction.create({
+      wallet_id: wallet._id,
+      amount: refundAmount,
+      type: "credit",
+      description: reason ? `Admin Refund: ${reason}` : `Admin Refund for Order #${order._id}`,
+      transaction_type: "refund",
+      reference_id: order._id,
+      status: "completed",
+    });
+    refundType = "Wallet";
+  } else {
+    throw new Error("This order has no associated payment record");
+  }
+
+  // Notify User
+  await sendNotification({
+    role: ROLES.USER,
+    userId: order.user_id,
+    title: "Manual Refund Processed",
+    message: `An admin has processed a manual refund of ₹${refundAmount} for Order #${order._id}.`,
+    orderId: order._id,
+  });
+
+  return {
+    success: true,
+    message: `Successfully processed ₹${refundAmount} refund via ${refundType}`,
+    order_id: order._id,
+    refundAmount
   };
 };

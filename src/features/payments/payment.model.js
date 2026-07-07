@@ -19,7 +19,7 @@ const paymentSchema = new mongoose.Schema(
     currency: { type: String, default: "INR" },
     status: {
       type: String,
-      enum: ["PAID", "SUCCESS", "ACTIVE", "FAILED", "EXPIRED", "TERMINATED"],
+      enum: ["PAID", "SUCCESS", "ACTIVE", "FAILED", "EXPIRED", "TERMINATED", "REFUNDED"],
       default: "ACTIVE",
       required: true,
     },
