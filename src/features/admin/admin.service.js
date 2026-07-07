@@ -995,8 +995,65 @@ export const getDpCancelledOrders = async () => {
 };
 
 export const getAssignOrdersSelect = async (orderId) => {
-  const User = await import("../users/user.model.js");
-  const dps = await User.User.find({ role: ROLES.DP });
+  const mongoose = await import("mongoose");
+  const { Order } = await import("../orders/order.model.js");
+  const { DpDetail } = await import("../deliveryPartner/dpDetail.model.js");
+  const { MinBroadcastDist } = await import("../tracking/minBroadcast.model.js");
+
+  const order = await Order.findById(orderId);
+  if (!order) throw new Error("Order not found");
+
+  // Get minimum broadcast distance
+  const minBroadcast = await MinBroadcastDist.findOne({
+    role: { $regex: /^dp$/i },
+  });
+  const maxDistanceKm = minBroadcast ? minBroadcast.minimum_broadcast_distance : 5;
+  const maxDistanceMeters = maxDistanceKm * 1000;
+
+  // Run the optimized geo-location pipeline to find free DPs
+  const targetDps = await DpDetail.aggregate([
+    {
+      $geoNear: {
+        near: {
+          type: "Point",
+          coordinates: [order.sender_longitude, order.sender_latitude],
+        },
+        distanceField: "distance_meters",
+        maxDistance: maxDistanceMeters,
+        spherical: true,
+        query: { online: true, document_approval: "Approved", active_order_ids: { $size: 0 } },
+      },
+    },
+    // Filter by vehicle type
+    {
+      $lookup: {
+        from: "dpdocuments",
+        localField: "user_id",
+        foreignField: "user_id",
+        as: "dpDocument",
+      },
+    },
+    { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
+    {
+      $match: {
+        "dpDocument.vehicle_type": order.mode_of_transport,
+      },
+    },
+    // Get full user details for the admin dropdown
+    {
+      $lookup: {
+        from: "users",
+        localField: "user_id",
+        foreignField: "_id",
+        as: "user",
+      },
+    },
+    { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } },
+  ]);
+
+  // Extract just the user object to match the exact frontend expectation
+  const dps = targetDps.map(dp => dp.user);
+
   return { orderId, dps };
 };
 

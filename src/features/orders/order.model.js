@@ -1,5 +1,8 @@
 import mongoose from "mongoose";
-import { ORDER_STATUS, USER_ACTION_STATUS } from "../../constants/orderStatus.js";
+import {
+  ORDER_STATUS,
+  USER_ACTION_STATUS,
+} from "../../constants/orderStatus.js";
 
 const orderSchema = new mongoose.Schema(
   {
@@ -19,7 +22,10 @@ const orderSchema = new mongoose.Schema(
     drop_location: { type: String, required: true },
     receiver_latitude: { type: Number, required: true },
     receiver_longitude: { type: Number, required: true },
-    mode_of_transport: { type: String, required: true },
+    mode_of_transport: {
+      type: String,
+      required: true,
+    },
     sender_name: { type: String, required: true },
     sender_phone: { type: String, required: true },
     how_to_reach_sender_location: { type: String, default: null },
@@ -34,7 +40,11 @@ const orderSchema = new mongoose.Schema(
     receiver_pin_code: { type: String, default: null },
     distance: { type: Number, required: true },
     charges: { type: Number, required: true },
-    user_action: { type: String, enum: [USER_ACTION_STATUS.CANCELLED, null], default: null },
+    user_action: {
+      type: String,
+      enum: [USER_ACTION_STATUS.CANCELLED, null],
+      default: null,
+    },
     cancel_order_reason: { type: String, default: null },
     status_completed: { type: String, default: null },
     dp_accept_time: { type: Date, default: null },
