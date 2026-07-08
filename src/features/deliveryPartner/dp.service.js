@@ -659,7 +659,7 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     if (orderRequest.broadcast_id) {
       await Broadcast.findByIdAndUpdate(
         orderRequest.broadcast_id,
-        { pickup_dp_id: null },
+        { pickup_dp_id: null, status: "Pending" },
         { session },
       );
     }
@@ -1012,10 +1012,8 @@ export const orderAccept = async (order_id, status, user_id) => {
           if (orderRequest.broadcast_id) {
             await Broadcast.findByIdAndUpdate(
               orderRequest.broadcast_id,
-              { pickup_dp_id: user_id },
-              { session },
               { pickup_dp_id: user_id, status: "Accepted" },
-              { session },
+              { session }
             );
 
             if (orderRequest.request_type === "broadcast_pdc") {
