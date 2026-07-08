@@ -17,6 +17,22 @@ export const normalizeOrder = (o) => {
     statusStr = orderObj.status.toLowerCase();
   }
 
+  let paymentStatus = "pending";
+  if (orderObj.payment_status) {
+    paymentStatus = orderObj.payment_status;
+  } else if (orderObj.wallet_transaction_id || orderObj.payment_id) {
+    paymentStatus = "paid";
+  } else if (orderObj.payment_settled) {
+    paymentStatus = "settled";
+  }
+
+  let paymentMethod = "N/A";
+  if (orderObj.wallet_transaction_id) {
+    paymentMethod = "Wallet";
+  } else if (orderObj.payment_id) {
+    paymentMethod = "Payment Gateway";
+  }
+
   return {
     id: orderObj._id,
     order_number: orderObj.order_id || orderObj._id,
@@ -30,7 +46,9 @@ export const normalizeOrder = (o) => {
     status: statusStr,
     drop_otp: orderObj.drop_otp || "",
     items_count: orderObj.items_count || 1,
-    payment_status: orderObj.payment_status || (orderObj.payment_settled ? "settled" : "pending"),
+    payment_status: paymentStatus,
+    payment_method: paymentMethod,
+    payment_history: orderObj.wallet_transaction_id || orderObj.payment_id || null,
     created_at: orderObj.createdAt
       ? new Date(orderObj.createdAt).toISOString().split("T")[0]
       : orderObj.created_at || "N/A",

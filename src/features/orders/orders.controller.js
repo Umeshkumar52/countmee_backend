@@ -6,6 +6,7 @@ import * as ordersValidation from "./orders.validation.js";
 import { ApiError } from "../../common/utils/ApiError.js";
 
 export const createOrder = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
   if (typeof req.body.different_dimantion === "string") {
     req.body.different_dimantion = req.body.different_dimantion === "true";
   }
@@ -31,7 +32,7 @@ export const createOrder = asyncHandler(async (req, res) => {
   if (Object.keys(fileErrors).length > 0) {
     throw new ApiError(400, "Validation error", fileErrors);
   }
-  const result = await ordersService.createOrder(req.body, req.files);
+  const result = await ordersService.createOrder(req.body, req.files, _id);
   return res.json(ApiResponse.success(result, "order created"));
 });
 

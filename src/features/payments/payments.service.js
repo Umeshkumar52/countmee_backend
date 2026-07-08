@@ -37,7 +37,7 @@ export const cashfreeWebhook = async (data) => {
           const transaction = await WalletTransaction.findOneAndUpdate(
             { transaction_id: orderId, status: "pending" },
             { status: "completed" },
-            { new: true, session }
+            { new: true, session },
           );
 
           if (transaction) {
@@ -54,31 +54,44 @@ export const cashfreeWebhook = async (data) => {
             });
 
             await session.commitTransaction();
-            console.log(`Cashfree Webhook: Wallet Recharge Successful for ${orderId}`);
+            console.log(
+              `Cashfree Webhook: Wallet Recharge Successful for ${orderId}`,
+            );
           } else {
             await session.abortTransaction();
-            console.log(`Cashfree Webhook: Wallet Recharge already processed for ${orderId}`);
+            console.log(
+              `Cashfree Webhook: Wallet Recharge already processed for ${orderId}`,
+            );
           }
         } else if (orderId.startsWith("DIR_")) {
           // Direct Order Payment Logic
           const payment = await Payment.findOneAndUpdate(
             { cf_order_id: orderId, status: "ACTIVE" },
             { status: "SUCCESS" },
-            { new: true, session }
+            { new: true, session },
           );
 
           if (payment) {
-            const order = await Order.findById(payment.order_id).session(session);
-            if (order && [ORDER_STATUS.CREATED, ORDER_STATUS.SCHEDULED].includes(order.status)) {
+            const order = await Order.findById(payment.order_id).session(
+              session,
+            );
+            if (
+              order &&
+              [ORDER_STATUS.CREATED, ORDER_STATUS.SCHEDULED].includes(
+                order.status,
+              )
+            ) {
               order.status = ORDER_STATUS.CONFIRMED;
               order.payment_id = payment._id;
               await order.save({ session });
-              
+
               // Broadcast to DP if normal order
-              const packageDetail = await PackageDetail.findById(order.package_id).session(session);
+              const packageDetail = await PackageDetail.findById(
+                order.package_id,
+              ).session(session);
               if (packageDetail && order.order_type === "normal") {
                 broadcastOrderToNearbyDPs(order, packageDetail).catch((err) =>
-                  console.error("[Broadcast] Webhook execution failed:", err)
+                  console.error("[Broadcast] Webhook execution failed:", err),
                 );
               }
 
@@ -91,14 +104,20 @@ export const cashfreeWebhook = async (data) => {
               });
             }
             await session.commitTransaction();
-            console.log(`Cashfree Webhook: Direct Order Payment Successful for ${orderId}`);
+            console.log(
+              `Cashfree Webhook: Direct Order Payment Successful for ${orderId}`,
+            );
           } else {
             await session.abortTransaction();
-            console.log(`Cashfree Webhook: Direct Order Payment already processed for ${orderId}`);
+            console.log(
+              `Cashfree Webhook: Direct Order Payment already processed for ${orderId}`,
+            );
           }
         } else {
-           await session.abortTransaction();
-           console.log(`Cashfree Webhook: Unknown order ID prefix for ${orderId}`);
+          await session.abortTransaction();
+          console.log(
+            `Cashfree Webhook: Unknown order ID prefix for ${orderId}`,
+          );
         }
       } catch (err) {
         await session.abortTransaction();
@@ -115,15 +134,17 @@ export const cashfreeWebhook = async (data) => {
     if (orderId.startsWith("WAL_")) {
       await WalletTransaction.findOneAndUpdate(
         { transaction_id: orderId, status: "pending" },
-        { status: "failed" }
+        { status: "failed" },
       );
       console.log(`Cashfree Webhook: Wallet Recharge Failed for ${orderId}`);
     } else if (orderId.startsWith("DIR_")) {
       await Payment.findOneAndUpdate(
         { cf_order_id: orderId, status: "ACTIVE" },
-        { status: "FAILED" }
+        { status: "FAILED" },
       );
-      console.log(`Cashfree Webhook: Direct Order Payment Failed for ${orderId}`);
+      console.log(
+        `Cashfree Webhook: Direct Order Payment Failed for ${orderId}`,
+      );
     }
   }
 };
@@ -189,17 +210,20 @@ export const payOrder = async (user_id, order_id, amount) => {
       },
       session,
     );
-
+    const transactionRecord = Array.isArray(wTx) ? wTx[0] : wTx;
+    console.log("Wallet Transaction Created:", transactionRecord?._id);
     // Update order status
     order.status = ORDER_STATUS.CONFIRMED; // Paid/Active
-    order.wallet_transaction_id = wTx._id;
+    order.wallet_transaction_id = transactionRecord?._id || transactionRecord?.id;
     await order.save({ session });
 
     // Broadcast to DP if normal order
-    const packageDetail = await PackageDetail.findById(order.package_id).session(session);
+    const packageDetail = await PackageDetail.findById(
+      order.package_id,
+    ).session(session);
     if (packageDetail && order.order_type === "normal") {
       broadcastOrderToNearbyDPs(order, packageDetail).catch((err) =>
-        console.error("[Broadcast] Wallet execution failed:", err)
+        console.error("[Broadcast] Wallet execution failed:", err),
       );
     }
 
@@ -379,7 +403,7 @@ export const verifyCashfreePayment = async (order_id) => {
         const transaction = await WalletTransaction.findOneAndUpdate(
           { transaction_id: order_id, status: "pending" },
           { status: "completed" },
-          { new: true, session }
+          { new: true, session },
         );
 
         if (transaction) {
@@ -469,7 +493,7 @@ export const initiateOrderPayment = async (user_id, order_id) => {
         amount,
         currency: "INR",
         status: "ACTIVE",
-        payment_mode: "Cashfree Direct"
+        payment_mode: "Cashfree Direct",
       });
 
       return {
@@ -479,7 +503,10 @@ export const initiateOrderPayment = async (user_id, order_id) => {
     }
     throw new Error("Failed to retrieve payment_session_id from Cashfree API");
   } catch (error) {
-    console.error("Cashfree Initiate Error (Direct):", error.response ? error.response.data : error.message);
+    console.error(
+      "Cashfree Initiate Error (Direct):",
+      error.response ? error.response.data : error.message,
+    );
     throw new Error("Failed to create Cashfree order for direct payment");
   }
 };
@@ -495,7 +522,7 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
       },
       timeout: 15000,
     });
-
+    console.log("Cashfree Verify Response (Direct):", response.data);
     const result = response.data;
     if (result.order_status === "PAID") {
       const session = await mongoose.startSession();
@@ -504,31 +531,38 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
         const payment = await Payment.findOneAndUpdate(
           { cf_order_id, status: "ACTIVE" },
           { status: "SUCCESS" },
-          { new: true, session }
+          { new: true, session },
         );
 
         if (payment) {
           const order = await Order.findById(order_id).session(session);
-          if (order && [ORDER_STATUS.CREATED, ORDER_STATUS.SCHEDULED].includes(order.status)) {
-             order.status = ORDER_STATUS.CONFIRMED;
-             order.payment_id = payment._id;
-             await order.save({ session });
-             
-             // Broadcast to DP if normal order
-             const packageDetail = await PackageDetail.findById(order.package_id).session(session);
-             if (packageDetail && order.order_type === "normal") {
-               broadcastOrderToNearbyDPs(order, packageDetail).catch((err) =>
-                 console.error("[Broadcast] Verify execution failed:", err)
-               );
-             }
+          if (
+            order &&
+            [ORDER_STATUS.CREATED, ORDER_STATUS.SCHEDULED].includes(
+              order.status,
+            )
+          ) {
+            order.status = ORDER_STATUS.CONFIRMED;
+            order.payment_id = payment._id;
+            await order.save({ session });
 
-             await sendNotification({
-                role: ROLES.USER,
-                userId: order.user_id,
-                title: "Payment Successful",
-                message: `Direct payment of ₹${payment.amount} for Order #${order._id} completed successfully via Cashfree.`,
-                session,
-             });
+            // Broadcast to DP if normal order
+            const packageDetail = await PackageDetail.findById(
+              order.package_id,
+            ).session(session);
+            if (packageDetail && order.order_type === "normal") {
+              broadcastOrderToNearbyDPs(order, packageDetail).catch((err) =>
+                console.error("[Broadcast] Verify execution failed:", err),
+              );
+            }
+
+            await sendNotification({
+              role: ROLES.USER,
+              userId: order.user_id,
+              title: "Payment Successful",
+              message: `Direct payment of ₹${payment.amount} for Order #${order._id} completed successfully via Cashfree.`,
+              session,
+            });
           }
 
           await session.commitTransaction();
@@ -547,8 +581,7 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
     }
     throw new Error("Payment verification failed at Cashfree");
   } catch (error) {
-    console.error("Cashfree Verify Error (Direct):", error.response ? error.response.data : error.message);
+    console.error("Cashfree Verify Error (Direct):", error);
     throw new Error("Payment verification failed");
   }
 };
-

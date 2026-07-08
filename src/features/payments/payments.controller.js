@@ -29,11 +29,12 @@ export const getHistory = asyncHandler(async (req, res) => {
 });
 
 export const payOrder = asyncHandler(async (req, res) => {
+  const{_id}=req.body
   const { user_id, order_id, amount } = validate(
     paymentsValidation.payOrderSchema,
     req.body,
   );
-  await paymentsService.payOrder(user_id, order_id, Number(amount));
+  await paymentsService.payOrder(_id, order_id, Number(amount));
   return res.json(
     ApiResponse.success(null, "Order paid successfully using wallet balance"),
   );
@@ -55,12 +56,13 @@ export const recharge = asyncHandler(async (req, res) => {
 });
 
 export const initiateCashfreePayment = asyncHandler(async (req, res) => {
+  const{_id}=req.body
   const { user_id, amount } = validate(
     paymentsValidation.initiatePaymentSchema,
     req.body,
   );
   const result = await paymentsService.initiateCashfreePayment(
-    user_id,
+    _id,
     Number(amount),
   );
   return res.json(ApiResponse.success(result, "Order created successfully"));
@@ -79,11 +81,12 @@ export const verifyCashfreePayment = asyncHandler(async (req, res) => {
 });
 
 export const initiateOrderPayment = asyncHandler(async (req, res) => {
+  const{_id}=req.body
   const { user_id, order_id } = validate(
     paymentsValidation.initiateOrderPaymentSchema,
     req.body,
   );
-  const result = await paymentsService.initiateOrderPayment(user_id, order_id);
+  const result = await paymentsService.initiateOrderPayment(_id, order_id);
   return res.json(ApiResponse.success(result, "Order payment initiated successfully"));
 });
 

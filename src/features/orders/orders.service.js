@@ -185,9 +185,9 @@ export const broadcastOrderToNearbyDPs = async (
       // Filter out any DP that has at least one active order in their active_order_ids array
       {
         $match: {
-          active_order_ids: { $size: 0 }
-        }
-      }
+          active_order_ids: { $size: 0 },
+        },
+      },
     ]);
 
     const { sendPushNotification } =
@@ -243,7 +243,7 @@ export const broadcastOrderToNearbyDPs = async (
   }
 };
 
-export const createOrder = async (orderData, files) => {
+export const createOrder = async (orderData, files, userId) => {
   const {
     user_id,
     pickup_location,
@@ -321,7 +321,7 @@ export const createOrder = async (orderData, files) => {
     const order = await ordersRepository.createOrder(
       [
         {
-          user_id,
+          user_id: userId,
           pickup_location,
           sender_latitude: Number(sender_latitude),
           sender_longitude: Number(sender_longitude),
@@ -437,7 +437,15 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
     if (order.status === ORDER_STATUS.CANCELLED) return true;
 
     // Process Refund if order was paid
-    if (order.status === ORDER_STATUS.CONFIRMED) {
+    const eligibleForRefund = [
+      ORDER_STATUS.CONFIRMED,
+      ORDER_STATUS.ASSIGNED,
+      ORDER_STATUS.PROCESSING,
+      ORDER_STATUS.PACKED,
+      ORDER_STATUS.SHIPPED,
+    ].includes(order.status);
+
+    if (eligibleForRefund) {
       if (order.payment_id) {
         // Direct Payment Refund
         const payment = await Payment.findById(order.payment_id);
@@ -464,6 +472,7 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
           transaction_type: "order_payment",
           type: "debit",
         });
+        console.log("Wallet Transaction for Refund:", wTx?._id);
         if (wTx) {
           const wallet = await Wallet.findById(wTx.wallet_id);
           if (wallet) {
