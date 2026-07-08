@@ -676,7 +676,7 @@ export const notifyDp = async (orderId, packageDetailsId) => {
   // Prevent duplicate notifications
   const existingRequest = await OrderRequest.findOne({
     order_id: order._id,
-    status: null,
+    status: ORDER_REQUEST_STATUS.PENDING,
     notified_ids: { $all: nearestDps },
   });
 

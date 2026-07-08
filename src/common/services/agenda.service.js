@@ -25,7 +25,7 @@ export const initAgenda = async () => {
       // Check if it's still pending
       if (
         orderRequest &&
-        (orderRequest.status === "Pending" || orderRequest.status == null) &&
+        orderRequest.status === "Pending" &&
         orderRequest.request_type === "deliver to pdc"
       ) {
         orderRequest.status = "Accepted"; // accepted

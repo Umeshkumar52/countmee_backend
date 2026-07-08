@@ -275,103 +275,99 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     }
   }
 
-  throw new ApiError(400, "Something went wrong");
-});
-
-export const saveBroadcastPoint = asyncHandler(async (req, res) => {
-  const { order_id, user_id, radius, location, latitude, longitude } = validate(
-    dpValidation.saveBroadcastSchema,
-    req.body,
-  );
-
+  // If broadcast_id is not provided, create a new broadcast point (Legacy logic restored)
   const order = await Order.findById(order_id);
-  if (!order) throw new ApiError(404, "Order not found");
+    if (!order) throw new ApiError(404, "Order not found");
 
-  if (order.status_completed === "delivered to pdc") {
-    throw new ApiError(400, "Already Delivered to PDC");
-  }
+    if (order.status_completed === "delivered to pdc") {
+      throw new ApiError(400, "Already Delivered to PDC");
+    }
 
-  const travel = await dpService.findTravelByOrderAndUser(order_id, user_id);
+    const travel = await dpService.findTravelByOrderAndUser(order_id, user_id);
 
-  let broadcastObj = await Broadcast.findOne({ order_id: order_id }).sort({
-    created_at: -1,
-  });
-
-  if (!broadcastObj) {
-    const distance =
-      (await mapsService.haversineGreatCircleDistance(
-        Number(latitude),
-        Number(longitude),
-        order.receiver_latitude,
-        order.receiver_longitude,
-      )) / 1000;
-
-    broadcastObj = await Broadcast.create({
-      order_id,
-      broadcasted_by: user_id,
-      pickup_location: location,
-      pickup_latitude: Number(latitude),
-      pickup_longitude: Number(longitude),
-      distance,
-      pickup_otp: Math.floor(1000 + Math.random() * 9000),
-      drop_otp: Math.floor(1000 + Math.random() * 9000),
+    let broadcastObj = await Broadcast.findOne({ order_id: order_id }).sort({
+      created_at: -1,
     });
-  }
 
-  const minBroadcast = await mongoose
-    .model("MinBroadcastDist")
-    .findOne({ role: "DP" });
-  const searchRadius = minBroadcast
-    ? minBroadcast.minimum_broadcast_distance * 1000
-    : Number(radius) || 1000;
+    if (!broadcastObj) {
+      const distance =
+        (await mapsService.haversineGreatCircleDistance(
+          Number(latitude),
+          Number(longitude),
+          order.receiver_latitude,
+          order.receiver_longitude,
+        )) / 1000;
 
-  const nearestDps = await dpService.checkNearbyDps(
-    searchRadius,
-    broadcastObj._id,
-    user_id,
-  );
+      broadcastObj = await Broadcast.create({
+        order_id,
+        broadcasted_by: user_id,
+        pickup_location: location,
+        pickup_latitude: Number(latitude),
+        pickup_longitude: Number(longitude),
+        drop_location: order.drop_location,
+        drop_latitude: order.receiver_latitude,
+        drop_longitude: order.receiver_longitude,
+        distance,
+        pickup_otp: Math.floor(1000 + Math.random() * 9000),
+        drop_otp: Math.floor(1000 + Math.random() * 9000),
+      });
+    }
 
-  if (!nearestDps.length) {
-    return res.json(
-      ApiResponse.success({ status: "Pending" }, "no dp found in this area"),
+    const minBroadcast = await mongoose
+      .model("MinBroadcastDist")
+      .findOne({ role: "DP" });
+    const searchRadius = minBroadcast
+      ? minBroadcast.minimum_broadcast_distance * 1000
+      : Number(radius) || 1000;
+
+    // This calls the highly optimized checkNearbyDps function we just built
+    const nearestDps = await dpService.checkNearbyDps(
+      searchRadius,
+      broadcastObj._id,
+      user_id,
     );
-  }
 
-  let orderReq = await OrderRequest.findOne({
-    order_id: order_id,
-    request_type: "broadcast_dp",
-    broadcast_id: broadcastObj._id,
-    notified_ids: { $all: nearestDps },
-  });
+    if (!nearestDps.length) {
+      return res.json(
+        ApiResponse.success({ status: "Pending" }, "no dp found in this area"),
+      );
+    }
 
-  if (!orderReq) {
-    orderReq = await OrderRequest.create({
+    let orderReq = await OrderRequest.findOne({
       order_id: order_id,
-      requested_by: user_id,
-      notified_ids: nearestDps,
       request_type: "broadcast_dp",
       broadcast_id: broadcastObj._id,
+      notified_ids: { $all: nearestDps },
     });
 
-    order.delivery_type = "broadcast";
-    order.broadcast_id = broadcastObj._id;
-    order.status_completed = "broadcasted";
-    order.status = ORDER_STATUS.PROCESSING;
-    await order.save();
-  }
+    if (!orderReq) {
+      orderReq = await OrderRequest.create({
+        order_id: order_id,
+        requested_by: user_id,
+        notified_ids: nearestDps,
+        request_type: "broadcast_dp",
+        broadcast_id: broadcastObj._id,
+      });
 
-  const dps = await DpDetail.find({ user_id: { $in: nearestDps } });
+      order.delivery_type = "broadcast";
+      order.broadcast_id = broadcastObj._id;
+      order.status_completed = "broadcasted";
+      order.status = ORDER_STATUS.PROCESSING;
+      await order.save();
+    }
 
-  const data = {
-    dp: dps,
-    broadcast_id: broadcastObj._id,
-    broadcast: broadcastObj,
-    orderRequest: orderReq,
-    status: "Pending",
-  };
+    const dps = await DpDetail.find({ user_id: { $in: nearestDps } });
 
-  return res.json(ApiResponse.success(data, "dp"));
-});
+    const data = {
+      dp: dps,
+      broadcast_id: broadcastObj._id,
+      broadcast: broadcastObj,
+      orderRequest: orderReq,
+      status: "Pending",
+    };
+
+    return res.json(ApiResponse.success(data, "dp"));
+  });
 
 export const getMinBroadcastPoint = asyncHandler(async (req, res) => {
   const result = await dpService.getMinBroadcastPoint();
@@ -976,6 +972,10 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
             type: "Point",
             coordinates: [pdc.longitude, pdc.latitude],
           };
+          // Industrial Optimization: Unlock DP when they drop package at PDC
+          if (dpDetail.active_order_ids) {
+            dpDetail.active_order_ids.pull(order._id);
+          }
           await dpDetail.save({ session });
         }
       }
@@ -1011,9 +1011,9 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
         const earning =
           Math.round(
             (Math.round(distanceKm * 1000) / 1000) *
-              vehicleChargePerKm *
-              (deliveryChargePerKm / 100) *
-              100,
+            vehicleChargePerKm *
+            (deliveryChargePerKm / 100) *
+            100,
           ) / 100;
 
         travel.drop_location = pdc.address;

@@ -820,7 +820,7 @@ export const processActionDrop = async (orderId, pdcId, action) => {
     order_id: orderId,
     notified_ids: pdcId,
     request_type: "deliver to pdc",
-    status: { $in: [null, "Pending"] },
+    status: ORDER_REQUEST_STATUS.PENDING,
   });
 
   if (!orderRequest) {
