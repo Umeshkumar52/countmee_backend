@@ -8,6 +8,10 @@ import {
 } from "../../common/middlewares/auth.middleware.js";
 import { uploadToCloudinary } from "../../common/services/cloudinary.service.js";
 import { getLatLongFromAddress } from "../tracking/maps.service.js";
+import { PackageDetail } from "../orders/packageDetail.model.js";
+import { User } from "../users/user.model.js";
+import { sendNotificationToUser } from "../../common/services/socket.service.js";
+import { sendPushNotification } from "../../common/services/firebase.service.js";
 
 export const loginAdmin = async (email, password, fcmToken) => {
   const adminEmail = process.env.ADMIN_EMAIL || "admin@countmee.com";
@@ -286,10 +290,10 @@ export const addDp = async (body, files) => {
 
 export const bulkAddDp = async (dps, files) => {
   const errors = [];
-  
+
   for (let i = 0; i < dps.length; i++) {
     const dp = dps[i];
-    const row = dp.row || (i + 1);
+    const row = dp.row || i + 1;
 
     // Basic Details
     if (!dp.name) errors.push({ row, error: "Name is required" });
@@ -300,42 +304,64 @@ export const bulkAddDp = async (dps, files) => {
     if (!dp.address) errors.push({ row, error: "Address is required" });
 
     // Vehicle Details
-    if (!dp.vehicle_type) errors.push({ row, error: "Vehicle Type is required" });
-    if (!dp.vehicle_number) errors.push({ row, error: "Vehicle Number is required" });
+    if (!dp.vehicle_type)
+      errors.push({ row, error: "Vehicle Type is required" });
+    if (!dp.vehicle_number)
+      errors.push({ row, error: "Vehicle Number is required" });
 
     // Document Text Fields
-    if (!dp.aadhar_number) errors.push({ row, error: "Aadhar Number is required" });
+    if (!dp.aadhar_number)
+      errors.push({ row, error: "Aadhar Number is required" });
     if (!dp.rc_number) errors.push({ row, error: "RC Number is required" });
     if (!dp.dl_number) errors.push({ row, error: "DL Number is required" });
     if (!dp.bank_name) errors.push({ row, error: "Bank Name is required" });
-    if (!dp.bank_acc_number) errors.push({ row, error: "Bank Account Number is required" });
+    if (!dp.bank_acc_number)
+      errors.push({ row, error: "Bank Account Number is required" });
     if (!dp.bank_ifsc) errors.push({ row, error: "Bank IFSC is required" });
 
     const fileFields = [
-      "profile_img", "aadhar_imgfront", "aadhar_imgback",
-      "rc_imgfront", "rc_imgback", "dl_imgfront", "dl_imgback",
-      "bank_imagefront", "bank_imageback", "residence_img", "vehicle_img"
+      "profile_img",
+      "aadhar_imgfront",
+      "aadhar_imgback",
+      "rc_imgfront",
+      "rc_imgback",
+      "dl_imgfront",
+      "dl_imgback",
+      "bank_imagefront",
+      "bank_imageback",
+      "residence_img",
+      "vehicle_img",
     ];
 
     // Document Images Text Validation
     for (const field of fileFields) {
       if (!dp[field]) {
-        errors.push({ row, error: `Filename text missing in CSV for ${field}` });
+        errors.push({
+          row,
+          error: `Filename text missing in CSV for ${field}`,
+        });
       } else {
         // Strict Backend Validation: Check if the actual binary file was successfully received
         const expectedFieldName = `row_${i}_${field}`;
-        const hasFile = files && files.find(f => f.fieldname === expectedFieldName);
+        const hasFile =
+          files && files.find((f) => f.fieldname === expectedFieldName);
         if (!hasFile) {
-          errors.push({ row, error: `Actual image file missing for '${dp[field]}'. Please ensure you highlighted it and the name matches exactly.` });
+          errors.push({
+            row,
+            error: `Actual image file missing for '${dp[field]}'. Please ensure you highlighted it and the name matches exactly.`,
+          });
         }
       }
     }
 
     if (dp.phone) {
-       const existing = await adminRepository.findUserByPhoneAndType(dp.phone, ROLES.DP);
-       if (existing) {
-         errors.push({ row, error: `Phone number ${dp.phone} already exists` });
-       }
+      const existing = await adminRepository.findUserByPhoneAndType(
+        dp.phone,
+        ROLES.DP,
+      );
+      if (existing) {
+        errors.push({ row, error: `Phone number ${dp.phone} already exists` });
+      }
     }
   }
 
@@ -366,15 +392,21 @@ export const bulkAddDp = async (dps, files) => {
 
       if (files && Array.isArray(files)) {
         for (const field of fileFields) {
-           const expectedFieldName = `row_${i}_${field}`;
-           const matchedFile = files.find(f => f.fieldname === expectedFieldName);
-           if (matchedFile) {
-             const folder = field === "profile_img" ? "dp_profiles" : "dp_documents";
-             const uploadResult = await uploadToCloudinary(matchedFile.path, folder);
-             if (uploadResult) {
-               uploadResults[field] = uploadResult.secure_url;
-             }
-           }
+          const expectedFieldName = `row_${i}_${field}`;
+          const matchedFile = files.find(
+            (f) => f.fieldname === expectedFieldName,
+          );
+          if (matchedFile) {
+            const folder =
+              field === "profile_img" ? "dp_profiles" : "dp_documents";
+            const uploadResult = await uploadToCloudinary(
+              matchedFile.path,
+              folder,
+            );
+            if (uploadResult) {
+              uploadResults[field] = uploadResult.secure_url;
+            }
+          }
         }
       }
 
@@ -401,8 +433,10 @@ export const bulkAddDp = async (dps, files) => {
         user_id: newUser._id,
         vehicle_type: dp.vehicle_type,
         aadhar_number: dp.aadhar_number || null,
-        aadhar_imgfront: uploadResults.aadhar_imgfront || dp.aadhar_imgfront || null,
-        aadhar_imgback: uploadResults.aadhar_imgback || dp.aadhar_imgback || null,
+        aadhar_imgfront:
+          uploadResults.aadhar_imgfront || dp.aadhar_imgfront || null,
+        aadhar_imgback:
+          uploadResults.aadhar_imgback || dp.aadhar_imgback || null,
         rc_number: dp.rc_number || null,
         rc_imgfront: uploadResults.rc_imgfront || dp.rc_imgfront || null,
         rc_imgback: uploadResults.rc_imgback || dp.rc_imgback || null,
@@ -412,8 +446,10 @@ export const bulkAddDp = async (dps, files) => {
         bank_name: dp.bank_name || null,
         bank_acc_number: dp.bank_acc_number || null,
         bank_ifsc: dp.bank_ifsc || null,
-        bank_imagefront: uploadResults.bank_imagefront || dp.bank_imagefront || null,
-        bank_imageback: uploadResults.bank_imageback || dp.bank_imageback || null,
+        bank_imagefront:
+          uploadResults.bank_imagefront || dp.bank_imagefront || null,
+        bank_imageback:
+          uploadResults.bank_imageback || dp.bank_imageback || null,
         vehicle_number: dp.vehicle_number,
         residence_img: uploadResults.residence_img || dp.residence_img || null,
         vehicle_img: uploadResults.vehicle_img || dp.vehicle_img || null,
@@ -424,12 +460,15 @@ export const bulkAddDp = async (dps, files) => {
         rc_status: "Accept",
         dl_status: "Accept",
         bank_status: "Accept",
-        rv_status: "Accept"
+        rv_status: "Accept",
       });
       successCount++;
     } catch (err) {
       console.error(`Failed to insert DP at row ${dp.row}:`, err);
-      errors.push({ row: dp.row, error: err.message || "Database insertion failed" });
+      errors.push({
+        row: dp.row,
+        error: err.message || "Database insertion failed",
+      });
     }
   }
 
@@ -439,9 +478,9 @@ export const bulkAddDp = async (dps, files) => {
     throw errorObj;
   }
 
-  return { 
+  return {
     message: `Successfully registered ${successCount} Delivery Partners`,
-    insertionErrors: errors.length > 0 ? errors : undefined 
+    insertionErrors: errors.length > 0 ? errors : undefined,
   };
 };
 
@@ -869,7 +908,7 @@ export const getPaginatedOrders = async (
   scheduleDate,
   pickupPin,
   deliveryPin,
-  vehicleType
+  vehicleType,
 ) => {
   const query = {};
   if (statusList) {
@@ -913,7 +952,7 @@ export const getPendingOrders = async () => {
 export const getScheduledOrderStats = async () => {
   const Order = (await import("../orders/order.model.js")).Order;
   const today = new Date();
-  
+
   const formatDate = (date) => {
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -922,7 +961,11 @@ export const getScheduledOrderStats = async () => {
   };
 
   const getDisplayDate = (date) => {
-    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); // e.g. "15 Jun 2026"
+    return date.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }); // e.g. "15 Jun 2026"
   };
 
   const todayDate = new Date(today);
@@ -936,35 +979,61 @@ export const getScheduledOrderStats = async () => {
   dayAfterDate.setDate(dayAfterDate.getDate() + 2);
   const dayAfterStr = formatDate(dayAfterDate);
 
-  const [totalCount, todayCount, tomorrowCount, dayAfterCount] = await Promise.all([
-    Order.countDocuments({ order_type: "scheduled" }),
-    Order.countDocuments({ order_type: "scheduled", schedule_date: todayStr }),
-    Order.countDocuments({ order_type: "scheduled", schedule_date: tomorrowStr }),
-    Order.countDocuments({ order_type: "scheduled", schedule_date: dayAfterStr }),
-  ]);
+  const [totalCount, todayCount, tomorrowCount, dayAfterCount] =
+    await Promise.all([
+      Order.countDocuments({ order_type: "scheduled" }),
+      Order.countDocuments({
+        order_type: "scheduled",
+        schedule_date: todayStr,
+      }),
+      Order.countDocuments({
+        order_type: "scheduled",
+        schedule_date: tomorrowStr,
+      }),
+      Order.countDocuments({
+        order_type: "scheduled",
+        schedule_date: dayAfterStr,
+      }),
+    ]);
 
   return {
     total: totalCount,
-    today: { count: todayCount, date: todayStr, display: getDisplayDate(todayDate) },
-    tomorrow: { count: tomorrowCount, date: tomorrowStr, display: getDisplayDate(tomorrowDate) },
-    dayAfter: { count: dayAfterCount, date: dayAfterStr, display: getDisplayDate(dayAfterDate) }
+    today: {
+      count: todayCount,
+      date: todayStr,
+      display: getDisplayDate(todayDate),
+    },
+    tomorrow: {
+      count: tomorrowCount,
+      date: tomorrowStr,
+      display: getDisplayDate(tomorrowDate),
+    },
+    dayAfter: {
+      count: dayAfterCount,
+      date: dayAfterStr,
+      display: getDisplayDate(dayAfterDate),
+    },
   };
 };
 
 export const getScheduledFilters = async () => {
   const Order = (await import("../orders/order.model.js")).Order;
   const filterQuery = { order_type: "scheduled" };
-  
+
   const [pickupPins, deliveryPins, vehicleTypes] = await Promise.all([
-    Order.distinct('sender_pin_code', filterQuery),
-    Order.distinct('receiver_pin_code', filterQuery),
-    Order.distinct('mode_of_transport', filterQuery)
+    Order.distinct("sender_pin_code", filterQuery),
+    Order.distinct("receiver_pin_code", filterQuery),
+    Order.distinct("mode_of_transport", filterQuery),
   ]);
 
   return {
-    pickupPins: pickupPins.filter(pin => pin !== null && pin !== "").sort(),
-    deliveryPins: deliveryPins.filter(pin => pin !== null && pin !== "").sort(),
-    vehicleTypes: vehicleTypes.filter(type => type !== null && type !== "").sort()
+    pickupPins: pickupPins.filter((pin) => pin !== null && pin !== "").sort(),
+    deliveryPins: deliveryPins
+      .filter((pin) => pin !== null && pin !== "")
+      .sort(),
+    vehicleTypes: vehicleTypes
+      .filter((type) => type !== null && type !== "")
+      .sort(),
   };
 };
 
@@ -998,7 +1067,8 @@ export const getAssignOrdersSelect = async (orderId) => {
   const mongoose = await import("mongoose");
   const { Order } = await import("../orders/order.model.js");
   const { DpDetail } = await import("../deliveryPartner/dpDetail.model.js");
-  const { MinBroadcastDist } = await import("../tracking/minBroadcast.model.js");
+  const { MinBroadcastDist } =
+    await import("../tracking/minBroadcast.model.js");
 
   const order = await Order.findById(orderId);
   if (!order) throw new Error("Order not found");
@@ -1007,7 +1077,9 @@ export const getAssignOrdersSelect = async (orderId) => {
   const minBroadcast = await MinBroadcastDist.findOne({
     role: { $regex: /^dp$/i },
   });
-  const maxDistanceKm = minBroadcast ? minBroadcast.minimum_broadcast_distance : 5;
+  const maxDistanceKm = minBroadcast
+    ? minBroadcast.minimum_broadcast_distance
+    : 5;
   const maxDistanceMeters = maxDistanceKm * 1000;
 
   // Run the optimized geo-location pipeline to find free DPs
@@ -1021,7 +1093,11 @@ export const getAssignOrdersSelect = async (orderId) => {
         distanceField: "distance_meters",
         maxDistance: maxDistanceMeters,
         spherical: true,
-        query: { online: true, document_approval: "Approved", active_order_ids: { $size: 0 } },
+        query: {
+          online: true,
+          document_approval: "Approved",
+          active_order_ids: { $size: 0 },
+        },
       },
     },
     // Filter by vehicle type
@@ -1052,7 +1128,7 @@ export const getAssignOrdersSelect = async (orderId) => {
   ]);
 
   // Extract just the user object to match the exact frontend expectation
-  const dps = targetDps.map(dp => dp.user);
+  const dps = targetDps.map((dp) => dp.user);
 
   return { orderId, dps };
 };
@@ -1061,8 +1137,44 @@ export const assignDeliveryboy = async (order_id, dp_id) => {
   const order = await adminRepository.findOrderById(order_id);
   if (!order) throw new Error("Order not found");
 
-  await adminRepository.assignDpToOrder(order_id, dp_id, order.user_id);
-  return { message: "Order assigned successfully" };
+  if (order.order_type === "schedule") {
+    // Current flow: Directly lock the DP and move order to PROCESSING
+    await adminRepository.assignDpToOrder(order_id, dp_id, order.user_id);
+    return { message: "Order assigned successfully" };
+  } else {
+    // Normal flow: Send a targeted request without locking immediately
+    await adminRepository.sendTargetedRequest(order_id, dp_id, order.user_id);
+
+    // Notify the chosen DP via Socket and FCM
+    const packageDetail = await PackageDetail.findOne({
+      _id: order.package_id,
+    });
+    const dpUser = await User.findById(dp_id).select("fcm_tokens");
+
+    const payload = {
+      type: "new_order_request",
+      order_id: order._id,
+      pickup_location: order.pickup_location,
+      drop_location: order.drop_location,
+      charges: order.charges?.toString() || "0",
+      product_description: packageDetail?.product_description || "",
+      no_of_items: packageDetail?.no_of_items?.toString() || "1",
+    };
+
+    // Socket notification
+    sendNotificationToUser(dp_id, payload);
+
+    // FCM Push notification
+    if (dpUser?.fcm_tokens?.length > 0) {
+      await sendPushNotification(
+        dpUser.fcm_tokens,
+        "New Order Request!",
+        `Pickup: ${order.pickup_location}`,
+        payload,
+      );
+    }
+    return { message: "Request sent to Delivery Partner successfully" };
+  }
 };
 
 export const getParticularOrder = async (order_id) => {
@@ -1073,14 +1185,14 @@ export const getParticularOrder = async (order_id) => {
 
 export const getFeedbacks = async (role, page = 1, limit = 10) => {
   const query = {};
-  if (role === 'User') {
+  if (role === "User") {
     query.from_customer = { $exists: true, $ne: null };
-  } else if (role === 'Delivery Partner') {
+  } else if (role === "Delivery Partner") {
     query.from_dp = { $exists: true, $ne: null };
-  } else if (role === 'PDC') {
+  } else if (role === "PDC") {
     query.from_pdc = { $exists: true, $ne: null };
   }
-  
+
   return await adminRepository.findPaginatedRatings(query, page, limit);
 };
 
@@ -1295,8 +1407,12 @@ export const getReportData = async (report_type, start_date, end_date) => {
       created_at: o.createdAt
         ? new Date(o.createdAt).toISOString().split("T")[0]
         : "N/A",
-      amountWithoutGst: o.charges ? Math.round((o.charges / 1.05) * 100) / 100 : 0,
-      gstAmount: o.charges ? Math.round((o.charges - (o.charges / 1.05)) * 100) / 100 : 0,
+      amountWithoutGst: o.charges
+        ? Math.round((o.charges / 1.05) * 100) / 100
+        : 0,
+      gstAmount: o.charges
+        ? Math.round((o.charges - o.charges / 1.05) * 100) / 100
+        : 0,
       status: o.status,
     }));
   } else if (report_type === "user") {
@@ -1380,9 +1496,13 @@ export const updateDeliverCharges = async (updates) => {
       base_distance: update.base_distance,
       base_price: update.base_price,
       per_km_price: update.per_km_price,
-      extra_min_charge: update.extra_min_charge !== undefined ? update.extra_min_charge : 0,
+      extra_min_charge:
+        update.extra_min_charge !== undefined ? update.extra_min_charge : 0,
       grace_period: update.grace_period !== undefined ? update.grace_period : 5,
-      pickup_geofence_radius: update.pickup_geofence_radius !== undefined ? update.pickup_geofence_radius : 100,
+      pickup_geofence_radius:
+        update.pickup_geofence_radius !== undefined
+          ? update.pickup_geofence_radius
+          : 100,
       dp_commission: update.dp_commission,
       pdc_commission: update.pdc_commission,
       max_weight: update.max_weight !== undefined ? update.max_weight : 0,
@@ -1471,9 +1591,9 @@ export const editVehicleSubcategory = async (id, body) => {
     }
   }
 
-  if (body.status === 'Approved') {
+  if (body.status === "Approved") {
     body.is_active = true;
-  } else if (body.status === 'Rejected') {
+  } else if (body.status === "Rejected") {
     body.is_active = false;
   }
 
@@ -1509,7 +1629,9 @@ export const findNearestDpsForOrders = async (orderIds) => {
   }
 
   const packageIds = orders.map((o) => o.package_id).filter(Boolean);
-  const packages = await PackageDetail.find({ _id: { $in: packageIds } }).lean();
+  const packages = await PackageDetail.find({
+    _id: { $in: packageIds },
+  }).lean();
 
   // 2. Capacity Math
   let totalWeight = 0;
@@ -1525,68 +1647,88 @@ export const findNearestDpsForOrders = async (orderIds) => {
   }
 
   // 3. Vehicle Filter
-  const vehicleTypes = await DeliverCharge.find().lean();
-  const eligibleVehicleTypes = vehicleTypes
-    .filter(
-      (vt) =>
-        vt.max_weight >= totalWeight &&
-        vt.max_length >= maxLength &&
-        vt.max_width >= maxWidth &&
-        vt.max_height >= maxHeight
-    )
-    .map((vt) => vt.vehicle_type);
-
-  if (eligibleVehicleTypes.length === 0) {
-    throw new Error("No vehicle type has enough capacity for these orders");
+  const eligibleVehicleTypes = [orders[0].mode_of_transport];
+  if (eligibleVehicleTypes.length === 0 || !eligibleVehicleTypes[0]) {
+    throw new Error("Order does not specify a valid vehicle type");
   }
 
   // 4. Broadcast Range
   const { distancesByRole } = await getBroadcastDistance();
-  const maxDistanceStr = distancesByRole["Delivery Partner"] || "5 km"; // fallback
-  const maxDistanceKm = parseFloat(maxDistanceStr.replace(/[^0-9.]/g, "")) || 5;
+  const maxDistanceStr = distancesByRole[ROLES.DP] || "100"; // fallback
+  const maxDistanceKm = parseFloat(maxDistanceStr, "");
+  // 5. Fetch DPs via Optimized Aggregation Pipeline
+  const lng = parseFloat(orders[0].sender_longitude);
+  const lat = parseFloat(orders[0].sender_latitude);
+  const maxDistanceMeters = maxDistanceKm * 1000;
 
-  // 5. Fetch DPs
-  const eligibleDps = await DpDetail.find({
-    online: true,
-    document_approval: "Approved",
-  }).populate("dpDocument").lean();
-
-  // Filter DPs by capable vehicle type
-  const capableDps = eligibleDps.filter(
-    (dp) =>
-      dp.dpDocument &&
-      eligibleVehicleTypes.includes(dp.dpDocument.vehicle_type)
-  );
-
-  // 6. Distance Math
-  const pickupLat = orders[0].sender_latitude;
-  const pickupLon = orders[0].sender_longitude;
-
-  const dpsWithDistance = [];
-  for (const dp of capableDps) {
-    const distanceKm = calculateDistance(
-      pickupLat,
-      pickupLon,
-      dp.latitude,
-      dp.longitude
-    );
-    const user = await User.findById(dp.user_id).select("name phone profile_pic").lean();
-    dpsWithDistance.push({
-      user_id: dp.user_id,
-      name: user?.name || "Unknown DP",
-      phone: user?.phone || "",
-      profile_pic: dp.profile_img || "",
-      distance_km: distanceKm,
-      vehicle_type: dp.dpDocument.vehicle_type,
-      latitude: dp.latitude,
-      longitude: dp.longitude,
-    });
+  if (isNaN(lng) || isNaN(lat)) {
+    throw new Error("Invalid order coordinates for finding DPs");
   }
 
-  // 7. Filter & Sort
-  const nearestDps = dpsWithDistance
-    .filter((dp) => dp.distance_km <= maxDistanceKm)
-    .sort((a, b) => a.distance_km - b.distance_km);
+  const orderTransportMode = orders[0].mode_of_transport;
+
+  const aggregatedDps = await DpDetail.aggregate([
+    {
+      $geoNear: {
+        near: {
+          type: "Point",
+          coordinates: [lng, lat],
+        },
+        distanceField: "distance_meters",
+        maxDistance: maxDistanceMeters,
+        spherical: true,
+        query: {
+          online: true,
+          document_approval: "Approved",
+          $or: [
+            { active_order_ids: { $size: 0 } },
+            { active_order_ids: { $exists: false } },
+          ],
+        },
+      },
+    },
+    // Filter by vehicle type
+    {
+      $lookup: {
+        from: "dpdocuments",
+        localField: "user_id",
+        foreignField: "user_id",
+        as: "dpDocument",
+      },
+    },
+    { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
+    {
+      $match: {
+        "dpDocument.vehicle_type": {
+          $regex: new RegExp(`^${orderTransportMode}$`, "i"),
+        },
+      },
+    },
+    // Get full user details
+    {
+      $lookup: {
+        from: "users",
+        localField: "user_id",
+        foreignField: "_id",
+        as: "user",
+      },
+    },
+    { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+    {
+      $sort: { distance_meters: 1 },
+    },
+  ]);
+  console.log("Aggregated DPs:", aggregatedDps);
+  const nearestDps = aggregatedDps.map((dp) => ({
+    user_id: dp.user_id,
+    name: dp.user?.name || "Unknown DP",
+    phone: dp.user?.phone || "",
+    profile_pic: dp.profile_img || "",
+    distance_km: dp.distance_meters / 1000,
+    vehicle_type: dp.dpDocument.vehicle_type,
+    latitude: dp.geo_location?.coordinates?.[1] || dp.latitude,
+    longitude: dp.geo_location?.coordinates?.[0] || dp.longitude,
+  }));
 
   return nearestDps;
 };
@@ -1595,7 +1737,8 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
   const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
   const { OrderBundle } = await import("../orders/orderBundle.model.js");
-  const { Notification } = await import("../notifications/notification.model.js");
+  const { Notification } =
+    await import("../notifications/notification.model.js");
 
   // Generate unique bundle ID
   const bundle_id = `BNDL-${Date.now()}${Math.floor(Math.random() * 1000)}`;
@@ -1612,7 +1755,7 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
     dp_id: null,
     notified_dps: dpIds,
     orders: orderIds,
-    status: "broadcasting"
+    status: "broadcasting",
   });
   await bundle.save();
 
@@ -1623,9 +1766,9 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
       notifiable_id: dpId,
       title: "New Order Bundle Request!",
       message: `You have received a new Order Bundle (${bundle_id}) containing ${orderIds.length} orders. Open your app to accept.`,
-      // Assuming the app can handle a bundle broadcast even without order_id, 
+      // Assuming the app can handle a bundle broadcast even without order_id,
       // or we can pass the bundle_id in the message or add it if Notification schema is expanded.
-      order_id: null
+      order_id: null,
     });
     await notify.save();
   }
@@ -1633,19 +1776,25 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
   // Update order statuses to processing
   await Order.updateMany(
     { _id: { $in: orderIds } },
-    { $set: { status: "processing" } }
+    { $set: { status: "processing" } },
   );
 
-  return { message: "Bundle broadcasted successfully to selected Delivery Partners", bundle_id, bundle };
+  return {
+    message: "Bundle broadcasted successfully to selected Delivery Partners",
+    bundle_id,
+    bundle,
+  };
 };
 
 export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
   const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
   const { OrderBundle } = await import("../orders/orderBundle.model.js");
-  const { Notification } = await import("../notifications/notification.model.js");
+  const { Notification } =
+    await import("../notifications/notification.model.js");
   const adminRepository = await import("./admin.repository.js");
-  const { broadcastToAdmins, sendNotificationToUser } = await import("../../common/services/socket.service.js");
+  const { broadcastToAdmins, sendNotificationToUser } =
+    await import("../../common/services/socket.service.js");
   const { ROLES } = await import("../../constants/index.js");
 
   // 1. Fetch Bundle
@@ -1670,10 +1819,13 @@ export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
     notifiable_type: ROLES.DP,
     notifiable_id: dp_id,
     title: "Order Bundle Assigned",
-    message: `Congratulations! Admin has assigned order bundle ${bundle_id} to you.`
+    message: `Congratulations! Admin has assigned order bundle ${bundle_id} to you.`,
   });
   await notify.save();
-  sendNotificationToUser(dp_id, { title: notify.title, message: notify.message });
+  sendNotificationToUser(dp_id, {
+    title: notify.title,
+    message: notify.message,
+  });
 
   // 5. Broadcast to Admins to update live tables
   broadcastToAdmins("BUNDLE_ASSIGNED", { bundle_id, dp_id });
@@ -1687,9 +1839,9 @@ export const getBundleResponses = async (bundle_id) => {
   const { User } = await import("../users/user.model.js");
 
   const bundle = await OrderBundle.findOne({ bundle_id })
-    .populate('notified_dps', 'name email phone')
-    .populate('accepted_dps', 'name email phone')
-    .populate('rejected_dps', 'name email phone')
+    .populate("notified_dps", "name email phone")
+    .populate("accepted_dps", "name email phone")
+    .populate("rejected_dps", "name email phone")
     .lean();
 
   if (!bundle) {
@@ -1701,15 +1853,17 @@ export const getBundleResponses = async (bundle_id) => {
 
   const addDpToResponses = async (dp, responseStatus) => {
     if (!dp) return;
-    
+
     // Fetch vehicle details
     const dpDoc = await DpDocument.findOne({ user_id: dp._id }).lean();
     let vehicleStr = "N/A";
     if (dpDoc) {
       const vNo = dpDoc.vehicle_number || dpDoc.rc_number || "N/A";
       const vType = dpDoc.vehicle_type || "";
-      const cap = dpDoc.vehicle_max_capacity ? `${dpDoc.vehicle_max_capacity}T` : "";
-      vehicleStr = `${vNo}${vType || cap ? ` · ${vType} ${cap}` : ''}`;
+      const cap = dpDoc.vehicle_max_capacity
+        ? `${dpDoc.vehicle_max_capacity}T`
+        : "";
+      vehicleStr = `${vNo}${vType || cap ? ` · ${vType} ${cap}` : ""}`;
     }
 
     responses.push({
@@ -1718,18 +1872,21 @@ export const getBundleResponses = async (bundle_id) => {
       phone: dp.phone,
       response: responseStatus,
       time: "-", // Not tracked currently
-      vehicle: vehicleStr
+      vehicle: vehicleStr,
     });
   };
 
-  const acceptedIds = bundle.accepted_dps.map(d => d._id.toString());
-  const rejectedIds = bundle.rejected_dps.map(d => d._id.toString());
+  const acceptedIds = bundle.accepted_dps.map((d) => d._id.toString());
+  const rejectedIds = bundle.rejected_dps.map((d) => d._id.toString());
 
   // Merge all DPs to ensure we don't miss anyone who responded but wasn't originally notified
   const allDpMap = new Map();
-  if (bundle.notified_dps) bundle.notified_dps.forEach(dp => allDpMap.set(dp._id.toString(), dp));
-  if (bundle.accepted_dps) bundle.accepted_dps.forEach(dp => allDpMap.set(dp._id.toString(), dp));
-  if (bundle.rejected_dps) bundle.rejected_dps.forEach(dp => allDpMap.set(dp._id.toString(), dp));
+  if (bundle.notified_dps)
+    bundle.notified_dps.forEach((dp) => allDpMap.set(dp._id.toString(), dp));
+  if (bundle.accepted_dps)
+    bundle.accepted_dps.forEach((dp) => allDpMap.set(dp._id.toString(), dp));
+  if (bundle.rejected_dps)
+    bundle.rejected_dps.forEach((dp) => allDpMap.set(dp._id.toString(), dp));
 
   const uniqueDps = Array.from(allDpMap.values());
 
@@ -1747,7 +1904,10 @@ export const getBundleResponses = async (bundle_id) => {
     notified: bundle.notified_dps.length,
     accepted: bundle.accepted_dps.length,
     rejected: bundle.rejected_dps.length,
-    pending: bundle.notified_dps.length - bundle.accepted_dps.length - bundle.rejected_dps.length
+    pending:
+      bundle.notified_dps.length -
+      bundle.accepted_dps.length -
+      bundle.rejected_dps.length,
   };
 
   return { bundle, responses, metrics };
@@ -1760,10 +1920,10 @@ export const getBundleTracking = async (bundle_id) => {
 
   const bundle = await OrderBundle.findOne({ bundle_id })
     .populate({
-      path: 'orders',
-      populate: { path: 'user_id', select: 'name email phone' }
+      path: "orders",
+      populate: { path: "user_id", select: "name email phone" },
     })
-    .populate('dp_id', 'name phone email')
+    .populate("dp_id", "name phone email")
     .lean();
 
   if (!bundle) {
@@ -1780,21 +1940,21 @@ export const getBundleTracking = async (bundle_id) => {
 
 export const getActiveBundles = async () => {
   const { OrderBundle } = await import("../orders/orderBundle.model.js");
-  
+
   // Fetch bundles that are in broadcasting, pending, or assigned status
   const bundles = await OrderBundle.find({
-    status: { $in: ['broadcasting', 'pending', 'assigned'] }
+    status: { $in: ["broadcasting", "pending", "assigned"] },
   })
-    .populate('notified_dps', 'name email phone')
-    .populate('accepted_dps', 'name email phone')
-    .populate('rejected_dps', 'name email phone')
+    .populate("notified_dps", "name email phone")
+    .populate("accepted_dps", "name email phone")
+    .populate("rejected_dps", "name email phone")
     .populate({
-      path: 'orders',
-      populate: { path: 'package_id' }
+      path: "orders",
+      populate: { path: "package_id" },
     })
     .sort({ createdAt: -1 })
     .lean();
-    
+
   return { bundles };
 };
 
@@ -1810,8 +1970,10 @@ export const getBundleSummary = async (orderIds) => {
   }
 
   const packageIds = orders.map((o) => o.package_id).filter(Boolean);
-  const packages = await PackageDetail.find({ _id: { $in: packageIds } }).lean();
-  
+  const packages = await PackageDetail.find({
+    _id: { $in: packageIds },
+  }).lean();
+
   // Create a map for quick lookup
   const packageMap = packages.reduce((acc, pkg) => {
     acc[pkg._id.toString()] = pkg;
@@ -1819,12 +1981,12 @@ export const getBundleSummary = async (orderIds) => {
   }, {});
 
   const totalProduct = orders.length;
-  
+
   let totalWeight = 0;
   let maxLength = 0;
   let maxWidth = 0;
   let maxHeight = 0;
-  
+
   const orderBreakdown = [];
 
   let totalPrice = 0;
@@ -1834,7 +1996,7 @@ export const getBundleSummary = async (orderIds) => {
     const order = orders[i];
     const pkg = packageMap[order.package_id?.toString()];
     const weight = parseFloat(pkg?.product_weight || 0);
-    
+
     totalWeight += weight;
     maxLength = Math.max(maxLength, parseFloat(pkg?.product_length || 0));
     maxWidth = Math.max(maxWidth, parseFloat(pkg?.product_width || 0));
@@ -1842,11 +2004,11 @@ export const getBundleSummary = async (orderIds) => {
 
     totalPrice += parseFloat(order.amount || order.charges || 0);
     estDistance += parseFloat(order.distance || 0);
-    
+
     orderBreakdown.push({
       label: `Order ${i + 1}`,
       order_number: order.order_id || order._id,
-      weight
+      weight,
     });
   }
 
@@ -1854,7 +2016,7 @@ export const getBundleSummary = async (orderIds) => {
   const vehicleTypes = await DeliverCharge.find().lean();
   // Sort vehicle types by capacity ascending
   vehicleTypes.sort((a, b) => (a.max_weight || 0) - (b.max_weight || 0));
-  
+
   let recommendedVehicle = null;
   for (const vt of vehicleTypes) {
     if (
@@ -1868,43 +2030,88 @@ export const getBundleSummary = async (orderIds) => {
     }
   }
 
-  // Fetch Capable DPs directly
-  const capableDps = [];
-  if (recommendedVehicle) {
+  // Fetch Capable DPs directly using optimized spatial aggregation
+  let capableDps = [];
+  if (recommendedVehicle && orders.length > 0) {
     const DpDetail = mongoose.default.model("DpDetail");
-    const DpDocument = mongoose.default.model("DpDocument");
-    const User = mongoose.default.model("User");
+    const MinBroadcastDist = mongoose.default.model("MinBroadcastDist");
 
-    // We fetch DPs with matching vehicle type
-    const dpDocs = await DpDocument.find({
-      vehicle_type: recommendedVehicle.vehicle_type
-    }).lean();
-    
-    for (const doc of dpDocs) {
-      if (!doc.user_id) continue;
-      
-      const [dpDetail, user] = await Promise.all([
-        DpDetail.findOne({ user_id: doc.user_id }).lean(),
-        User.findById(doc.user_id).lean()
+    // Get minimum broadcast distance for DP role
+    const minBroadcast = await MinBroadcastDist.findOne({
+      role: { $regex: /^dp$/i },
+    });
+    const maxDistanceKm = minBroadcast
+      ? minBroadcast.minimum_broadcast_distance
+      : 5;
+    const maxDistanceMeters = maxDistanceKm * 1000;
+
+    const firstOrder = orders[0];
+    const lng = parseFloat(firstOrder.sender_longitude);
+    const lat = parseFloat(firstOrder.sender_latitude);
+
+    if (!isNaN(lng) && !isNaN(lat)) {
+      const targetDps = await DpDetail.aggregate([
+        {
+          $geoNear: {
+            near: {
+              type: "Point",
+              coordinates: [lng, lat],
+            },
+            distanceField: "distance_meters",
+            maxDistance: maxDistanceMeters,
+            spherical: true,
+            query: {
+              online: true,
+              document_approval: "Approved",
+              $or: [
+                { active_order_ids: { $exists: false } },
+                { active_order_ids: { $size: 0 } },
+              ],
+            },
+          },
+        },
+        // Filter by vehicle type
+        {
+          $lookup: {
+            from: "dpdocuments",
+            localField: "user_id",
+            foreignField: "user_id",
+            as: "dpDocument",
+          },
+        },
+        { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
+        {
+          $match: {
+            "dpDocument.vehicle_type": recommendedVehicle.vehicle_type,
+          },
+        },
+        // Get full user details
+        {
+          $lookup: {
+            from: "users",
+            localField: "user_id",
+            foreignField: "_id",
+            as: "user",
+          },
+        },
+        { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } },
       ]);
-      
-      if (dpDetail && user) {
-        capableDps.push({
-          user_id: doc.user_id,
-          name: user.name || "Unknown DP",
-          phone: user.phone || "",
-          profile_pic: dpDetail.profile_img || "",
-          vehicle_type: doc.vehicle_type,
-          vehicle_no: doc.rc_number || "N/A",
-          capacity: recommendedVehicle.max_weight,
-          location: dpDetail.location || dpDetail.address || "Unknown Location",
-          latitude: dpDetail.latitude,
-          longitude: dpDetail.longitude,
-          status: dpDetail.online ? "Available" : "On Trip", // Simplified for mockup
-          rating: user.rating || 4.5,
-          distance_km: (Math.random() * 5 + 1).toFixed(1) // Mock distance since this isn't geo-queried right now, usually done via nearest DP logic
-        });
-      }
+
+      capableDps = targetDps.map((dp) => ({
+        user_id: dp.user_id,
+        name: dp.user.name || "Unknown DP",
+        phone: dp.user.phone || "",
+        profile_pic: dp.profile_img || "",
+        vehicle_type: dp.dpDocument.vehicle_type,
+        vehicle_no: dp.dpDocument.rc_number || "N/A",
+        capacity: recommendedVehicle.max_weight,
+        location: dp.location || dp.address || "Unknown Location",
+        latitude: dp.latitude,
+        longitude: dp.longitude,
+        status: dp.online ? "Available" : "On Trip",
+        rating: dp.user.rating || 4.5,
+        distance_km: (dp.distance_meters / 1000).toFixed(1), // Real calculated distance
+      }));
     }
   }
 
@@ -1916,10 +2123,10 @@ export const getBundleSummary = async (orderIds) => {
     orderBreakdown,
     recommendedVehicle: recommendedVehicle || null,
     capableDps,
-    vehicleMatrix: vehicleTypes.map(vt => ({
+    vehicleMatrix: vehicleTypes.map((vt) => ({
       type: vt.vehicle_type,
-      max_weight: vt.max_weight
-    }))
+      max_weight: vt.max_weight,
+    })),
   };
 };
 
@@ -1929,7 +2136,8 @@ export const processManualRefund = async (order_id, amount, reason) => {
   const Payment = mongoose.default.model("Payment");
   const WalletTransaction = mongoose.default.model("WalletTransaction");
   const Wallet = mongoose.default.model("Wallet");
-  const { sendNotification } = await import("../../common/services/firebase.service.js");
+  const { sendNotification } =
+    await import("../../common/services/firebase.service.js");
   const { ROLES } = await import("../../constants/index.js");
 
   const order = await Order.findById(order_id);
@@ -1941,7 +2149,9 @@ export const processManualRefund = async (order_id, amount, reason) => {
   }
 
   if (refundAmount > order.charges) {
-    throw new Error(`Refund amount cannot exceed the order charges (₹${order.charges})`);
+    throw new Error(
+      `Refund amount cannot exceed the order charges (₹${order.charges})`,
+    );
   }
 
   let refundType = null;
@@ -1952,7 +2162,8 @@ export const processManualRefund = async (order_id, amount, reason) => {
     if (!payment || payment.status !== "SUCCESS") {
       throw new Error("No successful direct payment found for this order");
     }
-    const { createRefund } = await import("../../common/services/refund.service.js");
+    const { createRefund } =
+      await import("../../common/services/refund.service.js");
     await createRefund({
       paymentId: payment.cf_order_id,
       amount: refundAmount,
@@ -1974,7 +2185,9 @@ export const processManualRefund = async (order_id, amount, reason) => {
       wallet_id: wallet._id,
       amount: refundAmount,
       type: "credit",
-      description: reason ? `Admin Refund: ${reason}` : `Admin Refund for Order #${order._id}`,
+      description: reason
+        ? `Admin Refund: ${reason}`
+        : `Admin Refund for Order #${order._id}`,
       transaction_type: "refund",
       reference_id: order._id,
       status: "completed",
@@ -1997,6 +2210,6 @@ export const processManualRefund = async (order_id, amount, reason) => {
     success: true,
     message: `Successfully processed ₹${refundAmount} refund via ${refundType}`,
     order_id: order._id,
-    refundAmount
+    refundAmount,
   };
 };

@@ -244,6 +244,53 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
   }
 };
 
+export const sendTargetedRequest = async (order_id, dp_id, customer_id) => {
+  let customerObjId = customer_id?._id || customer_id;
+  if (!customerObjId) {
+    const rawOrder = await Order.findById(order_id).select('user_id').lean();
+    customerObjId = rawOrder?.user_id;
+  }
+  const session = await Order.startSession();
+  session.startTransaction();
+  try {
+    // Ensure Order is in PENDING state (clear any old pickup_dp_id)
+    await Order.updateOne(
+      { _id: order_id },
+      {
+        $unset: { pickup_dp_id: 1, dp_accept_time: 1 },
+        $set: { status: ORDER_STATUS.PENDING }
+      },
+      { session }
+    );
+
+    // Cancel active uncompleted OrderRequests for this order to prevent conflicts
+    await OrderRequest.updateMany(
+      { order_id, complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING },
+      { status: ORDER_REQUEST_STATUS.REJECTED },
+      { session }
+    );
+
+    // Create a targeted PENDING OrderRequest for this DP
+    await OrderRequest.create(
+      [{
+        order_id,
+        requested_by: customerObjId,
+        notified_ids: [dp_id],
+        status: null, // pending acceptance
+        request_type: 'direct'
+      }],
+      { session, ordered: true }
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
+  }
+};
+
 export const getOverallStats = async () => {
   return await MinBroadcastDist.find();
 };
@@ -334,7 +381,9 @@ export const findOrderById = async (id) => {
     .populate("user_id")
     .populate("pickup_dp_id")
     .populate("delivery_dp_id")
-    .populate("package_id");
+    .populate("package_id")
+    .populate("payment_id")
+    .populate("wallet_transaction_id");
 };
 
 export const updateOrder = async (id, updateData) => {

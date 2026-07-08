@@ -3,6 +3,7 @@ import {
   ORDER_STATUS,
   USER_ACTION_STATUS,
 } from "../../constants/orderStatus.js";
+import { VEHICLE_TYPES } from "../../constants/index.js";
 
 const orderSchema = new mongoose.Schema(
   {
@@ -24,7 +25,13 @@ const orderSchema = new mongoose.Schema(
     receiver_longitude: { type: Number, required: true },
     mode_of_transport: {
       type: String,
-      required: true,
+      enum: [
+        VEHICLE_TYPES.BY_HAND,
+        VEHICLE_TYPES.TWO_WHEELER,
+        VEHICLE_TYPES.THREE_WHEELER,
+        VEHICLE_TYPES.FOUR_WHEELER,
+      ],
+      default: VEHICLE_TYPES.TWO_WHEELER,
     },
     sender_name: { type: String, required: true },
     sender_phone: { type: String, required: true },
