@@ -4,7 +4,6 @@ import { ApiResponse } from "../../common/utils/responseFormatter.js";
 import { validate } from "../../common/utils/validationHelper.js";
 import * as paymentsValidation from "./payments.validation.js";
 
-
 export const cashfreeWebhookController = asyncHandler(async (req, res) => {
   await paymentsService.cashfreeWebhook(req.body);
   return res.status(200).send("OK");
@@ -29,7 +28,7 @@ export const getHistory = asyncHandler(async (req, res) => {
 });
 
 export const payOrder = asyncHandler(async (req, res) => {
-  const{_id}=req.body
+  const { _id } = req.user;
   const { user_id, order_id, amount } = validate(
     paymentsValidation.payOrderSchema,
     req.body,
@@ -56,7 +55,7 @@ export const recharge = asyncHandler(async (req, res) => {
 });
 
 export const initiateCashfreePayment = asyncHandler(async (req, res) => {
-  const{_id}=req.body
+  const { _id } = req.body;
   const { user_id, amount } = validate(
     paymentsValidation.initiatePaymentSchema,
     req.body,
@@ -81,13 +80,15 @@ export const verifyCashfreePayment = asyncHandler(async (req, res) => {
 });
 
 export const initiateOrderPayment = asyncHandler(async (req, res) => {
-  const{_id}=req.body
+  const { _id } = req.body;
   const { user_id, order_id } = validate(
     paymentsValidation.initiateOrderPaymentSchema,
     req.body,
   );
   const result = await paymentsService.initiateOrderPayment(_id, order_id);
-  return res.json(ApiResponse.success(result, "Order payment initiated successfully"));
+  return res.json(
+    ApiResponse.success(result, "Order payment initiated successfully"),
+  );
 });
 
 export const verifyOrderPayment = asyncHandler(async (req, res) => {
@@ -95,7 +96,10 @@ export const verifyOrderPayment = asyncHandler(async (req, res) => {
     paymentsValidation.verifyOrderPaymentSchema,
     req.body,
   );
-  const result = await paymentsService.verifyOrderPayment(cf_order_id, order_id);
+  const result = await paymentsService.verifyOrderPayment(
+    cf_order_id,
+    order_id,
+  );
   const message = result.already_processed
     ? "Payment already processed"
     : "Order payment verified successfully";

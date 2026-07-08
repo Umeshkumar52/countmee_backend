@@ -214,7 +214,8 @@ export const payOrder = async (user_id, order_id, amount) => {
     console.log("Wallet Transaction Created:", transactionRecord?._id);
     // Update order status
     order.status = ORDER_STATUS.CONFIRMED; // Paid/Active
-    order.wallet_transaction_id = transactionRecord?._id || transactionRecord?.id;
+    order.wallet_transaction_id =
+      transactionRecord?._id || transactionRecord?.id;
     await order.save({ session });
 
     // Broadcast to DP if normal order

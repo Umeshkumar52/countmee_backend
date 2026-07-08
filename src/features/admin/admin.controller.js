@@ -96,7 +96,7 @@ export const postBulkAddDp = async (req, res, next) => {
     } else {
       dps = req.body;
     }
-    
+
     if (!Array.isArray(dps) || dps.length === 0) {
       throw new Error("No data provided or invalid format");
     }
@@ -104,7 +104,13 @@ export const postBulkAddDp = async (req, res, next) => {
     return res.json(ApiResponse.success(result));
   } catch (err) {
     if (err.errors) {
-       return res.status(400).json({ success: false, message: "Validation Failed", errors: err.errors });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Validation Failed",
+          errors: err.errors,
+        });
     }
     next(err);
   }
@@ -475,6 +481,7 @@ export const getParticularOrderPage = async (req, res, next) => {
   try {
     const { order_id } = req.params;
     const result = await adminService.getParticularOrder(order_id);
+    console.log("Result from getParticularOrder:", result);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -826,9 +833,11 @@ export const processManualRefund = async (req, res, next) => {
     const result = await adminService.processManualRefund(
       order_id,
       amount,
-      reason
+      reason,
     );
-    return res.json(ApiResponse.success(result, "Manual refund processed successfully"));
+    return res.json(
+      ApiResponse.success(result, "Manual refund processed successfully"),
+    );
   } catch (err) {
     next(err);
   }

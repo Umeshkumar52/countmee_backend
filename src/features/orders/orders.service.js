@@ -193,7 +193,7 @@ export const broadcastOrderToNearbyDPs = async (
     const { sendPushNotification } =
       await import("../../common/services/firebase.service.js");
     let sentCount = 0;
-
+    const dpIds = [];
     // 5. Broadcast (Socket + FCM)
     for (const dp of targetDps) {
       const payload = {
@@ -206,7 +206,7 @@ export const broadcastOrderToNearbyDPs = async (
         product_description: packageDetail.product_description,
         no_of_items: packageDetail.no_of_items?.toString() || "1",
       };
-
+      dpIds.push(dp.user_id);
       // Fire Socket notification
       sendNotificationToUser(dp.user_id, payload);
 
@@ -221,6 +221,23 @@ export const broadcastOrderToNearbyDPs = async (
       }
       sentCount++;
     }
+   const existorderRest=await OrderRequest.findOne({order_id:order._id,status:"pending"})
+   if(existorderRest){
+    await OrderRequest.findOneAndUpdate({order_id:order._id,status:"pending"}, {notified_ids: dpIds});
+  }else{
+      await OrderRequest.create(
+      
+        {
+          order_id,
+          requested_by: order?.user_id,
+          notified_ids: dpIds,
+          status: ORDER_REQUEST_STATUS.PENDING,
+          request_type: "direct",
+          accepted_by: null,
+        }
+      
+    );
+    }
 
     console.log(
       `[Broadcast] Order ${order._id} broadcasted to ${sentCount} nearby DPs. Rebroadcast: ${isRebroadcast}`,
@@ -232,8 +249,8 @@ export const broadcastOrderToNearbyDPs = async (
         await import("../../common/services/agenda.service.js");
       const agenda = getAgenda();
       if (agenda) {
-        // Schedule rebroadcast for 5 minutes
-        await agenda.schedule("in 5 minutes", "rebroadcast-unaccepted-order", {
+        // Schedule rebroadcast for 10 minutes
+        await agenda.schedule("in 10 minutes", "rebroadcast-unaccepted-order", {
           order_id: order._id.toString(),
         });
       }
@@ -437,23 +454,57 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
     if (order.status === ORDER_STATUS.CANCELLED) return true;
 
     // Process Refund if order was paid
-    const eligibleForRefund = [
-      ORDER_STATUS.CONFIRMED,
-      ORDER_STATUS.ASSIGNED,
-      ORDER_STATUS.PROCESSING,
-      ORDER_STATUS.PACKED,
-      ORDER_STATUS.SHIPPED,
-    ].includes(order.status);
+    let refundPercentage = 0;
 
-    if (eligibleForRefund) {
+    if (order.order_type === "scheduled") {
+      if (
+        [
+          ORDER_STATUS.SCHEDULED,
+          ORDER_STATUS.CONFIRMED,
+          ORDER_STATUS.CREATED,
+        ].includes(order.status)
+      ) {
+        // Get current hour in IST
+        const currentHourIST = parseInt(
+          new Date().toLocaleString("en-US", {
+            timeZone: "Asia/Kolkata",
+            hour: "2-digit",
+            hour12: false,
+          }),
+        );
+
+        if (currentHourIST < 20) {
+          refundPercentage = 100;
+        } else {
+          refundPercentage = 80;
+        }
+      }
+    } else {
+      // Normal Order
+      if (
+        [ORDER_STATUS.CREATED, ORDER_STATUS.CONFIRMED].includes(order.status)
+      ) {
+        refundPercentage = 100;
+      }
+    }
+
+    console.log(
+      "Refund Percentage:",
+      refundPercentage,
+      "Order Status:",
+      order.status,
+    );
+
+    if (refundPercentage > 0) {
       if (order.payment_id) {
         // Direct Payment Refund
         const payment = await Payment.findById(order.payment_id);
         if (payment && payment.status === "SUCCESS") {
           try {
+            const finalRefundAmount = (payment.amount * refundPercentage) / 100;
             await createRefund({
               paymentId: payment.cf_order_id,
-              amount: payment.amount,
+              amount: finalRefundAmount,
               notes: { reason: cancel_order_reason || "User cancelled order" },
             });
             payment.status = "REFUNDED";
@@ -472,27 +523,28 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
           transaction_type: "order_payment",
           type: "debit",
         });
-        console.log("Wallet Transaction for Refund:", wTx?._id);
+        console.log("Wallet Transaction for Refund:", wTx);
         if (wTx) {
           const wallet = await Wallet.findById(wTx.wallet_id);
           if (wallet) {
-            wallet.balance += wTx.amount;
+            const finalRefundAmount = (wTx.amount * refundPercentage) / 100;
+            wallet.balance += finalRefundAmount;
             await wallet.save();
-            await WalletTransaction.create({
+            const refundTransaction = await WalletTransaction.create({
               wallet_id: wallet._id,
-              amount: wTx.amount,
+              amount: finalRefundAmount,
               type: "credit",
-              description: `Refund for Cancelled Order #${order._id}`,
+              description: `Refund for Cancelled Order #${order._id} (${refundPercentage}%)`,
               transaction_type: "refund",
               reference_id: order._id,
               status: "completed",
             });
-
+            order.wallet_transaction_id = refundTransaction?._id || null;
             await sendNotification({
               role: ROLES.USER,
               userId: order.user_id,
               title: "Refund Processed",
-              message: `₹${wTx.amount} has been refunded to your wallet for Order #${order._id}.`,
+              message: `₹${finalRefundAmount} has been refunded to your wallet for Order #${order._id}.`,
               orderId: order._id,
             });
           }

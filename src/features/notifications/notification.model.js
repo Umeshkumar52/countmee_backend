@@ -47,7 +47,7 @@ notificationSchema.post("save", async function (doc) {
       order_id: doc.order_id,
       created_at: doc.createdAt || doc.created_at,
     };
-    sendNotificationToUser(doc.notifiable_id, payload);
+    // sendNotificationToUser(doc.notifiable_id, payload);
 
     // 2. Send via Firebase Cloud Messaging (Background push notifications)
     const user = await User.findById(doc.notifiable_id)
@@ -60,8 +60,6 @@ notificationSchema.post("save", async function (doc) {
         order_id: doc.order_id ? doc.order_id.toString() : "",
       });
     }
-
-    console.log("notification sent succesfuly");
   } catch (error) {
     console.error(
       "[Notification Hook Error] Failed to broadcast notification:",
