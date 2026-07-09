@@ -10,6 +10,8 @@ import {
   resendOtp,
   loginDp,
   registerDp,
+  forgotPassword,
+  resetPassword,
 } from "./auth.controller.js";
 import * as adminController from "../admin/admin.controller.js";
 import * as pdcController from "../pdc/pdc.controller.js";
@@ -41,5 +43,9 @@ router.post("/user/verify-otp", verifyOtp);
 // 5. Shared Token Operations
 router.post("/refresh", refreshToken);
 router.post("/fcm-token", authenticate, updateFcmToken);
+
+// 6. Password Reset Operations
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 export default router;

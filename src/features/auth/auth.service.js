@@ -16,6 +16,7 @@ import { WalletConfig } from "../payments/walletConfig.model.js";
 import { Wallet } from "../payments/wallet.model.js";
 import { WalletTransaction } from "../payments/walletTransaction.model.js";
 import { deleteFromCloudinary } from "../../common/services/cloudinary.service.js";
+import { getRedisClient } from "../../common/services/redis.service.js";
 
 const extractCloudinaryPublicId = (url) => {
   if (!url) return null;
@@ -430,4 +431,76 @@ export const updateFcmToken = async (userId, fcmToken) => {
   await User.findByIdAndUpdate(userId, { $addToSet: { fcm_tokens: fcmToken } });
 };
 
-import { User } from "../users/user.model.js";
+export const forgotPassword = async (identifier) => {
+  const isPhone = /^\d+$/.test(identifier);
+  let query = {};
+  if (isPhone) {
+    query.phone = identifier;
+  } else {
+    query.email = identifier;
+  }
+
+  const user = await User.findOne(query);
+  if (!user) {
+    throw new Error("User with this identifier not found");
+  }
+
+  const otp = Math.floor(1000 + Math.random() * 9000).toString();
+  
+  const redisClient = getRedisClient();
+  if (redisClient) {
+    await redisClient.setEx(`password_reset_otp:${user._id}`, 600, otp);
+  } else {
+    throw new Error("Internal server error: Redis cache unavailable");
+  }
+
+  const message = `Your CountMee Courier password reset code is ${otp}`;
+
+  if (user.phone) {
+    try { await sendOTPViaSMS(user.phone, message); } catch (e) { console.error("SMS error:", e); }
+  }
+  if (user.email) {
+    try { await sendEmailUtil({ to: user.email, subject: "CountMee - Password Reset OTP", text: message }); } catch (e) { console.error("Email error:", e); }
+  }
+
+  return { message: "OTP sent successfully" };
+};
+
+export const resetPassword = async (identifier, otp, newPassword) => {
+  const isPhone = /^\d+$/.test(identifier);
+  let query = {};
+  if (isPhone) {
+    query.phone = identifier;
+  } else {
+    query.email = identifier;
+  }
+
+  const user = await User.findOne(query);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const redisClient = getRedisClient();
+  if (!redisClient) {
+    throw new Error("Internal server error: Redis cache unavailable");
+  }
+
+  const storedOtp = await redisClient.get(`password_reset_otp:${user._id}`);
+  
+  if (!storedOtp) {
+    throw new Error("OTP has expired or does not exist");
+  }
+  if (storedOtp !== otp) {
+    throw new Error("Invalid OTP");
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+  user.password = hashedPassword;
+  await user.save();
+  
+  await redisClient.del(`password_reset_otp:${user._id}`);
+
+  return { message: "Password reset successful" };
+};

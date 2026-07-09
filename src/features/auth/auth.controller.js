@@ -101,3 +101,19 @@ export const updateFcmToken = asyncHandler(async (req, res) => {
   await authService.updateFcmToken(userId, fcmToken);
   return res.json(ApiResponse.success(null, "FCM token updated successfully"));
 });
+
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const { identifier } = validate(authValidation.forgotPasswordSchema, req.body);
+  const result = await authService.forgotPassword(identifier);
+  return res.json(ApiResponse.success(result, result.message));
+});
+
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { identifier, otp, newPassword, confirmPassword } = validate(authValidation.resetPasswordSchema, req.body);
+  if (newPassword !== confirmPassword) {
+    throw new ApiError(400, 'Passwords do not match');
+  }
+  const result = await authService.resetPassword(identifier, otp, newPassword);
+  return res.json(ApiResponse.success(result, result.message));
+});
+

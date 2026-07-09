@@ -414,7 +414,7 @@ export const createOrder = async (orderData, files, userId) => {
       role: ROLES.USER,
       userId: user_id,
       title: "Order Placed",
-      message: `Your order of ID : ${newOrder._id} is placed`,
+      message: `Your order of ID : ${newOrder.orderNumber} is placed`,
       orderId: newOrder._id,
       session,
     });
@@ -422,7 +422,7 @@ export const createOrder = async (orderData, files, userId) => {
     // await sendNotification({
     //   role: ROLES.ADMIN,
     //   title: "New Order Placed",
-    //   message: ` has placed an order of ID : ${newOrder._id}`,
+    //   message: ` has placed an order of ID : ${newOrder.orderNumber}`,
     //   orderId: newOrder._id,
     //   session,
     // });
@@ -492,13 +492,6 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
       }
     }
 
-    console.log(
-      "Refund Percentage:",
-      refundPercentage,
-      "Order Status:",
-      order.status,
-    );
-
     if (refundPercentage > 0) {
       if (order.payment_id) {
         // Direct Payment Refund
@@ -538,7 +531,7 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
               wallet_id: wallet._id,
               amount: finalRefundAmount,
               type: "credit",
-              description: `Refund for Cancelled Order #${order._id} (${refundPercentage}%)`,
+              description: `Refund for Cancelled Order #${order.orderNumber} (${refundPercentage}%)`,
               transaction_type: "refund",
               reference_id: order._id,
               status: "completed",
@@ -548,7 +541,7 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
               role: ROLES.USER,
               userId: order.user_id,
               title: "Refund Processed",
-              message: `₹${finalRefundAmount} has been refunded to your wallet for Order #${order._id}.`,
+              message: `₹${finalRefundAmount} has been refunded to your wallet for Order #${order.orderNumber}.`,
               orderId: order._id,
             });
           }
@@ -577,14 +570,14 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
       await sendNotification({
         role: ROLES.ADMIN,
         title: "Order Cancelled",
-        message: `No Delivery partners are available for the order of ID: ${order._id}`,
+        message: `No Delivery partners are available for the order of ID: ${order.orderNumber}`,
         orderId: order._id,
       });
     } else {
       await sendNotification({
         role: ROLES.ADMIN,
         title: "Order Cancelled",
-        message: `${order.sender_name} has cancelled the order`, // maps to customer name
+        message: `${order.sender_name} has cancelled the order ${order.orderNumber}`, // maps to customer name
         orderId: order._id,
       });
     }
@@ -833,5 +826,7 @@ export const rateDp = async (
 };
 
 export const getMyDues = async (user_id) => {
-  return await OrderWaitCharge.find({ user_id, payment_status: "unpaid" }).sort({ created_at: -1 });
+  return await OrderWaitCharge.find({ user_id, payment_status: "unpaid" }).sort(
+    { created_at: -1 },
+  );
 };

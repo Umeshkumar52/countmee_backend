@@ -11,10 +11,7 @@ export default router;
 
 // wallet apis route
 export const walletRouter = Router();
-walletRouter.post("/initiate", paymentsController.initiateCashfreePayment);
-walletRouter.post("/verify", paymentsController.verifyCashfreePayment);
-// payment of order by wallet
-walletRouter.post("/pay-order", paymentsController.payOrder);
+
 walletRouter.post("/recharge", paymentsController.recharge);
 walletRouter.get("/balance/:user_id", paymentsController.getBalance);
 walletRouter.get("/history/:user_id", paymentsController.getHistory);

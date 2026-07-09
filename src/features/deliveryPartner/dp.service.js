@@ -912,9 +912,6 @@ export const orderAccept = async (orderIds, status, user_id) => {
           { $addToSet: { active_order_ids: order_id } },
           { session },
         );
-
-        const order = await Order.findById(order_id).session(session);
-
         // Payout allocation settings
         const chargeConfig = await DeliverCharge.findOne({
           vehicle_type: order.mode_of_transport,

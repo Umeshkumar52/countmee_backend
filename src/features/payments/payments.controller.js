@@ -80,28 +80,55 @@ export const verifyCashfreePayment = asyncHandler(async (req, res) => {
 });
 
 export const initiateOrderPayment = asyncHandler(async (req, res) => {
-  const { _id } = req.body;
-  const { user_id, order_id } = validate(
+  const { _id } = req.user;
+  const { order_id, payment_method, amount } = validate(
     paymentsValidation.initiateOrderPaymentSchema,
     req.body,
   );
-  const result = await paymentsService.initiateOrderPayment(_id, order_id);
+  let result;
+  if (payment_method == "wallet") {
+    result = await paymentsService.payOrder(_id, order_id, Number(amount));
+  } else if (payment_method == "cashfree") {
+    result = await paymentsService.initiateOrderPayment(_id, order_id);
+  } else if (payment_method == "wallet_recharge") {
+    result = await paymentsService.recharge(
+      user_id,
+      Number(amount),
+      transaction_id,
+      payment_method,
+      status,
+    );
+  }
+
   return res.json(
     ApiResponse.success(result, "Order payment initiated successfully"),
   );
 });
 
 export const verifyOrderPayment = asyncHandler(async (req, res) => {
-  const { cf_order_id, order_id } = validate(
+  const{_id} = req.user;
+  const { cf_order_id, order_id, payment_for } = validate(
     paymentsValidation.verifyOrderPaymentSchema,
     req.body,
   );
-  const result = await paymentsService.verifyOrderPayment(
+  let result;
+  if(payemnt_for==="order_payment"){
+ result = await paymentsService.verifyOrderPayment(
     cf_order_id,
     order_id,
   );
+} else if(payment_for==="wallet_recharge"){
+    result = await paymentsService.recharge(
+      _id,
+      Number(amount),
+      transaction_id,
+      payment_method="cashfree",
+      status,
+    )
+}
   const message = result.already_processed
     ? "Payment already processed"
     : "Order payment verified successfully";
   return res.json(ApiResponse.success(result, message));
+
 });

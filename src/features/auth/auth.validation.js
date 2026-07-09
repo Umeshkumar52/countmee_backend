@@ -142,3 +142,44 @@ export const adminLoginSchema = Joi.object({
       'any.required': 'Password is required'
     })
 });
+
+export const forgotPasswordSchema = Joi.object({
+  identifier: Joi.string()
+    .required()
+    .messages({
+      'string.empty': 'Email or Phone cannot be empty',
+      'any.required': 'Email or Phone is required'
+    })
+});
+
+export const resetPasswordSchema = Joi.object({
+  identifier: Joi.string()
+    .required()
+    .messages({
+      'string.empty': 'Email or Phone cannot be empty',
+      'any.required': 'Email or Phone is required'
+    }),
+  otp: Joi.string()
+    .length(4)
+    .pattern(/^\d+$/)
+    .required()
+    .messages({
+      'string.empty': 'OTP cannot be empty',
+      'string.length': 'OTP must be exactly 4 digits',
+      'string.pattern.base': 'OTP must contain only digits',
+      'any.required': 'OTP is required'
+    }),
+  newPassword: Joi.string()
+    .required()
+    .messages({
+      'string.empty': 'New Password cannot be empty',
+      'any.required': 'New Password is required'
+    }),
+  confirmPassword: Joi.string()
+    .required()
+    .messages({
+      'string.empty': 'Confirm Password cannot be empty',
+      'any.required': 'Confirm Password is required'
+    })
+});
+
