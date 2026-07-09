@@ -1,6 +1,11 @@
 import { User } from "../users/user.model.js";
 import { Customer } from "../users/customer.model.js";
-import { ROLES, ORDER_STATUS, ORDER_REQUEST_STATUS, ORDER_REQUEST_COMPLETE_STATUS } from "../../constants/index.js";
+import {
+  ROLES,
+  ORDER_STATUS,
+  ORDER_REQUEST_STATUS,
+  ORDER_REQUEST_COMPLETE_STATUS,
+} from "../../constants/index.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
 import { PdcDocument } from "../pdc/pdcDocument.model.js";
@@ -20,7 +25,7 @@ import { MassCreditLog } from "../payments/massCreditLog.model.js";
 import { AdminPayout } from "../payments/adminPayout.model.js";
 
 export const findUserByEmailAndType = async (email, role) => {
-  return await User.findOne({ email, role }).select('+password +fcm_tokens');
+  return await User.findOne({ email, role }).select("+password +fcm_tokens");
 };
 
 export const findUserByPhoneAndType = async (phone, role) => {
@@ -141,19 +146,54 @@ export const deleteCustomerDetails = async (userId) => {
   return await Customer.deleteOne({ user_id: userId });
 };
 
-export const findAllPdcs = async () => {
-  const docs = await PdcDocument.find().populate("user_id", "-password -otp -refreshToken -fcm_tokens -fcm_token");
-  return docs.map((d) => {
+export const findAllPdcs = async (page = 1, limit = 10, search = "") => {
+  let userIds = [];
+  if (search) {
+    const users = await User.find({
+      $or: [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+      ],
+    }).select("_id");
+    userIds = users.map((u) => u._id);
+  }
+
+  const query = {};
+  if (search) {
+    query.$or = [
+      { city: { $regex: search, $options: "i" } },
+      { user_id: { $in: userIds } },
+    ];
+  }
+
+  const skip = (page - 1) * limit;
+
+  const docs = await PdcDocument.find(query)
+    .populate(
+      "user_id",
+      "-password -otp -refreshToken -fcm_tokens -fcm_token"
+    )
+    .skip(skip)
+    .limit(limit);
+
+  const total = await PdcDocument.countDocuments(query);
+  const totalPages = Math.ceil(total / limit);
+
+  const pdcs = docs.map((d) => {
     const obj = d.toObject();
     obj.userDetails = obj.user_id;
     obj.user_id = obj.user_id ? obj.user_id._id : null;
     return obj;
   });
+
+  return { pdcs, total, page, totalPages };
 };
 
 export const findPdcDocumentByUserId = async (userId) => {
   const doc = await PdcDocument.findOne({ user_id: userId }).populate(
-    "user_id", "-password -otp -refreshToken -fcm_tokens -fcm_token"
+    "user_id",
+    "-password -otp -refreshToken -fcm_tokens -fcm_token",
   );
   if (doc) {
     const obj = doc.toObject();
@@ -165,7 +205,10 @@ export const findPdcDocumentByUserId = async (userId) => {
 };
 
 export const findPdcDocumentById = async (id) => {
-  const doc = await PdcDocument.findById(id).populate("user_id", "-password -otp -refreshToken -fcm_tokens -fcm_token");
+  const doc = await PdcDocument.findById(id).populate(
+    "user_id",
+    "-password -otp -refreshToken -fcm_tokens -fcm_token",
+  );
   if (doc) {
     const obj = doc.toObject();
     obj.userDetails = obj.user_id;
@@ -187,10 +230,11 @@ export const deletePdcDocument = async (userId) => {
   return await PdcDocument.deleteOne({ user_id: userId });
 };
 
+// Assigned dp of schedule order bundle at the final step
 export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
   let customerObjId = customer_id?._id || customer_id;
   if (!customerObjId) {
-    const rawOrder = await Order.findById(order_id).select('user_id').lean();
+    const rawOrder = await Order.findById(order_id).select("user_id").lean();
     customerObjId = rawOrder?.user_id;
   }
   const session = await Order.startSession();
@@ -201,38 +245,40 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
       { _id: order_id },
       {
         pickup_dp_id: dp_id,
-        status_completed: 'order accepted',
+        status_completed: "order accepted",
         status: ORDER_STATUS.PROCESSING,
-        dp_accept_time: new Date()
+        dp_accept_time: new Date(),
       },
-      { session }
+      { session },
     );
 
     // 2. Cancel active uncompleted OrderRequests for this order to prevent conflicts
     await OrderRequest.updateMany(
       { order_id, complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING },
       { status: ORDER_REQUEST_STATUS.REJECTED },
-      { session }
+      { session },
     );
 
     // 3. Create active OrderRequest for this assigned DP
     await OrderRequest.create(
-      [{
-        order_id,
-        requested_by: customerObjId,
-        notified_ids: [dp_id],
-        status: ORDER_REQUEST_STATUS.ACCEPTED,
-        request_type: 'direct',
-        accepted_by: dp_id
-      }],
-      { session, ordered: true }
+      [
+        {
+          order_id,
+          requested_by: customerObjId,
+          notified_ids: [dp_id],
+          status: ORDER_REQUEST_STATUS.ACCEPTED,
+          request_type: "direct",
+          accepted_by: dp_id,
+        },
+      ],
+      { session, ordered: true },
     );
 
     // Lock the DP by adding this order to their active array
     await DpDetail.findOneAndUpdate(
       { user_id: dp_id },
       { $addToSet: { active_order_ids: order_id } },
-      { session }
+      { session },
     );
 
     await session.commitTransaction();
@@ -247,7 +293,7 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
 export const sendTargetedRequest = async (order_id, dp_id, customer_id) => {
   let customerObjId = customer_id?._id || customer_id;
   if (!customerObjId) {
-    const rawOrder = await Order.findById(order_id).select('user_id').lean();
+    const rawOrder = await Order.findById(order_id).select("user_id").lean();
     customerObjId = rawOrder?.user_id;
   }
   const session = await Order.startSession();
@@ -257,29 +303,30 @@ export const sendTargetedRequest = async (order_id, dp_id, customer_id) => {
     await Order.updateOne(
       { _id: order_id },
       {
-        $unset: { pickup_dp_id: 1, dp_accept_time: 1 },
-        $set: { status: ORDER_STATUS.PENDING }
+        $set: { status: ORDER_STATUS.PENDING },
       },
-      { session }
+      { session },
     );
 
     // Cancel active uncompleted OrderRequests for this order to prevent conflicts
     await OrderRequest.updateMany(
       { order_id, complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING },
       { status: ORDER_REQUEST_STATUS.REJECTED },
-      { session }
+      { session },
     );
 
     // Create a targeted PENDING OrderRequest for this DP
     await OrderRequest.create(
-      [{
-        order_id,
-        requested_by: customerObjId,
-        notified_ids: [dp_id],
-        status: null, // pending acceptance
-        request_type: 'direct'
-      }],
-      { session, ordered: true }
+      [
+        {
+          order_id,
+          requested_by: customerObjId,
+          notified_ids: [dp_id],
+          status: ORDER_REQUEST_STATUS.PENDING, // pending acceptance
+          request_type: "direct",
+        },
+      ],
+      { session, ordered: true },
     );
 
     await session.commitTransaction();
@@ -406,7 +453,7 @@ export const findPaginatedRatings = async (query, page = 1, limit = 10) => {
     .populate("from_customer")
     .populate("from_dp")
     .populate("from_pdc")
-    .sort({ createdAt: -1 })
+    .sort({ created_at: -1 })
     .skip(skip)
     .limit(limit);
 
@@ -414,7 +461,7 @@ export const findPaginatedRatings = async (query, page = 1, limit = 10) => {
     ratings,
     total,
     page,
-    totalPages: Math.ceil(total / limit)
+    totalPages: Math.ceil(total / limit),
   };
 };
 
@@ -440,7 +487,7 @@ export const findUsersInDateRange = async (startDate, endDate) => {
 
 export const findRatingsInDateRange = async (startDate, endDate) => {
   return await Rating.find({
-    createdAt: {
+    created_at: {
       $gte: new Date(startDate),
       $lte: new Date(new Date(endDate).setUTCHours(23, 59, 59, 999)),
     },
@@ -499,7 +546,7 @@ export const findWalletTransactionsByLogId = async (logId) => {
     reference_id: logId,
   }).populate({
     path: "wallet_id",
-    populate: { path: "user_id" }
+    populate: { path: "user_id" },
   });
 };
 
@@ -557,6 +604,6 @@ export const findPaginatedOrders = async (query, page = 1, limit = 10) => {
     orders,
     total,
     page,
-    totalPages: Math.ceil(total / limit)
+    totalPages: Math.ceil(total / limit),
   };
 };

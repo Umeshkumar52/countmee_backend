@@ -214,7 +214,8 @@ export const payOrder = async (user_id, order_id, amount) => {
     console.log("Wallet Transaction Created:", transactionRecord?._id);
     // Update order status
     order.status = ORDER_STATUS.CONFIRMED; // Paid/Active
-    order.wallet_transaction_id = transactionRecord?._id || transactionRecord?.id;
+    order.wallet_transaction_id =
+      transactionRecord?._id || transactionRecord?.id;
     await order.save({ session });
 
     // Broadcast to DP if normal order
@@ -522,7 +523,7 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
       },
       timeout: 15000,
     });
-    console.log("Cashfree Verify Response (Direct):", response.data);
+
     const result = response.data;
     if (result.order_status === "PAID") {
       const session = await mongoose.startSession();
@@ -550,7 +551,9 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
             const packageDetail = await PackageDetail.findById(
               order.package_id,
             ).session(session);
-            if (packageDetail && order.order_type === "normal") {
+            // if (packageDetail && order.order_type === "normal") {
+            if (packageDetail) {
+              console.log("broadCasting...");
               broadcastOrderToNearbyDPs(order, packageDetail).catch((err) =>
                 console.error("[Broadcast] Verify execution failed:", err),
               );

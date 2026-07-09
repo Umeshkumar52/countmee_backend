@@ -32,6 +32,9 @@ const notificationSchema = new mongoose.Schema(
   },
 );
 
+// TTL Index to automatically delete documents after 30 days (2592000 seconds)
+notificationSchema.index({ created_at: 1 }, { expireAfterSeconds: 2592000 });
+
 notificationSchema.post("save", async function (doc) {
   try {
     console.log("notification save method has been called");
@@ -47,7 +50,7 @@ notificationSchema.post("save", async function (doc) {
       order_id: doc.order_id,
       created_at: doc.createdAt || doc.created_at,
     };
-    sendNotificationToUser(doc.notifiable_id, payload);
+    // sendNotificationToUser(doc.notifiable_id, payload);
 
     // 2. Send via Firebase Cloud Messaging (Background push notifications)
     const user = await User.findById(doc.notifiable_id)
@@ -60,8 +63,6 @@ notificationSchema.post("save", async function (doc) {
         order_id: doc.order_id ? doc.order_id.toString() : "",
       });
     }
-
-    console.log("notification sent succesfuly");
   } catch (error) {
     console.error(
       "[Notification Hook Error] Failed to broadcast notification:",

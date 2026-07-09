@@ -12,6 +12,11 @@ const orderSchema = new mongoose.Schema(
       required: true,
       ref: "User",
     },
+    orderNumber: {
+      type: String,
+      unique: true,
+      index: true,
+    },
     package_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "PackageDetail",
@@ -106,5 +111,14 @@ const orderSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+orderSchema.pre("save", function (next) {
+  if (!this.orderNumber) {
+    const datePart = Date.now().toString().slice(-5);
+    const idPart = this._id.toString().slice(-5);
+    this.orderNumber = `order_${datePart}${idPart}`;
+  }
+  next();
+});
 
 export const Order = mongoose.model("Order", orderSchema);

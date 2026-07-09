@@ -90,6 +90,7 @@ router.get('/orders/paginated', adminController.getPaginatedOrdersPage);
 router.get('/orders/scheduled-stats', adminController.getScheduledOrderStats);
 router.get('/orders/scheduled-filters', adminController.getScheduledFilters);
 router.get('/orders', adminController.getOrdersPage);
+router.post('/orders/:id/broadcast', adminController.postBroadcastOrder);
 router.post('/refund-order', adminController.processManualRefund);
 router.get('/orders/delivered', adminController.getDeliveredOrdersPage);
 router.get('/orders/broadcasted', adminController.getBroadcastedOrdersPage);

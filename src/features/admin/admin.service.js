@@ -639,9 +639,9 @@ export const deleteCustomer = async (id) => {
   return { message: "Customer Deleted Successfully" };
 };
 
-export const getPdcList = async () => {
-  const pdcs = await adminRepository.findAllPdcs();
-  return { pdcs };
+export const getPdcList = async (page = 1, limit = 10, search = "") => {
+  const result = await adminRepository.findAllPdcs(page, limit, search);
+  return result;
 };
 
 export const getPdcDetails = async (pdcid) => {
@@ -919,6 +919,7 @@ export const getPaginatedOrders = async (
   }
   if (search) {
     query.$or = [
+      { orderNumber: { $regex: search, $options: "i" } },
       { pickup_location: { $regex: search, $options: "i" } },
       { drop_location: { $regex: search, $options: "i" } },
       { sender_pin_code: { $regex: search, $options: "i" } },
@@ -1189,9 +1190,9 @@ export const getParticularOrder = async (order_id) => {
 
 export const getFeedbacks = async (role, page = 1, limit = 10) => {
   const query = {};
-  if (role === "User") {
+  if (role === "CUSTOMER") {
     query.from_customer = { $exists: true, $ne: null };
-  } else if (role === "Delivery Partner") {
+  } else if (role === "DP") {
     query.from_dp = { $exists: true, $ne: null };
   } else if (role === "PDC") {
     query.from_pdc = { $exists: true, $ne: null };
@@ -1480,6 +1481,7 @@ export const getReportData = async (report_type, start_date, end_date) => {
       start_date,
       end_date,
     );
+    console.log(ratings);
     reportData = ratings.map((r) => {
       let name = "System";
       let role = ROLES.USER;
@@ -1499,8 +1501,8 @@ export const getReportData = async (report_type, start_date, end_date) => {
         role: role,
         rating: r.stars || 5,
         comment: r.message || "",
-        created_at: r.createdAt
-          ? new Date(r.createdAt).toISOString().split("T")[0]
+        created_at: r.created_at
+          ? new Date(r.created_at).toISOString().split("T")[0]
           : "N/A",
       };
     });
@@ -1778,18 +1780,21 @@ export const findNearestDpsForOrders = async (orderIds) => {
   return nearestDps;
 };
 
+// send bundle orders notification to dp to keep the request and then assign the bundle to the dp who accepts the request first
 export const assignOrderBundle = async (orderIds, dpIds) => {
   const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
   const { OrderBundle } = await import("../orders/orderBundle.model.js");
   const { Notification } =
     await import("../notifications/notification.model.js");
-
   // Generate unique bundle ID
   const bundle_id = `BNDL-${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
-  // Verify all orders exist
-  const orders = await Order.find({ _id: { $in: orderIds } });
+  // Verify all orders exist and populate package details
+  const orders = await Order.find({ _id: { $in: orderIds } }).populate(
+    "package_id",
+  );
+
   if (orders.length !== orderIds.length) {
     throw new Error("One or more orders not found");
   }
@@ -1804,18 +1809,27 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
   });
   await bundle.save();
 
+  // Construct the correct payload array for all orders in the bundle
+  const bundlePayload = orders.map((order) => ({
+    order_id: order._id,
+    pickup_location: order.pickup_location,
+    drop_location: order.drop_location,
+    charges: order.charges?.toString() || "0",
+    distance: order.distance?.toString() || "0",
+    product_description: order.package_id?.product_description || "",
+    no_of_items: order.package_id?.no_of_items?.toString() || "1",
+  }));
+
+  const socketMessage = {
+    type: "new_bundle_request",
+    bundle_id,
+    orders: bundlePayload,
+  };
+
   // Dispatch Notifications to all selected DPs
   for (const dpId of dpIds) {
-    const notify = new Notification({
-      notifiable_type: ROLES.DP,
-      notifiable_id: dpId,
-      title: "New Order Bundle Request!",
-      message: `You have received a new Order Bundle (${bundle_id}) containing ${orderIds.length} orders. Open your app to accept.`,
-      // Assuming the app can handle a bundle broadcast even without order_id,
-      // or we can pass the bundle_id in the message or add it if Notification schema is expanded.
-      order_id: null,
-    });
-    await notify.save();
+    // Socket notification
+    sendNotificationToUser(dpId, socketMessage);
   }
 
   // Update order statuses to processing
@@ -1831,6 +1845,7 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
   };
 };
 
+// assing all orders of bundle  to dp who accepts the request first and update the bundle status to assigned and notify the dp about the assignment
 export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
   const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
@@ -1866,11 +1881,12 @@ export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
     title: "Order Bundle Assigned",
     message: `Congratulations! Admin has assigned order bundle ${bundle_id} to you.`,
   });
+
   await notify.save();
-  sendNotificationToUser(dp_id, {
-    title: notify.title,
-    message: notify.message,
-  });
+  // sendNotificationToUser(dp_id, {
+  //   title: notify.title,
+  //   message: notify.message,
+  // });
 
   // 5. Broadcast to Admins to update live tables
   broadcastToAdmins("BUNDLE_ASSIGNED", { bundle_id, dp_id });
@@ -2214,6 +2230,8 @@ export const processManualRefund = async (order_id, amount, reason) => {
       amount: refundAmount,
       notes: { reason: reason || "Admin manual refund" },
     });
+    payment.status = "REFUNDED";
+    await payment.save();
     refundType = "Cashfree";
   } else if (order.wallet_transaction_id) {
     // Wallet Refund
@@ -2226,7 +2244,7 @@ export const processManualRefund = async (order_id, amount, reason) => {
 
     wallet.balance += refundAmount;
     await wallet.save();
-    await WalletTransaction.create({
+    const refundTransaction = await WalletTransaction.create({
       wallet_id: wallet._id,
       amount: refundAmount,
       type: "credit",
@@ -2237,6 +2255,9 @@ export const processManualRefund = async (order_id, amount, reason) => {
       reference_id: order._id,
       status: "completed",
     });
+
+    order.wallet_transaction_id = refundTransaction._id;
+    await order.save();
     refundType = "Wallet";
   } else {
     throw new Error("This order has no associated payment record");
