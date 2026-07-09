@@ -1,16 +1,5 @@
 import mongoose from "mongoose";
 
-/**
- * OrderWaitCharge
- * 
- * Dedicated schema for tracking waiting charges per order.
- * This is a SEPARATE, IMMUTABLE snapshot — it does NOT modify
- * the main Order.charges field in any way.
- *
- * One document per order. Created when DP marks arrival,
- * updated at pickup OTP and drop OTP verification.
- * Deleted if the order is cancelled.
- */
 const orderWaitChargeSchema = new mongoose.Schema(
   {
     // ─── References ───────────────────────────────────────────────
