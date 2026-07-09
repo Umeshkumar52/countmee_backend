@@ -1,4 +1,5 @@
 import * as dpRepository from "./dp.repository.js";
+import { getExpiryCutoffDate } from "../../utils/waitingChargeStatus.js";
 import {
   ROLES,
   ORDER_STATUS,
@@ -30,6 +31,7 @@ import { uploadToCloudinary } from "../../common/services/cloudinary.service.js"
 import { sendOTPViaSMS } from "../notifications/sms.service.js";
 import * as mapsService from "../tracking/maps.service.js";
 import mongoose from "mongoose";
+import { ApiError } from "../../common/utils/ApiError.js";
 
 export const findTravelByOrderAndUser = async (order_id, user_id) => {
   return await dpRepository.findTravelByOrderAndUser(order_id, user_id);
@@ -891,8 +893,6 @@ export const orderAccept = async (orderIds, status, user_id) => {
       }
 
       if (status) {
-      }
-      if (status) {
         const order = await Order.findById(order_id).session(session);
         if (!order) {
           throw new Error("Order not found");
@@ -912,8 +912,6 @@ export const orderAccept = async (orderIds, status, user_id) => {
           { $addToSet: { active_order_ids: order_id } },
           { session },
         );
-
-        const order = await Order.findById(order_id).session(session);
 
         // Payout allocation settings
         const chargeConfig = await DeliverCharge.findOne({
@@ -1694,6 +1692,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
 
           waitChargeDoc.payment_status = "paid";
           waitChargeDoc.payment_method = "wallet";
+          waitChargeDoc.paid_at = new Date();
         } else {
           waitChargeDoc.payment_status = "unpaid";
           waitChargeDoc.payment_method = null;
@@ -1973,6 +1972,15 @@ export const getOrderHistory = async (user_id) => {
         payout.waiting_charge_settled === 1
       : false;
 
+    // Status for waiting charge visibility
+    if (jsonOrder.waiting_charge_settled) {
+      jsonOrder.waiting_charge_status = "Settled";
+    } else if (order.created_at < getExpiryCutoffDate()) {
+      jsonOrder.waiting_charge_status = "Expired";
+    } else {
+      jsonOrder.waiting_charge_status = "Pending";
+    }
+
     ordersWithEarning.push(jsonOrder);
   }
 
@@ -2124,10 +2132,12 @@ export const editDpProfile = async (user_id, address, profileImgLocalPath) => {
 
   const dpProfile = await DpDetail.findOne({ user_id });
   if (!dpProfile) {
-    throw new Error("DP Profile not found");
+    throw new ApiError(404, "DP Profile not found");
   }
 
-  dpProfile.address = address;
+  if (address) {
+    dpProfile.address = address;
+  }
   if (profileImgUrl) {
     dpProfile.profile_img = profileImgUrl;
   }

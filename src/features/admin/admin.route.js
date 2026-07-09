@@ -110,6 +110,8 @@ router.get('/feedback', adminController.getFeedbackPage);
 // Finance Management
 router.get('/finance', adminController.getFinancePage);
 router.get('/pendingpayments', adminController.getPendingPaymentsPage);
+router.get('/waitingcharges', adminController.getAdminWaitingChargesPage);
+router.get('/latepaidwaitingcharges', adminController.getLatePaidWaitingChargesPage);
 router.get('/viewpayments', adminController.getViewPaymentsPage);
 router.post('/settlepayments', adminController.postSettlePayments);
 router.get('/pastpaymentsview/:userId?', adminController.getPastPaymentsPage);

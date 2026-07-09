@@ -507,7 +507,7 @@ export const getDashboardData = async (userId) => {
 };
 
 export const getEarnings = async (userId) => {
-  const payouts = await PdcPayout.find({ pdc_auth_id: userId, settled: 0 });
+  const payouts = await PdcPayout.find({ pdc_auth_id: userId });
   const totalEarning = payouts.reduce((acc, curr) => acc + curr.earnings, 0);
 
   const todayStart = new Date();
@@ -517,7 +517,6 @@ export const getEarnings = async (userId) => {
 
   const todayEarningsRaw = await PdcPayout.find({
     pdc_auth_id: userId,
-    settled: 0,
     created_at: { $gte: todayStart, $lte: todayEnd },
   });
 
@@ -536,6 +535,16 @@ export const getEarnings = async (userId) => {
         ? await User.findById(dpDoc.requested_by)
         : null;
       dpObj.requestedUser = requestedUser ? requestedUser.toObject() : null;
+
+      let stars = 0;
+      if (dpDoc.requested_by) {
+        const ratingAvg = await Rating.aggregate([
+          { $match: { to_dp: dpDoc.requested_by } },
+          { $group: { _id: null, avgStars: { $avg: "$stars" } } },
+        ]);
+        stars = ratingAvg.length > 0 ? ratingAvg[0].avgStars : 0;
+      }
+      dpObj.stars = stars;
     }
 
     const broadcastDoc = await Broadcast.findOne({
@@ -545,10 +554,27 @@ export const getEarnings = async (userId) => {
     let broadcastObj = null;
     if (broadcastDoc) {
       broadcastObj = broadcastDoc.toJSON();
-      const dpUser = broadcastDoc.pickup_dp_id
-        ? await User.findById(broadcastDoc.pickup_dp_id)
-        : null;
+      let dpUserId = broadcastDoc.pickup_dp_id;
+      if (!dpUserId) {
+        const bReq = await OrderRequest.findOne({ broadcast_id: broadcastDoc._id, status: "Accepted" });
+        if (bReq && bReq.accepted_by) dpUserId = bReq.accepted_by;
+      }
+      if (!dpUserId && payoutOrder && payoutOrder.delivery_dp_id) {
+        dpUserId = payoutOrder.delivery_dp_id;
+      }
+
+      const dpUser = dpUserId ? await User.findById(dpUserId) : null;
       broadcastObj.dpUser = dpUser ? dpUser.toJSON() : null;
+
+      let stars = 0;
+      if (dpUserId) {
+        const ratingAvg = await Rating.aggregate([
+          { $match: { to_dp: dpUserId } },
+          { $group: { _id: null, avgStars: { $avg: "$stars" } } },
+        ]);
+        stars = ratingAvg.length > 0 ? ratingAvg[0].avgStars : 0;
+      }
+      broadcastObj.stars = stars;
     }
 
     const payoutJson = payout.toJSON();
@@ -608,6 +634,16 @@ export const getEarnings = async (userId) => {
           ? await User.findById(lastDropDpDoc.requested_by)
           : null;
         dpObj.requestedUser = requestedUser ? requestedUser.toObject() : null;
+
+        let stars = 0;
+        if (lastDropDpDoc.requested_by) {
+          const ratingAvg = await Rating.aggregate([
+            { $match: { to_dp: lastDropDpDoc.requested_by } },
+            { $group: { _id: null, avgStars: { $avg: "$stars" } } },
+          ]);
+          stars = ratingAvg.length > 0 ? ratingAvg[0].avgStars : 0;
+        }
+        dpObj.stars = stars;
         lastDropDp = dpObj;
       }
 
@@ -617,16 +653,33 @@ export const getEarnings = async (userId) => {
         });
         if (lastBroadcastDoc) {
           const bObj = lastBroadcastDoc.toJSON();
-          const dpUser = lastBroadcastDoc.pickup_dp_id
-            ? await User.findById(lastBroadcastDoc.pickup_dp_id)
-            : null;
+          let dpUserId = lastBroadcastDoc.pickup_dp_id;
+          if (!dpUserId) {
+            const bReq = await OrderRequest.findOne({ broadcast_id: lastBroadcastDoc._id, status: "Accepted" });
+            if (bReq && bReq.accepted_by) dpUserId = bReq.accepted_by;
+          }
+          if (!dpUserId && payoutOrder && payoutOrder.delivery_dp_id) {
+            dpUserId = payoutOrder.delivery_dp_id;
+          }
+
+          const dpUser = dpUserId ? await User.findById(dpUserId) : null;
           bObj.dpUser = dpUser ? dpUser.toJSON() : null;
+
+          let stars = 0;
+          if (dpUserId) {
+            const ratingAvg = await Rating.aggregate([
+              { $match: { to_dp: dpUserId } },
+              { $group: { _id: null, avgStars: { $avg: "$stars" } } },
+            ]);
+            stars = ratingAvg.length > 0 ? ratingAvg[0].avgStars : 0;
+          }
+          bObj.stars = stars;
           lastBroadcast = bObj;
         }
       }
     }
 
-    pdcPayLastJson.lastDropDp = lastDropDp;
+    pdcPayLastJson.dp = lastDropDp;
     pdcPayLastJson.broadcast = lastBroadcast;
   }
 

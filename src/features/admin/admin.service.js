@@ -1201,6 +1201,110 @@ export const getFeedbacks = async (role, page = 1, limit = 10) => {
   return await adminRepository.findPaginatedRatings(query, page, limit);
 };
 
+import { getExpiryCutoffDate, getLateRevenueCutoffDate } from "../../utils/waitingChargeStatus.js";
+
+export const getAdminWaitingCharges = async (status) => {
+  const mongoose = await import("mongoose");
+  const { getExpiryCutoffDate } = await import("../../utils/waitingChargeStatus.js");
+  const { DpPayout } = await import("../deliveryPartner/dpPayout.model.js");
+  const { User } = await import("../users/user.model.js");
+  const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
+  const { PAYOUT_STATUS } = await import("../../constants/orderStatus.js");
+  const cutoff = getExpiryCutoffDate();
+
+  const query = {
+    created_at: { $gte: cutoff },
+    waiting_charge_earning: { $gt: 0 },
+  };
+
+  if (status === "pending") {
+    query.waiting_charge_settled = { $in: [0, PAYOUT_STATUS.PENDING] };
+  } else if (status === "settled") {
+    query.waiting_charge_settled = { $in: [1, PAYOUT_STATUS.COMPLETED] };
+  }
+
+  const payouts = await DpPayout.find(query).populate("order_id");
+
+  const orderIdsForWaitCharge = payouts.filter(p => p.order_id).map(p => p.order_id._id);
+  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+  const waitCharges = await OrderWaitCharge.find({ order_id: { $in: orderIdsForWaitCharge } });
+  const waitChargeMap = new Map();
+  waitCharges.forEach(wc => waitChargeMap.set(wc.order_id.toString(), wc));
+
+  const groups = {};
+  for (const p of payouts) {
+    const dpId = p.dp_auth_id.toString();
+    if (!groups[dpId]) {
+      groups[dpId] = {
+        dp_auth_id: dpId,
+        name: "",
+        total_orders: 0,
+        amount_to_pay: 0,
+        bank_name: "",
+        bank_acc_number: "",
+        bank_ifsc: "",
+        payout_ids: [],
+        order_ids: [],
+        orders: [],
+      };
+    }
+    const g = groups[dpId];
+    g.amount_to_pay += p.waiting_charge_earning || 0;
+    g.total_orders += 1;
+    g.payout_ids.push(p._id);
+    if (p.order_id) {
+      g.order_ids.push(p.order_id._id);
+      
+      const wc = waitChargeMap.get(p.order_id._id.toString());
+      
+      g.orders.push({
+        id: p.order_id._id,
+        payout_id: p._id,
+        order_number: p.order_id._id,
+        pickup_address: p.order_id.pickup_location,
+        delivery_address: p.order_id.drop_location,
+        amount: p.earnings, // base amount for display
+        base_settled: p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1,
+        waiting_charge: p.waiting_charge_earning || 0,
+        waiting_charge_settled: p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1,
+        total_amount: p.earnings + (p.waiting_charge_earning || 0),
+        customer_paid_waiting_charge: wc ? (wc.payment_status === "paid") : false
+      });
+    }
+  }
+
+  const resultList = [];
+  for (const dpId of Object.keys(groups)) {
+    const g = groups[dpId];
+    const user = await User.findById(dpId);
+    if (user) {
+      g.name = user.name;
+    }
+    const doc = await DpDocument.findOne({ user_id: dpId });
+    if (doc) {
+      g.bank_name = doc.bank_name || "";
+      g.bank_acc_number = doc.bank_acc_number || "";
+      g.bank_ifsc = doc.bank_ifsc || "";
+    }
+    resultList.push(g);
+  }
+  return resultList;
+};
+
+export const getLatePaidWaitingCharges = async () => {
+  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+  const cutoff = getExpiryCutoffDate();
+  const lateCutoff = getLateRevenueCutoffDate();
+
+  const rows = await OrderWaitCharge.find({
+    created_at: { $lt: cutoff },
+    payment_status: "paid",
+    paid_at: { $gte: lateCutoff },
+  }).populate("order_id").sort({ paid_at: -1 });
+
+  return rows;
+};
+
 export const getPendingPayments = async (type, startDate, endDate) => {
   const mongoose = await import("mongoose");
   const DpPayout = mongoose.default.model("DpPayout");
@@ -1216,8 +1320,7 @@ export const getPendingPayments = async (type, startDate, endDate) => {
     const { PAYOUT_STATUS } = await import("../../constants/orderStatus.js");
     const payouts = await DpPayout.find({
       $or: [
-        { settled: { $in: [0, PAYOUT_STATUS.PENDING] } },
-        { waiting_charge_settled: { $in: [0, PAYOUT_STATUS.PENDING] }, waiting_charge_earning: { $gt: 0 } }
+        { settled: { $in: [0, PAYOUT_STATUS.PENDING] } }
       ],
       created_at: { $gte: start, $lte: end },
     }).populate("order_id");
@@ -1249,9 +1352,6 @@ export const getPendingPayments = async (type, startDate, endDate) => {
       const g = groups[dpId];
       let pendingForThisOrder = 0;
       if (p.settled === PAYOUT_STATUS.PENDING || p.settled === 0) pendingForThisOrder += p.earnings;
-      if ((p.waiting_charge_settled === PAYOUT_STATUS.PENDING || p.waiting_charge_settled === 0) && p.waiting_charge_earning > 0) {
-        pendingForThisOrder += p.waiting_charge_earning;
-      }
 
       g.amount_to_pay += pendingForThisOrder;
       g.total_orders += 1;
@@ -1271,6 +1371,7 @@ export const getPendingPayments = async (type, startDate, endDate) => {
           base_settled: p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1,
           waiting_charge: p.waiting_charge_earning || 0,
           waiting_charge_settled: p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1,
+          waiting_charge_expired: (new Date(p.created_at) < getExpiryCutoffDate()) && !(p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1),
           total_amount: p.earnings + (p.waiting_charge_earning || 0),
           customer_paid_waiting_charge: wc ? (wc.payment_status === "paid") : false
         });
@@ -1400,6 +1501,7 @@ export const settlePayments = async (ids, payable, settlementAmount, settle_type
     user_id: payable,
     order_id: orderIds,
     settled_amount: Number(settlementAmount),
+    settle_type: user.role === ROLES.DP ? (settle_type || 'base') : 'base'
   });
 
   return { message: "Settlement completed successfully" };
@@ -1427,6 +1529,7 @@ export const getPastPayments = async (userId, onlySpecificOrder = false) => {
     role: p.user_id?.role || ROLES.DP,
     settled_amount: p.settled_amount,
     order_id: p.order_id || [],
+    settle_type: p.settle_type || 'base',
     created_at: p.created_at
       ? new Date(p.created_at).toISOString().split("T")[0]
       : "N/A",

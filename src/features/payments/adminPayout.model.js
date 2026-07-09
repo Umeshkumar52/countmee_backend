@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 const adminPayoutSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
   order_id: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Order' }],
-  settled_amount: { type: Number, required: true }
+  settled_amount: { type: Number, required: true },
+  settle_type: { type: String, enum: ['base', 'waiting', 'both'], default: 'base' }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

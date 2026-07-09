@@ -728,7 +728,7 @@ export const findPdcInRoute = asyncHandler(async (req, res) => {
 });
 
 export const editProfile = asyncHandler(async (req, res) => {
-  const { address } = req.body;
+  const { address } = validate(dpValidation.editProfileSchema, req.body);
   const user_id = req.user.id;
   const profileImgPath = req.file ? req.file.path : null;
 

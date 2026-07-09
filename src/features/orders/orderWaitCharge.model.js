@@ -75,11 +75,19 @@ const orderWaitChargeSchema = new mongoose.Schema(
       enum: ["wallet", "cashfree", null],
       default: null,
     },
+    // Timestamp when the customer successfully paid the waiting charge
+    paid_at: { type: Date, default: null },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
   }
 );
+
+// Indexes to keep queries cheap at scale
+orderWaitChargeSchema.index({ user_id: 1, payment_status: 1 });
+orderWaitChargeSchema.index({ pickup_dp_id: 1, created_at: -1 });
+orderWaitChargeSchema.index({ delivery_dp_id: 1, created_at: -1 });
+orderWaitChargeSchema.index({ payment_status: 1, created_at: -1 });
 
 export const OrderWaitCharge = mongoose.model(
   "OrderWaitCharge",

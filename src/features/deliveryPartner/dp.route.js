@@ -52,16 +52,17 @@ router.post('/documentsreupload', docUploadFields, dpController.documentsReuploa
 router.get('/vehicleTypes', dpController.getVehicleTypes);
 router.get('/travelStates', dpController.getTravelStates);
 router.post('/arrival', dpController.arrival);
+router.post('/cancel_assignment', dpController.cancelAssignment);
+router.post('/bundle-response', dpController.postRespondToBundle);
 ///////////////////////////////////
 
 // Order workflows
 router.get('/new_order/:order_id', dpController.new_order);
 router.post('/order_accept', dpController.order_accept);
-router.post('/cancel_assignment', dpController.cancelAssignment);
 router.get('/acceptedOrders/:user_id', dpController.acceptedOrders);
 router.post('/pickupOtp', dpController.pickupOtp);
 router.post('/pickupOrderImageUpload', pickupImageUploadFields, dpController.pickupOrderImageUpload);
-router.post('/bundle-response', dpController.postRespondToBundle);
+
 
 // Distances and Broadcasters
 router.get('/minbroadcast/:order/:lat/:lon', dpController.minBroadcast);

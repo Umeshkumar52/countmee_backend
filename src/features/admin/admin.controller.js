@@ -606,6 +606,25 @@ export const getPendingPaymentsPage = async (req, res, next) => {
   }
 };
 
+export const getAdminWaitingChargesPage = async (req, res, next) => {
+  try {
+    const { status = "pending" } = req.query;
+    const result = await adminService.getAdminWaitingCharges(status);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getLatePaidWaitingChargesPage = async (req, res, next) => {
+  try {
+    const result = await adminService.getLatePaidWaitingCharges();
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const getViewPaymentsPage = async (req, res, next) => {
   try {
     const result = await adminService.getOrders();

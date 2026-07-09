@@ -499,3 +499,12 @@ export const dpArrivalSchema = Joi.object({
     'any.required': 'Longitude is required'
   })
 });
+
+export const editProfileSchema = Joi.object({
+  address: Joi.string()
+    .trim()
+    .optional()
+    .messages({
+      'string.base': 'Address must be a string'
+    })
+});
