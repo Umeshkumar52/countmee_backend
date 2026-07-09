@@ -80,55 +80,49 @@ export const verifyCashfreePayment = asyncHandler(async (req, res) => {
 });
 
 export const initiateOrderPayment = asyncHandler(async (req, res) => {
-  const { _id } = req.user;
-  const { order_id, payment_method, amount } = validate(
+  const { _id: userId } = req.user;
+  const { payment_for, payment_method, order_id, amount } = validate(
     paymentsValidation.initiateOrderPaymentSchema,
     req.body,
   );
+  
   let result;
-  if (payment_method == "wallet") {
-    result = await paymentsService.payOrder(_id, order_id, Number(amount));
-  } else if (payment_method == "cashfree") {
-    result = await paymentsService.initiateOrderPayment(_id, order_id);
-  } else if (payment_method == "wallet_recharge") {
-    result = await paymentsService.recharge(
-      user_id,
-      Number(amount),
-      transaction_id,
-      payment_method,
-      status,
-    );
+  
+  if (payment_for === "order_payment") {
+    if (payment_method === "wallet") {
+      result = await paymentsService.payOrder(userId, order_id, Number(amount));
+    } else if (payment_method === "cashfree") {
+      result = await paymentsService.initiateOrderPayment(userId, order_id);
+    }
+  } else if (payment_for === "wallet_recharge") {
+    result = await paymentsService.initiateCashfreePayment(userId, Number(amount));
   }
 
   return res.json(
-    ApiResponse.success(result, "Order payment initiated successfully"),
+    ApiResponse.success(result, "Payment initiated successfully"),
   );
 });
 
 export const verifyOrderPayment = asyncHandler(async (req, res) => {
-  const{_id} = req.user;
-  const { cf_order_id, order_id, payment_for } = validate(
+  const { payment_for, cf_order_id, order_id } = validate(
     paymentsValidation.verifyOrderPaymentSchema,
     req.body,
   );
+  
   let result;
-  if(payemnt_for==="order_payment"){
- result = await paymentsService.verifyOrderPayment(
-    cf_order_id,
-    order_id,
-  );
-} else if(payment_for==="wallet_recharge"){
-    result = await paymentsService.recharge(
-      _id,
-      Number(amount),
-      transaction_id,
-      payment_method="cashfree",
-      status,
-    )
-}
-  const message = result.already_processed
-    ? "Payment already processed"
-    : "Order payment verified successfully";
+  let message;
+  
+  if (payment_for === "order_payment") {
+    result = await paymentsService.verifyOrderPayment(cf_order_id, order_id);
+    message = result.already_processed
+      ? "Payment already processed"
+      : "Order payment verified successfully";
+  } else if (payment_for === "wallet_recharge") {
+    result = await paymentsService.verifyCashfreePayment(cf_order_id);
+    message = result.already_processed
+      ? "Recharge already processed"
+      : "Wallet recharged successfully";
+  }
+  
   return res.json(ApiResponse.success(result, message));
-
 });
