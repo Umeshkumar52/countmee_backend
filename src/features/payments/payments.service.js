@@ -370,6 +370,7 @@ export const initiateCashfreePayment = async (user_id, amount) => {
 
       return {
         order_id: orderId,
+        cf_order_id: orderId,
         payment_session_id: result.payment_session_id,
       };
     }

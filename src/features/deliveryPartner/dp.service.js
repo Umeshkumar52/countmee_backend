@@ -912,7 +912,6 @@ export const orderAccept = async (orderIds, status, user_id) => {
           { $addToSet: { active_order_ids: order_id } },
           { session },
         );
-
         // Payout allocation settings
         const chargeConfig = await DeliverCharge.findOne({
           vehicle_type: order.mode_of_transport,
@@ -962,11 +961,11 @@ export const orderAccept = async (orderIds, status, user_id) => {
             //   : null;
             let travel = oldOrderRequest
               ? await Travel.findOne({
-                  order_id: order._id,
-                  user_id: oldOrderRequest.accepted_by,
-                })
-                  .sort({ created_at: -1 })
-                  .session(session)
+                order_id: order._id,
+                user_id: oldOrderRequest.accepted_by,
+              })
+                .sort({ created_at: -1 })
+                .session(session)
               : null;
 
             if (!travel && oldOrderRequest) {
@@ -1013,8 +1012,8 @@ export const orderAccept = async (orderIds, status, user_id) => {
             //   : null;
             const oldDpDetail = oldOrderRequest
               ? await DpDetail.findOne({
-                  user_id: oldOrderRequest.accepted_by,
-                }).session(session)
+                user_id: oldOrderRequest.accepted_by,
+              }).session(session)
               : null;
 
             if (travel && oldOrderRequest && oldDpDetail) {
@@ -1969,7 +1968,7 @@ export const getOrderHistory = async (user_id) => {
       : false;
     jsonOrder.waiting_charge_settled = payout
       ? payout.waiting_charge_settled === "Completed" ||
-        payout.waiting_charge_settled === 1
+      payout.waiting_charge_settled === 1
       : false;
 
     // Status for waiting charge visibility
