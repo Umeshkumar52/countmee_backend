@@ -32,6 +32,9 @@ const notificationSchema = new mongoose.Schema(
   },
 );
 
+// TTL Index to automatically delete documents after 30 days (2592000 seconds)
+notificationSchema.index({ created_at: 1 }, { expireAfterSeconds: 2592000 });
+
 notificationSchema.post("save", async function (doc) {
   try {
     console.log("notification save method has been called");

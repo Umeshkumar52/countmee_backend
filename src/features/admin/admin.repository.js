@@ -146,17 +146,48 @@ export const deleteCustomerDetails = async (userId) => {
   return await Customer.deleteOne({ user_id: userId });
 };
 
-export const findAllPdcs = async () => {
-  const docs = await PdcDocument.find().populate(
-    "user_id",
-    "-password -otp -refreshToken -fcm_tokens -fcm_token",
-  );
-  return docs.map((d) => {
+export const findAllPdcs = async (page = 1, limit = 10, search = "") => {
+  let userIds = [];
+  if (search) {
+    const users = await User.find({
+      $or: [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+      ],
+    }).select("_id");
+    userIds = users.map((u) => u._id);
+  }
+
+  const query = {};
+  if (search) {
+    query.$or = [
+      { city: { $regex: search, $options: "i" } },
+      { user_id: { $in: userIds } },
+    ];
+  }
+
+  const skip = (page - 1) * limit;
+
+  const docs = await PdcDocument.find(query)
+    .populate(
+      "user_id",
+      "-password -otp -refreshToken -fcm_tokens -fcm_token"
+    )
+    .skip(skip)
+    .limit(limit);
+
+  const total = await PdcDocument.countDocuments(query);
+  const totalPages = Math.ceil(total / limit);
+
+  const pdcs = docs.map((d) => {
     const obj = d.toObject();
     obj.userDetails = obj.user_id;
     obj.user_id = obj.user_id ? obj.user_id._id : null;
     return obj;
   });
+
+  return { pdcs, total, page, totalPages };
 };
 
 export const findPdcDocumentByUserId = async (userId) => {
@@ -422,7 +453,7 @@ export const findPaginatedRatings = async (query, page = 1, limit = 10) => {
     .populate("from_customer")
     .populate("from_dp")
     .populate("from_pdc")
-    .sort({ createdAt: -1 })
+    .sort({ created_at: -1 })
     .skip(skip)
     .limit(limit);
 
@@ -456,7 +487,7 @@ export const findUsersInDateRange = async (startDate, endDate) => {
 
 export const findRatingsInDateRange = async (startDate, endDate) => {
   return await Rating.find({
-    createdAt: {
+    created_at: {
       $gte: new Date(startDate),
       $lte: new Date(new Date(endDate).setUTCHours(23, 59, 59, 999)),
     },

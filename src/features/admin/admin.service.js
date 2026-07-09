@@ -639,9 +639,9 @@ export const deleteCustomer = async (id) => {
   return { message: "Customer Deleted Successfully" };
 };
 
-export const getPdcList = async () => {
-  const pdcs = await adminRepository.findAllPdcs();
-  return { pdcs };
+export const getPdcList = async (page = 1, limit = 10, search = "") => {
+  const result = await adminRepository.findAllPdcs(page, limit, search);
+  return result;
 };
 
 export const getPdcDetails = async (pdcid) => {
@@ -919,6 +919,7 @@ export const getPaginatedOrders = async (
   }
   if (search) {
     query.$or = [
+      { orderNumber: { $regex: search, $options: "i" } },
       { pickup_location: { $regex: search, $options: "i" } },
       { drop_location: { $regex: search, $options: "i" } },
       { sender_pin_code: { $regex: search, $options: "i" } },
@@ -1185,9 +1186,9 @@ export const getParticularOrder = async (order_id) => {
 
 export const getFeedbacks = async (role, page = 1, limit = 10) => {
   const query = {};
-  if (role === "User") {
+  if (role === "CUSTOMER") {
     query.from_customer = { $exists: true, $ne: null };
-  } else if (role === "Delivery Partner") {
+  } else if (role === "DP") {
     query.from_dp = { $exists: true, $ne: null };
   } else if (role === "PDC") {
     query.from_pdc = { $exists: true, $ne: null };
@@ -1435,6 +1436,7 @@ export const getReportData = async (report_type, start_date, end_date) => {
       start_date,
       end_date,
     );
+    console.log(ratings);
     reportData = ratings.map((r) => {
       let name = "System";
       let role = ROLES.USER;
@@ -1454,8 +1456,8 @@ export const getReportData = async (report_type, start_date, end_date) => {
         role: role,
         rating: r.stars || 5,
         comment: r.message || "",
-        created_at: r.createdAt
-          ? new Date(r.createdAt).toISOString().split("T")[0]
+        created_at: r.created_at
+          ? new Date(r.created_at).toISOString().split("T")[0]
           : "N/A",
       };
     });

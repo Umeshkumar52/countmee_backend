@@ -181,8 +181,7 @@ export const reloadPartial = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const notifications = await Notification.find({
     notifiable_id: userId,
-    read_at: null,
-  });
+  }).sort({ created_at: -1 }).limit(100);
   return res.json(ApiResponse.success({ notifications }));
 });
 

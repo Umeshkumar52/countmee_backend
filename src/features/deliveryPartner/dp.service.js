@@ -628,13 +628,44 @@ export const getNewOrders = async (user_id) => {
         : 0;
 
     // Convert _id objects to string for final output like .toJSON() did
+  // Convert _id objects to string for final output like .toJSON() did
     if (jsonOrder._id) jsonOrder._id = jsonOrder._id.toString();
 
     return jsonOrder;
   });
 
   const ordersWithPickup = await Promise.all(ordersWithPickupPromises);
-  return ordersWithPickup;
+
+  // Fetch pending OrderBundles for this DP
+  const { OrderBundle } = await import("../orders/orderBundle.model.js");
+  const activeBundles = await OrderBundle.find({
+    status: "broadcasting",
+    notified_dps: user_id,
+    accepted_dps: { $ne: user_id },
+    rejected_dps: { $ne: user_id },
+  })
+    .populate({
+      path: "orders",
+      populate: { path: "package_id" },
+    })
+    .lean();
+
+  const formattedBundles = activeBundles.map((bundle) => ({
+    type: "bundle",
+    bundle_id: bundle.bundle_id,
+    created_at: bundle.created_at,
+    orders: bundle.orders.map((order) => ({
+      order_id: order._id,
+      pickup_location: order.pickup_location,
+      drop_location: order.drop_location,
+      charges: order.charges?.toString() || "0",
+      distance: order.distance?.toString() || "0",
+      product_description: order.package_id?.product_description || "",
+      no_of_items: order.package_id?.no_of_items?.toString() || "1",
+    })),
+  }));
+
+  return [...ordersWithPickup, ...formattedBundles];
 };
 
 export const cancelAssignment = async (order_id, user_id, cancel_reason) => {

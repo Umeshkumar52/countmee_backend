@@ -2,6 +2,10 @@ import * as adminService from "./admin.service.js";
 import { validate } from "../../common/utils/validationHelper.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
 import * as adminValidation from "./admin.validation.js";
+import { broadcastOrderToNearbyDPs } from "../orders/orders.service.js";
+import { Order } from "../orders/order.model.js";
+import { PackageDetail } from "../orders/packageDetail.model.js";
+import { ORDER_STATUS } from "../../constants/orderStatus.js";
 
 export const postLogin = async (req, res, next) => {
   try {
@@ -104,13 +108,11 @@ export const postBulkAddDp = async (req, res, next) => {
     return res.json(ApiResponse.success(result));
   } catch (err) {
     if (err.errors) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Validation Failed",
-          errors: err.errors,
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Validation Failed",
+        errors: err.errors,
+      });
     }
     next(err);
   }
@@ -172,7 +174,10 @@ export const deleteCustomer = async (req, res, next) => {
 
 export const getPdcPage = async (req, res, next) => {
   try {
-    const result = await adminService.getPdcList();
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || "";
+    const result = await adminService.getPdcList(page, limit, search);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -402,6 +407,34 @@ export const getAssignOrdersSelect = async (req, res, next) => {
   }
 };
 
+export const postBroadcastOrder = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const order = await Order.findById(id);
+    if (!order) throw new Error("Order not found");
+    if (order.status == ORDER_STATUS.CREATED) {
+      throw new Error(
+        "Order has not been payment confirmed yet. Cannot broadcast.",
+      );
+    }
+    const packageDetail = await PackageDetail.findById(order.package_id);
+    if (!packageDetail) throw new Error("Package not found");
+
+    await broadcastOrderToNearbyDPs(order, packageDetail, true);
+
+    if (order.status === ORDER_STATUS.CONFIRMED) {
+      order.status = ORDER_STATUS.PENDING;
+      await order.save();
+    }
+
+    return res.json(
+      ApiResponse.success(null, "Order successfully broadcasted to nearby DPs"),
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const postAssignDeliveryboy = async (req, res, next) => {
   try {
     const { order_id, dp_id } = validate(
@@ -439,7 +472,15 @@ export const getPaginatedOrdersPage = async (req, res, next) => {
 
     let statusList = null;
     if (status && status !== "all") {
-      statusList = status === "pending" ? ["pending", "created"] : [status];
+      if (status === "pending") {
+        statusList = ["pending", "created"];
+      } else if (status === "assigned") {
+        statusList = ["processing"];
+      } else if (status === "intransit") {
+        statusList = ["packed", "shipped", "out_for_delivery"];
+      } else {
+        statusList = [status];
+      }
     }
 
     const result = await adminService.getPaginatedOrders(

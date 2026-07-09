@@ -206,7 +206,7 @@ export const broadcastOrderToNearbyDPs = async (
         product_description: packageDetail.product_description,
         no_of_items: packageDetail.no_of_items?.toString() || "1",
       };
-      dpIds.push(dp.user_id);
+      dpIds.push(dp?.user_id);
       // Fire Socket notification
       sendNotificationToUser(dp.user_id, payload);
 
@@ -220,23 +220,6 @@ export const broadcastOrderToNearbyDPs = async (
         );
       }
       sentCount++;
-    }
-   const existorderRest=await OrderRequest.findOne({order_id:order._id,status:"pending"})
-   if(existorderRest){
-    await OrderRequest.findOneAndUpdate({order_id:order._id,status:"pending"}, {notified_ids: dpIds});
-  }else{
-      await OrderRequest.create(
-      
-        {
-          order_id,
-          requested_by: order?.user_id,
-          notified_ids: dpIds,
-          status: ORDER_REQUEST_STATUS.PENDING,
-          request_type: "direct",
-          accepted_by: null,
-        }
-      
-    );
     }
 
     console.log(
@@ -254,6 +237,26 @@ export const broadcastOrderToNearbyDPs = async (
           order_id: order._id.toString(),
         });
       }
+    }
+
+    const existorderRest = await OrderRequest.findOne({
+      order_id: order._id,
+      status: "pending",
+    });
+    if (existorderRest) {
+      await OrderRequest.findOneAndUpdate(
+        { order_id: order._id, status: "pending" },
+        { notified_ids: dpIds },
+      );
+    } else {
+      await OrderRequest.create({
+        order_id: order._id,
+        requested_by: order?.user_id,
+        notified_ids: dpIds,
+        status: ORDER_REQUEST_STATUS.PENDING,
+        request_type: "direct",
+        accepted_by: null,
+      });
     }
   } catch (error) {
     console.error("[Broadcast] Error broadcasting to DPs:", error.message);
