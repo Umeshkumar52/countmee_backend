@@ -84,10 +84,14 @@ export const findOrderHistoryByUserId = async (user_id) => {
       : null;
     const dpimages = await DeliveryPartnerImage.find({ order_id: order._id });
     const rating = await Rating.findOne({ order_id: order._id });
+    const { OrderWaitCharge } = await import("./orderWaitCharge.model.js");
+    const waitCharge = await OrderWaitCharge.findOne({ order_id: order._id });
 
     orderObj.packageDetail = packageDetail ? packageDetail.toObject() : null;
     orderObj.dpimages = dpimages.map((img) => img.toObject());
     orderObj.rating = rating ? rating.toObject() : null;
+    orderObj.waiting_charge = waitCharge ? waitCharge.total_waiting_charge : 0;
+    orderObj.waiting_charge_paid = waitCharge ? (waitCharge.payment_status === "paid") : false;
     result.push(orderObj);
   }
   return result;

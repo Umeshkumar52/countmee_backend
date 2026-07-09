@@ -5,8 +5,17 @@ import { validate } from "../../common/utils/validationHelper.js";
 import * as ordersValidation from "./orders.validation.js";
 import { ApiError } from "../../common/utils/ApiError.js";
 
+import { OrderWaitCharge } from "./orderWaitCharge.model.js";
+
 export const createOrder = asyncHandler(async (req, res) => {
   const { _id } = req.user;
+
+  // Enforce Restriction: Block order creation if unpaid waiting charges exist
+  const unpaidCharges = await OrderWaitCharge.findOne({ user_id: _id, payment_status: "unpaid" });
+  if (unpaidCharges) {
+    throw new ApiError(400, `You have an overdue waiting charge of ₹${unpaidCharges.total_waiting_charge}. Please clear it before creating a new order.`);
+  }
+
   if (typeof req.body.different_dimantion === "string") {
     req.body.different_dimantion = req.body.different_dimantion === "true";
   }
@@ -148,4 +157,10 @@ export const rateDp = asyncHandler(async (req, res) => {
   } catch (error) {
     throw new ApiError(400, error.message);
   }
+});
+
+export const myDues = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
+  const dues = await ordersService.getMyDues(_id);
+  return res.json(ApiResponse.success({ dues }, "Customer Dues"));
 });

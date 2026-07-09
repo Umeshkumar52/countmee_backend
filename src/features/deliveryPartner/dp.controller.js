@@ -301,6 +301,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
       broadcastObj = await Broadcast.create({
         order_id,
         broadcasted_by: user_id,
+        status: "Broadcasting", // Fix: Visibility bug (was Pending)
         pickup_location: location,
         pickup_latitude: Number(latitude),
         pickup_longitude: Number(longitude),
@@ -311,6 +312,10 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
         pickup_otp: Math.floor(1000 + Math.random() * 9000),
         drop_otp: Math.floor(1000 + Math.random() * 9000),
       });
+    } else {
+      // Fix: Visibility bug when reusing after a cancellation
+      broadcastObj.status = "Broadcasting";
+      await broadcastObj.save();
     }
 
     const minBroadcast = await mongoose
@@ -357,6 +362,22 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     }
 
     const dps = await DpDetail.find({ user_id: { $in: nearestDps } });
+
+    // Schedule Agenda job to expire this broadcast in 10 minutes
+    const agenda = getAgenda();
+    if (agenda) {
+      // Prevent Race Condition: Cancel any previous expiration timers for this specific broadcast
+      await agenda.cancel({ 
+        name: "expire-broadcast", 
+        "data.broadcast_id": broadcastObj._id.toString() 
+      });
+
+      await agenda.schedule("in 10 minutes", "expire-broadcast", {
+        broadcast_id: broadcastObj._id.toString(),
+        order_id: order_id.toString(),
+        pdc_id: user_id.toString(), // DP who triggered the broadcast
+      });
+    }
 
     const data = {
       dp: dps,

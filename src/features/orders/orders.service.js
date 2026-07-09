@@ -11,6 +11,7 @@ import { Order } from "./order.model.js";
 import { OrderRequest } from "./orderRequest.model.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { PackageDetail } from "./packageDetail.model.js";
+import { OrderWaitCharge } from "./orderWaitCharge.model.js";
 import { Rating } from "../deliveryPartner/rating.model.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
 import {
@@ -505,6 +506,9 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
     order.cancel_order_reason = cancel_order_reason;
     await order.save();
 
+    // Clean up any waiting charges for cancelled order
+    await OrderWaitCharge.deleteMany({ order_id: order._id });
+
     if (cancel_order_reason === "Driver are not found") {
       await sendNotification({
         role: ROLES.USER,
@@ -771,4 +775,8 @@ export const rateDp = async (
     rating,
     message: `You have rated ${dp.name} successfully.`,
   };
+};
+
+export const getMyDues = async (user_id) => {
+  return await OrderWaitCharge.find({ user_id, payment_status: "unpaid" }).sort({ created_at: -1 });
 };

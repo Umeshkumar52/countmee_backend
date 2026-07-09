@@ -946,7 +946,8 @@ export const getPaginatedOrders = async (
 };
 
 export const getPendingOrders = async () => {
-  return await getOrders(["pending", "created"]);
+  const orders = await adminRepository.findPendingOrders();
+  return { orders };
 };
 
 export const getScheduledOrderStats = async () => {
@@ -1038,11 +1039,13 @@ export const getScheduledFilters = async () => {
 };
 
 export const getAssignedOrders = async () => {
-  return await getOrders(["assigned"]);
+  const orders = await adminRepository.findAssignedOrders();
+  return { orders };
 };
 
 export const getInTransitOrders = async () => {
-  return await getOrders(["intransit"]);
+  const orders = await adminRepository.findInTransitOrders();
+  return { orders };
 };
 
 export const getDeliveredOrders = async () => {
@@ -1050,7 +1053,8 @@ export const getDeliveredOrders = async () => {
 };
 
 export const getBroadcastedOrders = async () => {
-  return await getOrders(["broadcasted"]);
+  const orders = await adminRepository.findBroadcastedOrders();
+  return { orders };
 };
 
 export const getCustomerCancelledOrders = async () => {
@@ -1208,10 +1212,21 @@ export const getPendingPayments = async (type, startDate, endDate) => {
   const end = new Date(endDate + "T23:59:59.999Z");
 
   if (type === ROLES.DP) {
+    const { PAYOUT_STATUS } = await import("../../constants/orderStatus.js");
     const payouts = await DpPayout.find({
-      settled: 0,
+      $or: [
+        { settled: { $in: [0, PAYOUT_STATUS.PENDING] } },
+        { waiting_charge_settled: { $in: [0, PAYOUT_STATUS.PENDING] }, waiting_charge_earning: { $gt: 0 } }
+      ],
       created_at: { $gte: start, $lte: end },
     }).populate("order_id");
+    
+    // Fetch all related OrderWaitCharge documents to check customer payment status
+    const orderIdsForWaitCharge = payouts.filter(p => p.order_id).map(p => p.order_id._id);
+    const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+    const waitCharges = await OrderWaitCharge.find({ order_id: { $in: orderIdsForWaitCharge } });
+    const waitChargeMap = new Map();
+    waitCharges.forEach(wc => waitChargeMap.set(wc.order_id.toString(), wc));
 
     const groups = {};
     for (const p of payouts) {
@@ -1231,17 +1246,32 @@ export const getPendingPayments = async (type, startDate, endDate) => {
         };
       }
       const g = groups[dpId];
-      g.amount_to_pay += p.earnings;
+      let pendingForThisOrder = 0;
+      if (p.settled === PAYOUT_STATUS.PENDING || p.settled === 0) pendingForThisOrder += p.earnings;
+      if ((p.waiting_charge_settled === PAYOUT_STATUS.PENDING || p.waiting_charge_settled === 0) && p.waiting_charge_earning > 0) {
+        pendingForThisOrder += p.waiting_charge_earning;
+      }
+
+      g.amount_to_pay += pendingForThisOrder;
       g.total_orders += 1;
       g.payout_ids.push(p._id);
       if (p.order_id) {
         g.order_ids.push(p.order_id._id);
+        
+        const wc = waitChargeMap.get(p.order_id._id.toString());
+        
         g.orders.push({
           id: p.order_id._id,
+          payout_id: p._id,
           order_number: p.order_id._id,
           pickup_address: p.order_id.pickup_location,
           delivery_address: p.order_id.drop_location,
           amount: p.earnings,
+          base_settled: p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1,
+          waiting_charge: p.waiting_charge_earning || 0,
+          waiting_charge_settled: p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1,
+          total_amount: p.earnings + (p.waiting_charge_earning || 0),
+          customer_paid_waiting_charge: wc ? (wc.payment_status === "paid") : false
         });
       }
     }
@@ -1320,7 +1350,7 @@ export const getPendingPayments = async (type, startDate, endDate) => {
   }
 };
 
-export const settlePayments = async (ids, payable, settlementAmount) => {
+export const settlePayments = async (ids, payable, settlementAmount, settle_type = "both") => {
   const mongoose = await import("mongoose");
   const DpPayout = mongoose.default.model("DpPayout");
   const PdcPayout = mongoose.default.model("PdcPayout");
@@ -1334,9 +1364,24 @@ export const settlePayments = async (ids, payable, settlementAmount) => {
 
   let orderIds = [];
   if (user.role === ROLES.DP) {
-    await DpPayout.updateMany({ _id: { $in: ids } }, { settled: 1 });
+    const { PAYOUT_STATUS } = await import("../../constants/orderStatus.js");
+    const updateQuery = {};
+    if (settle_type === "base" || settle_type === "both") {
+      updateQuery.settled = PAYOUT_STATUS.COMPLETED;
+    }
+    if (settle_type === "waiting" || settle_type === "both") {
+      updateQuery.waiting_charge_settled = PAYOUT_STATUS.COMPLETED;
+    }
+    await DpPayout.updateMany({ _id: { $in: ids } }, updateQuery);
     const payouts = await DpPayout.find({ _id: { $in: ids } });
-    orderIds = payouts.map((p) => p.order_id).filter(Boolean);
+
+    // Only mark Order as payment_settled if BOTH parts are settled for all payouts
+    // (If waiting_charge_earning is 0, we consider the waiting charge part inherently "settled")
+    orderIds = payouts.filter(p => {
+      const baseSettled = p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1;
+      const waitingSettled = (p.waiting_charge_earning || 0) === 0 || p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1;
+      return baseSettled && waitingSettled;
+    }).map((p) => p.order_id).filter(Boolean);
   } else if (user.role === ROLES.PDC) {
     await PdcPayout.updateMany({ _id: { $in: ids } }, { settled: 1 });
     const payouts = await PdcPayout.find({ _id: { $in: ids } });

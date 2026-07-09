@@ -51,12 +51,12 @@ router.post('/documentsreupload', docUploadFields, dpController.documentsReuploa
 // New 2nd Phase api for vehicle types and subcategories
 router.get('/vehicleTypes', dpController.getVehicleTypes);
 router.get('/travelStates', dpController.getTravelStates);
+router.post('/arrival', dpController.arrival);
 ///////////////////////////////////
 
 // Order workflows
 router.get('/new_order/:order_id', dpController.new_order);
 router.post('/order_accept', dpController.order_accept);
-router.post('/arrival', dpController.arrival);
 router.post('/cancel_assignment', dpController.cancelAssignment);
 router.get('/acceptedOrders/:user_id', dpController.acceptedOrders);
 router.post('/pickupOtp', dpController.pickupOtp);

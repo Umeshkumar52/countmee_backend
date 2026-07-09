@@ -405,14 +405,11 @@ export const cancelAssignmentSchema = Joi.object({
 });
 
 export const orderAcceptSchema = Joi.object({
-  order_id: Joi.string()
-    .regex(objectIdRegex)
-    .required()
-    .messages({
-      'string.empty': 'Order ID cannot be empty',
-      'string.pattern.base': 'Invalid Order ID format',
-      'any.required': 'Order ID is required'
-    }),
+  order_id: Joi.array().items(Joi.string().regex(objectIdRegex)).min(1).required().messages({
+    'array.base': 'Order ID must be an array of valid strings',
+    'array.min': 'Order ID array cannot be empty',
+    'any.required': 'Order ID is required'
+  }),
   status: Joi.boolean()
     .required()
     .messages({

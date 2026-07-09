@@ -57,8 +57,6 @@ const orderSchema = new mongoose.Schema(
     dp_accept_time: { type: Date, default: null },
     dp_pickup_arrival_time: { type: Date, default: null },
     dp_drop_arrival_time: { type: Date, default: null },
-    pickup_waiting_charges: { type: Number, default: 0 },
-    drop_waiting_charges: { type: Number, default: 0 },
     dp_pickup_time: { type: Date, default: null },
     dp_deliver_time: { type: Date, default: null },
     pickup_otp: { type: Number, required: true },

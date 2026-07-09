@@ -9,9 +9,12 @@ import {
 } from "../../constants/index.js";
 import { User } from "../users/user.model.js";
 import { Order } from "../orders/order.model.js";
+import { OrderWaitCharge } from "../orders/orderWaitCharge.model.js";
 import { OrderRequest } from "../orders/orderRequest.model.js";
 import { DpDetail } from "./dpDetail.model.js";
 import { DpDocument } from "./dpDocument.model.js";
+import { Wallet } from "../payments/wallet.model.js";
+import { WalletTransaction } from "../payments/walletTransaction.model.js";
 import { DpPayout } from "./dpPayout.model.js";
 import { Travel } from "../orders/travel.model.js";
 import { Rating } from "./rating.model.js";
@@ -316,20 +319,20 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
       // Dynamic radius check for PDC broadcasts
       const dpLocation = await DpDetail.findOne({ user_id: dp_id }).lean();
       if (dpLocation) {
-         const distanceConfig = await adminService.getBroadcastDistance();
-         const maxDistanceInKm = distanceConfig?.distancesByRole?.pdc || 10;
-         const broadcast = await Broadcast.findById(authorizedReq.broadcast_id).lean();
-         if (broadcast) {
-           const dist = await mapsService.distanceBetween(
-             dpLocation.latitude,
-             dpLocation.longitude,
-             broadcast.pickup_latitude,
-             broadcast.pickup_longitude
-           );
-           if (parseFloat(dist) <= maxDistanceInKm) {
-             isAuthorized = true;
-           }
-         }
+        const distanceConfig = await adminService.getBroadcastDistance();
+        const maxDistanceInKm = distanceConfig?.distancesByRole?.pdc || 10;
+        const broadcast = await Broadcast.findById(authorizedReq.broadcast_id).lean();
+        if (broadcast) {
+          const dist = await mapsService.distanceBetween(
+            dpLocation.latitude,
+            dpLocation.longitude,
+            broadcast.pickup_latitude,
+            broadcast.pickup_longitude
+          );
+          if (parseFloat(dist) <= maxDistanceInKm) {
+            isAuthorized = true;
+          }
+        }
       }
     }
   }
@@ -337,9 +340,9 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
   // 2. If not authorized via OrderRequest, check if order is part of an active OrderBundle
   if (!isAuthorized) {
     const { OrderBundle } = await import("../orders/orderBundle.model.js");
-    const bundle = await OrderBundle.findOne({ 
+    const bundle = await OrderBundle.findOne({
       orders: order_id,
-      status: "broadcasting" 
+      status: "broadcasting"
     }).lean();
 
     if (bundle && bundle.notified_dps.map(id => id.toString()).includes(dp_id.toString())) {
@@ -358,14 +361,14 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
 
   const packageDetail = order.package_id ? await PackageDetail.findById(order.package_id).lean() : null;
   let broadcastObj = null;
-  
+
   if (authorizedReq && authorizedReq.broadcast_id) {
-     const broadcast = await Broadcast.findById(authorizedReq.broadcast_id).lean();
-     if (broadcast) {
-       broadcastObj = { ...broadcast };
-       const broadcaster = await User.findById(broadcast.broadcasted_by).lean();
-       broadcastObj.broadcaster = broadcaster || null;
-     }
+    const broadcast = await Broadcast.findById(authorizedReq.broadcast_id).lean();
+    if (broadcast) {
+      broadcastObj = { ...broadcast };
+      const broadcaster = await User.findById(broadcast.broadcasted_by).lean();
+      broadcastObj.broadcaster = broadcaster || null;
+    }
   }
 
   const jsonOrder = { ...order };
@@ -382,13 +385,13 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
   const chargeConfig = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).lean();
   const percentage = chargeConfig && chargeConfig.dp_commission != null ? chargeConfig.dp_commission / 100 : 0.7;
   const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
-  
+
   const dpPayouts = await DpPayout.find({ order_id: order_id }).lean();
   const sumEarnings = dpPayouts.reduce((acc, curr) => acc + curr.earnings, 0);
   const remainingPot = Math.max(0, totalDpPot - sumEarnings);
 
   jsonOrder.estimated_earnings = remainingPot;
-  
+
   let remaining_distance = order.distance;
   if (broadcastObj) {
     const mode = order.mode_of_transport === "By Hand" ? "walking" : "driving";
@@ -406,7 +409,7 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
 
   jsonOrder.remaining_distance = remaining_distance;
   jsonOrder.per_km_amount = remaining_distance > 0 ? Math.round((remainingPot / remaining_distance) * 100) / 100 : 0;
-  
+
   if (jsonOrder._id) jsonOrder._id = jsonOrder._id.toString();
 
   // Adding Geofence radius to payload
@@ -509,7 +512,7 @@ export const getNewOrders = async (user_id) => {
   const [packages, allCharges, dpPayouts, orderBroadcasts] = await Promise.all([
     PackageDetail.find({ _id: { $in: packageIds } }).lean(),
     DeliverCharge.find({}).lean(),
-    DpPayout.find({ order_id: { $in: orderIds } }).lean(),
+    DpPayout.find({ order_id: { $in: orderIds }, dp_auth_id: user_id }).lean(),
     Broadcast.find({ _id: { $in: broadcastIdsForOrders } }).lean(),
   ]);
 
@@ -520,8 +523,10 @@ export const getNewOrders = async (user_id) => {
   for (const p of dpPayouts) {
     const oId = p.order_id?.toString();
     if (oId) {
-      if (!payoutMap.has(oId)) payoutMap.set(oId, 0);
-      payoutMap.set(oId, payoutMap.get(oId) + p.earnings);
+      if (!payoutMap.has(oId)) payoutMap.set(oId, { earnings: 0, waiting_charge_earning: 0 });
+      const entry = payoutMap.get(oId);
+      entry.earnings += p.earnings;
+      entry.waiting_charge_earning += p.waiting_charge_earning || 0;
     }
   }
 
@@ -572,10 +577,15 @@ export const getNewOrders = async (user_id) => {
         : 0.7;
 
     const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
-    const sumEarnings = payoutMap.get(order._id?.toString()) || 0;
+    const payoutEntry = payoutMap.get(order._id?.toString()) || { earnings: 0, waiting_charge_earning: 0 };
+    const sumEarnings = payoutEntry.earnings;
     const remainingPot = Math.max(0, totalDpPot - sumEarnings);
 
     jsonOrder.estimated_earnings = remainingPot;
+    // Waiting charge earned by this DP for this order (100% of their phase: pickup or drop)
+    jsonOrder.waiting_charge_earning = payoutEntry.waiting_charge_earning;
+    // Total earnings = base delivery commission + waiting charge earned
+    jsonOrder.total_earnings = Math.round((remainingPot + payoutEntry.waiting_charge_earning) * 100) / 100;
 
     let remaining_distance = order.distance;
 
@@ -710,178 +720,212 @@ export const markArrival = async (order_id, user_id, location_type, lat, lng) =>
   }
 
   const distanceInMeters = await mapsService.haversineGreatCircleDistance(lat, lng, targetLat, targetLng);
-  
+
   if (distanceInMeters > deliverCharge.pickup_geofence_radius) {
     throw new Error(`You are too far (${Math.round(distanceInMeters)}m) from the location to mark arrival. Must be within ${deliverCharge.pickup_geofence_radius}m.`);
   }
 
-  if (location_type === 'pickup') {
-    order.dp_pickup_arrival_time = new Date();
-    await sendOTPViaSMS(order.sender_phone, `Your Delivery Partner has arrived at the pickup location. Please handover the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`);
-  } else {
-    order.dp_drop_arrival_time = new Date();
-    await sendOTPViaSMS(order.receiver_phone, `Your Delivery Partner has arrived at the drop location. Please collect the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`);
-  }
-
-  await order.save();
-  return { message: "Arrival marked successfully" };
-};
-
-export const orderAccept = async (order_id, status, user_id) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const orderRequest = await OrderRequest.findOne({
-      order_id,
-      status: ORDER_REQUEST_STATUS.PENDING,
-    }).session(session);
-
-    if (!orderRequest) {
-      // Check if this specific user has already accepted this order
-      const alreadyAccepted = await OrderRequest.findOne({
-        order_id,
-        status: ORDER_REQUEST_STATUS.ACCEPTED,
-        accepted_by: user_id,
-      }).session(session);
-
-      await session.commitTransaction();
-      session.endSession();
+    if (location_type === 'pickup') {
+      order.dp_pickup_arrival_time = new Date();
+      await sendOTPViaSMS(order.sender_phone, `Your Delivery Partner has arrived at the pickup location. Please handover the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`);
       
-      if (alreadyAccepted) {
-        return { message: "You have already accepted this order." };
-      }
-      return { message: "Sorry!, You have missed this order." };
-    }
-
-    if (status) {
-    }
-    if (status) {
-      const order = await Order.findById(order_id).session(session);
-      if (!order) {
-        throw new Error("Order not found");
-      }
-
-      if (order.user_action === USER_ACTION_STATUS.CANCELLED) {
-        throw new Error("Sorry this order cancelled by customer");
-      }
-
-      orderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
-      orderRequest.accepted_by = user_id;
-      await orderRequest.save({ session });
-
-      // Lock the DP by adding this order to their active array
-      await DpDetail.findOneAndUpdate(
-        { user_id },
-        { $addToSet: { active_order_ids: order_id } },
-        { session }
+      await OrderWaitCharge.findOneAndUpdate(
+        { order_id },
+        {
+          $set: {
+            order_id,
+            user_id: order.user_id,
+            pickup_dp_id: user_id,
+            pickup_arrival_time: order.dp_pickup_arrival_time
+          }
+        },
+        { upsert: true, session }
       );
+    } else {
+      order.dp_drop_arrival_time = new Date();
+      await sendOTPViaSMS(order.receiver_phone, `Your Delivery Partner has arrived at the drop location. Please collect the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`);
 
-      // Payout allocation settings
-      const chargeConfig = await DeliverCharge.findOne({
-        vehicle_type: order.mode_of_transport,
+      await OrderWaitCharge.findOneAndUpdate(
+        { order_id },
+        {
+          $set: {
+            order_id,
+            user_id: order.user_id,
+            delivery_dp_id: user_id,
+            drop_arrival_time: order.dp_drop_arrival_time
+          }
+        },
+        { upsert: true, session }
+      );
+    }
+
+    await order.save({ session });
+    await session.commitTransaction();
+    session.endSession();
+    return { message: "Arrival marked successfully" };
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
+  }
+};
+
+export const orderAccept = async (orderIds, status, user_id) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    for (const order_id of orderIds) {
+      const orderRequest = await OrderRequest.findOne({
+        order_id,
+        status: ORDER_REQUEST_STATUS.PENDING,
       }).session(session);
-      const percentage =
-        chargeConfig && chargeConfig.dp_commission != null
-          ? chargeConfig.dp_commission / 100
-          : 0.7;
-      const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
 
-      if (orderRequest.request_type === "direct") {
-        order.status_completed = "order accepted";
-        order.status = ORDER_STATUS.PROCESSING;
-        order.pickup_dp_id = user_id;
-        order.dp_accept_time = new Date();
-        await order.save({ session });
+      if (!orderRequest) {
+        // Check if this specific user has already accepted this order
+        const alreadyAccepted = await OrderRequest.findOne({
+          order_id,
+          status: ORDER_REQUEST_STATUS.ACCEPTED,
+          accepted_by: user_id,
+        }).session(session);
 
-        // SMS drop OTP to receiver
-        const message2 = `Your CountMee Courier verification code is ${order.drop_otp}`;
-        await sendOTPViaSMS(order.receiver_phone, message2);
-      } else if (
-        orderRequest.request_type === "broadcast_dp" ||
-        orderRequest.request_type === "broadcast_pdc"
-      ) {
-        order.status_completed = "broadcast accepted";
-        order.status = ORDER_STATUS.PROCESSING;
-        order.delivery_type = "broadcast";
-        await order.save({ session });
+        if (alreadyAccepted) {
+          throw new Error(`You have already accepted order ${order_id}`);
+        }
+        throw new Error(`Sorry, you have missed order ${order_id}`);
+      }
 
-        // Previous segment leg payout
-        const oldOrderRequest = await OrderRequest.findOne({
-          order_id: order._id,
-        })
-          .sort({ created_at: -1 })
-          .skip(1)
-          .session(session);
-        // Previous segment leg payout - ONLY recalculate for direct DP-to-DP handovers
-        // For broadcast_pdc, the PDC drop-off already locked in the exact PDC coordinates
-        if (orderRequest.request_type === "broadcast_dp") {
+      if (status) {
+      }
+      if (status) {
+        const order = await Order.findById(order_id).session(session);
+        if (!order) {
+          throw new Error("Order not found");
+        }
 
-          // const travel = oldOrderRequest
-          //   ? await Travel.findOne({
-          //       order_id: order._id,
-          //       user_id: oldOrderRequest.accepted_by,
-          //     })
-          //       .sort({ created_at: -1 })
-          //       .session(session)
-          //   : null;
-          let travel = oldOrderRequest
-            ? await Travel.findOne({
+        if (order.user_action === USER_ACTION_STATUS.CANCELLED) {
+          throw new Error("Sorry this order cancelled by customer");
+        }
+
+        orderRequest.status = ORDER_REQUEST_STATUS.ACCEPTED;
+        orderRequest.accepted_by = user_id;
+        await orderRequest.save({ session });
+
+        // Lock the DP by adding this order to their active array
+        await DpDetail.findOneAndUpdate(
+          { user_id },
+          { $addToSet: { active_order_ids: order_id } },
+          { session }
+        );
+
+        // Payout allocation settings
+        const chargeConfig = await DeliverCharge.findOne({
+          vehicle_type: order.mode_of_transport,
+        }).session(session);
+        const percentage =
+          chargeConfig && chargeConfig.dp_commission != null
+            ? chargeConfig.dp_commission / 100
+            : 0.7;
+        const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
+
+        if (orderRequest.request_type === "direct") {
+          order.status_completed = "order accepted";
+          order.status = ORDER_STATUS.PROCESSING;
+          order.pickup_dp_id = user_id;
+          order.dp_accept_time = new Date();
+          await order.save({ session });
+
+          // SMS drop OTP to receiver
+          const message2 = `Your CountMee Courier verification code is ${order.drop_otp}`;
+          await sendOTPViaSMS(order.receiver_phone, message2);
+        } else if (
+          orderRequest.request_type === "broadcast_dp" ||
+          orderRequest.request_type === "broadcast_pdc"
+        ) {
+          order.status_completed = "broadcast accepted";
+          order.status = ORDER_STATUS.PROCESSING;
+          order.delivery_type = "broadcast";
+          await order.save({ session });
+
+          // Previous segment leg payout
+          const oldOrderRequest = await OrderRequest.findOne({
+            order_id: order._id,
+          })
+            .sort({ created_at: -1 })
+            .skip(1)
+            .session(session);
+          // Previous segment leg payout - ONLY recalculate for direct DP-to-DP handovers
+          // For broadcast_pdc, the PDC drop-off already locked in the exact PDC coordinates
+          if (orderRequest.request_type === "broadcast_dp") {
+
+            // const travel = oldOrderRequest
+            //   ? await Travel.findOne({
+            //       order_id: order._id,
+            //       user_id: oldOrderRequest.accepted_by,
+            //     })
+            //       .sort({ created_at: -1 })
+            //       .session(session)
+            //   : null;
+            let travel = oldOrderRequest
+              ? await Travel.findOne({
                 order_id: order._id,
                 user_id: oldOrderRequest.accepted_by,
               })
                 .sort({ created_at: -1 })
                 .session(session)
-            : null;
+              : null;
 
-          if (!travel && oldOrderRequest) {
-            let prevLat = order.sender_latitude;
-            let prevLon = order.sender_longitude;
-            let prevLoc = order.pickup_location;
-            
-            if (oldOrderRequest.request_type !== "direct" && oldOrderRequest.broadcast_id) {
-              const prevBroadcast = await Broadcast.findById(oldOrderRequest.broadcast_id).session(session);
-              if (prevBroadcast) {
-                prevLat = prevBroadcast.pickup_latitude;
-                prevLon = prevBroadcast.pickup_longitude;
-                prevLoc = prevBroadcast.pickup_location;
+            if (!travel && oldOrderRequest) {
+              let prevLat = order.sender_latitude;
+              let prevLon = order.sender_longitude;
+              let prevLoc = order.pickup_location;
+
+              if (oldOrderRequest.request_type !== "direct" && oldOrderRequest.broadcast_id) {
+                const prevBroadcast = await Broadcast.findById(oldOrderRequest.broadcast_id).session(session);
+                if (prevBroadcast) {
+                  prevLat = prevBroadcast.pickup_latitude;
+                  prevLon = prevBroadcast.pickup_longitude;
+                  prevLoc = prevBroadcast.pickup_location;
+                }
               }
+
+              const newTravels = await Travel.create([{
+                order_id: order._id,
+                order_cost: order.charges,
+                user_id: oldOrderRequest.accepted_by,
+                pickup_location: prevLoc,
+                pickup_latitude: prevLat,
+                pickup_longitude: prevLon,
+              }], { session });
+              travel = newTravels[0];
             }
 
-            const newTravels = await Travel.create([{
-              order_id: order._id,
-              order_cost: order.charges,
-              user_id: oldOrderRequest.accepted_by,
-              pickup_location: prevLoc,
-              pickup_latitude: prevLat,
-              pickup_longitude: prevLon,
-            }], { session });
-            travel = newTravels[0];
-          }
+            let distance = 0;
 
-          let distance = 0;
-
-          // const oldDpDetail = oldOrderRequest
-          //   ? await DpDetail.findOne({
-          //       user_id: oldOrderRequest.accepted_by,
-          //     }).session(session)
-          //   : null;
-          const oldDpDetail = oldOrderRequest
-            ? await DpDetail.findOne({
+            // const oldDpDetail = oldOrderRequest
+            //   ? await DpDetail.findOne({
+            //       user_id: oldOrderRequest.accepted_by,
+            //     }).session(session)
+            //   : null;
+            const oldDpDetail = oldOrderRequest
+              ? await DpDetail.findOne({
                 user_id: oldOrderRequest.accepted_by,
               }).session(session)
-            : null;
+              : null;
 
-          if (travel && oldOrderRequest && oldDpDetail) {
-            const mode =
-              order.mode_of_transport === "By Hand" ? "walking" : "driving";
-            const chkDistance = await mapsService.distanceBetween(
-              travel.pickup_latitude,
-              travel.pickup_longitude,
-              oldDpDetail.latitude,
-              oldDpDetail.longitude,
-              mode,
-            );
-            distance = parseFloat(chkDistance) || 0;
+            if (travel && oldOrderRequest && oldDpDetail) {
+              const mode =
+                order.mode_of_transport === "By Hand" ? "walking" : "driving";
+              const chkDistance = await mapsService.distanceBetween(
+                travel.pickup_latitude,
+                travel.pickup_longitude,
+                oldDpDetail.latitude,
+                oldDpDetail.longitude,
+                mode,
+              );
+              distance = parseFloat(chkDistance) || 0;
               const distToReceiver =
                 parseFloat(
                   await mapsService.distanceBetween(
@@ -928,114 +972,114 @@ export const orderAccept = async (order_id, status, user_id) => {
                 },
                 { upsert: true, session },
               );
-          }
+            }
 
-          // Current DP payout leg segment allocation
-          const distributedDpAmount = await DpPayout.find({
-            order_id: order._id,
-          }).session(session);
-          const sumEarnings = distributedDpAmount.reduce(
-            (acc, curr) => acc + curr.earnings,
-            0,
-          );
-          const remainingPot = Math.max(0, totalDpPot - sumEarnings);
-
-          const mode =
-            order.mode_of_transport === "By Hand" ? "walking" : "driving";
-          const activeBroadcast = await Broadcast.findById(
-            orderRequest.broadcast_id,
-          ).session(session);
-
-          const pickupLatitude =
-            activeBroadcast?.pickup_latitude || order.sender_latitude;
-          const pickupLongitude =
-            activeBroadcast?.pickup_longitude || order.sender_longitude;
-          const pickupLocation =
-            activeBroadcast?.pickup_location || order.pickup_location;
-
-          const distToReceiver =
-            parseFloat(
-              await mapsService.distanceBetween(
-                pickupLatitude,
-                pickupLongitude,
-                order.receiver_latitude,
-                order.receiver_longitude,
-                mode,
-              ),
-            ) || 0;
-
-          const pickupToDrop = parseFloat(activeBroadcast?.distance) || 0;
-          const fraction =
-            pickupToDrop + distToReceiver > 0
-              ? pickupToDrop / (pickupToDrop + distToReceiver)
-              : 0.5;
-          const currentDpEarnings =
-            Math.round(remainingPot * Math.min(fraction, 1) * 100) / 100;
-
-          // Check if travel log exists, else create it
-          let currentTravel = await Travel.findOne({
-            order_id: order._id,
-            user_id,
-            pickup_latitude: pickupLatitude,
-            pickup_longitude: pickupLongitude,
-          }).session(session);
-
-          if (!currentTravel) {
-            currentTravel = await Travel.create(
-              [
-                {
-                  order_id: order._id,
-                  user_id,
-                  pickup_latitude: pickupLatitude,
-                  pickup_longitude: pickupLongitude,
-                  order_cost: order.charges,
-                  pickup_location: pickupLocation,
-                  earnings: currentDpEarnings,
-                },
-              ],
-              { session },
-            );
-            currentTravel = currentTravel[0];
-          }
-
-          await DpPayout.findOneAndUpdate(
-            { travel_id: currentTravel._id },
-            {
-              dp_auth_id: user_id,
+            // Current DP payout leg segment allocation
+            const distributedDpAmount = await DpPayout.find({
               order_id: order._id,
-              broadcast_id: orderRequest.broadcast_id,
-              earnings: currentDpEarnings,
-            },
-            { upsert: true, session },
-          );
+            }).session(session);
+            const sumEarnings = distributedDpAmount.reduce(
+              (acc, curr) => acc + curr.earnings,
+              0,
+            );
+            const remainingPot = Math.max(0, totalDpPot - sumEarnings);
 
-          if (orderRequest.broadcast_id) {
-            await Broadcast.findByIdAndUpdate(
+            const mode =
+              order.mode_of_transport === "By Hand" ? "walking" : "driving";
+            const activeBroadcast = await Broadcast.findById(
               orderRequest.broadcast_id,
-              { pickup_dp_id: user_id, status: "Accepted" },
-              { session }
+            ).session(session);
+
+            const pickupLatitude =
+              activeBroadcast?.pickup_latitude || order.sender_latitude;
+            const pickupLongitude =
+              activeBroadcast?.pickup_longitude || order.sender_longitude;
+            const pickupLocation =
+              activeBroadcast?.pickup_location || order.pickup_location;
+
+            const distToReceiver =
+              parseFloat(
+                await mapsService.distanceBetween(
+                  pickupLatitude,
+                  pickupLongitude,
+                  order.receiver_latitude,
+                  order.receiver_longitude,
+                  mode,
+                ),
+              ) || 0;
+
+            const pickupToDrop = parseFloat(activeBroadcast?.distance) || 0;
+            const fraction =
+              pickupToDrop + distToReceiver > 0
+                ? pickupToDrop / (pickupToDrop + distToReceiver)
+                : 0.5;
+            const currentDpEarnings =
+              Math.round(remainingPot * Math.min(fraction, 1) * 100) / 100;
+
+            // Check if travel log exists, else create it
+            let currentTravel = await Travel.findOne({
+              order_id: order._id,
+              user_id,
+              pickup_latitude: pickupLatitude,
+              pickup_longitude: pickupLongitude,
+            }).session(session);
+
+            if (!currentTravel) {
+              currentTravel = await Travel.create(
+                [
+                  {
+                    order_id: order._id,
+                    user_id,
+                    pickup_latitude: pickupLatitude,
+                    pickup_longitude: pickupLongitude,
+                    order_cost: order.charges,
+                    pickup_location: pickupLocation,
+                    earnings: currentDpEarnings,
+                  },
+                ],
+                { session },
+              );
+              currentTravel = currentTravel[0];
+            }
+
+            await DpPayout.findOneAndUpdate(
+              { travel_id: currentTravel._id },
+              {
+                dp_auth_id: user_id,
+                order_id: order._id,
+                broadcast_id: orderRequest.broadcast_id,
+                earnings: currentDpEarnings,
+              },
+              { upsert: true, session },
             );
 
-            if (orderRequest.request_type === "broadcast_pdc") {
-              const broadcastDoc = await Broadcast.findById(
+            if (orderRequest.broadcast_id) {
+              await Broadcast.findByIdAndUpdate(
                 orderRequest.broadcast_id,
-              ).session(session);
-              if (broadcastDoc && broadcastDoc.broadcasted_by) {
-                await sendNotification({
-                  role: ROLES.PDC,
-                  userId: broadcastDoc.broadcasted_by,
-                  title: "Broadcast Accepted",
-                  message: `Order #${order_id} has been accepted by Delivery Partner ${user_id}.`,
-                  orderId: order_id,
-                  session,
-                });
+                { pickup_dp_id: user_id, status: "Accepted" },
+                { session }
+              );
+
+              if (orderRequest.request_type === "broadcast_pdc") {
+                const broadcastDoc = await Broadcast.findById(
+                  orderRequest.broadcast_id,
+                ).session(session);
+                if (broadcastDoc && broadcastDoc.broadcasted_by) {
+                  await sendNotification({
+                    role: ROLES.PDC,
+                    userId: broadcastDoc.broadcasted_by,
+                    title: "Broadcast Accepted",
+                    message: `Order #${order_id} has been accepted by Delivery Partner ${user_id}.`,
+                    orderId: order_id,
+                    session,
+                  });
+                }
               }
             }
           }
         }
-      }
 
-      // Trigger notifications
+        // Trigger notifications
         const admin = await User.findOne({ role: ROLES.ADMIN }).session(
           session,
         );
@@ -1071,11 +1115,7 @@ export const orderAccept = async (order_id, status, user_id) => {
             session,
           });
         }
-
-        await session.commitTransaction();
-        session.endSession();
-        return { message: "Order Accepted" };
-    } else {
+      } else {
         // Reject Order request logic
         orderRequest.rejected_by.push(user_id);
         await orderRequest.save({ session });
@@ -1115,10 +1155,12 @@ export const orderAccept = async (order_id, status, user_id) => {
           session,
         });
 
-        await session.commitTransaction();
-        session.endSession();
-        return { message: "Order Rejected" };
       }
+    } // End of for loop
+
+    await session.commitTransaction();
+    session.endSession();
+    return { message: status ? "Orders Accepted" : "Orders Rejected" };
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
@@ -1274,11 +1316,40 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
     const deliverCharge = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).session(session);
     if (order.dp_pickup_arrival_time && deliverCharge) {
       const waitTimeMins = Math.floor((new Date() - order.dp_pickup_arrival_time) / 60000);
-      if (waitTimeMins > deliverCharge.grace_period) {
-        const extraMins = waitTimeMins - deliverCharge.grace_period;
-        const waitingCharge = extraMins * (deliverCharge.extra_min_charge || 0);
-        order.pickup_waiting_charges = waitingCharge;
-        order.charges += waitingCharge;
+      const gracePeriod = deliverCharge.grace_period || 0;
+      let extraMins = 0;
+      let waitingCharge = 0;
+
+      if (waitTimeMins > gracePeriod) {
+        extraMins = waitTimeMins - gracePeriod;
+        waitingCharge = extraMins * (deliverCharge.extra_min_charge || 0);
+      }
+
+      await OrderWaitCharge.findOneAndUpdate(
+        { order_id },
+        {
+          $set: {
+            order_id,
+            user_id: order.user_id,
+            pickup_dp_id: user_id,
+            pickup_otp_verified_time: new Date(),
+            pickup_grace_period: gracePeriod,
+            pickup_total_wait_mins: waitTimeMins,
+            pickup_extra_mins: extraMins,
+            pickup_rate_per_min: deliverCharge.extra_min_charge || 0,
+            pickup_waiting_charge: waitingCharge
+          }
+        },
+        { upsert: true, session }
+      );
+
+      // Credit 100% of pickup waiting charge to this DP's payout (use $inc to safely accumulate)
+      if (waitingCharge > 0) {
+        await DpPayout.findOneAndUpdate(
+          { order_id: order._id, dp_auth_id: user_id },
+          { $inc: { waiting_charge_earning: waitingCharge } },
+          { upsert: false, session }
+        );
       }
     }
 
@@ -1354,7 +1425,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
           previousBroadcast.status = "Completed";
           previousBroadcast.save({ session });
         }
-        
+
         // Industrial Optimization: Unlock the previous DP who broadcasted this order
         if (broadcast && broadcast.broadcasted_by) {
           await DpDetail.findOneAndUpdate(
@@ -1436,14 +1507,77 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
   session.startTransaction();
   try {
     const deliverCharge = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport }).session(session);
+    let dropWaitingCharge = 0;
     if (order.dp_drop_arrival_time && deliverCharge) {
       const waitTimeMins = Math.floor((new Date() - order.dp_drop_arrival_time) / 60000);
-      if (waitTimeMins > deliverCharge.grace_period) {
-        const extraMins = waitTimeMins - deliverCharge.grace_period;
-        const waitingCharge = extraMins * (deliverCharge.extra_min_charge || 0);
-        order.drop_waiting_charges = waitingCharge;
-        order.charges += waitingCharge;
+      const gracePeriod = deliverCharge.grace_period || 0;
+      let extraMins = 0;
+
+      if (waitTimeMins > gracePeriod) {
+        extraMins = waitTimeMins - gracePeriod;
+        dropWaitingCharge = extraMins * (deliverCharge.extra_min_charge || 0);
       }
+
+      await OrderWaitCharge.findOneAndUpdate(
+        { order_id },
+        {
+          $set: {
+            order_id,
+            user_id: order.user_id,
+            delivery_dp_id: user_id,
+            drop_otp_verified_time: new Date(),
+            drop_grace_period: gracePeriod,
+            drop_total_wait_mins: waitTimeMins,
+            drop_extra_mins: extraMins,
+            drop_rate_per_min: deliverCharge.extra_min_charge || 0,
+            drop_waiting_charge: dropWaitingCharge
+          }
+        },
+        { upsert: true, session }
+      );
+
+      // Credit 100% of drop waiting charge to THIS drop DP's payout (use $inc to safely accumulate)
+      if (dropWaitingCharge > 0) {
+        await DpPayout.findOneAndUpdate(
+          { order_id: order._id, dp_auth_id: user_id },
+          { $inc: { waiting_charge_earning: dropWaitingCharge } },
+          { upsert: false, session }
+        );
+      }
+    }
+
+    // Process Wallet Deduction and Payment Status
+    const waitChargeDoc = await OrderWaitCharge.findOne({ order_id }).session(session);
+    if (waitChargeDoc) {
+      const totalCharge = (waitChargeDoc.pickup_waiting_charge || 0) + (waitChargeDoc.drop_waiting_charge || 0);
+      waitChargeDoc.total_waiting_charge = totalCharge;
+      
+      if (totalCharge > 0) {
+        const userWallet = await Wallet.findOne({ user_id: order.user_id }).session(session);
+        if (userWallet && userWallet.balance >= totalCharge) {
+          userWallet.balance -= totalCharge;
+          await userWallet.save({ session });
+
+          await WalletTransaction.create([{
+            wallet_id: userWallet._id,
+            amount: totalCharge,
+            type: "debit",
+            description: `Auto-deducted waiting charges for Order #${order._id}`,
+            transaction_type: "waiting_charge",
+            reference_id: order._id,
+            status: "completed"
+          }], { session });
+
+          waitChargeDoc.payment_status = "paid";
+          waitChargeDoc.payment_method = "wallet";
+        } else {
+          waitChargeDoc.payment_status = "unpaid";
+          waitChargeDoc.payment_method = null;
+        }
+      } else {
+        waitChargeDoc.payment_status = "paid";
+      }
+      await waitChargeDoc.save({ session });
     }
 
     order.delivery_dp_id = user_id;
@@ -1696,7 +1830,17 @@ export const getOrderHistory = async (user_id) => {
       ? await PackageDetail.findById(order.package_id)
       : null;
     jsonOrder.packageDetail = packageDetail ? packageDetail.toJSON() : null;
+    // Base delivery commission earned by this DP
     jsonOrder.my_earning = payout ? payout.earnings : 0;
+    // 100% waiting charge earned by this DP for this order (pickup wait or drop wait, or both if same DP)
+    jsonOrder.waiting_charge_earning = payout ? (payout.waiting_charge_earning || 0) : 0;
+    // Total = base + waiting
+    jsonOrder.total_earning = jsonOrder.my_earning + jsonOrder.waiting_charge_earning;
+    
+    // Explicitly separate settlement statuses for DP visibility
+    jsonOrder.base_settled = payout ? (payout.settled === "Completed" || payout.settled === 1) : false;
+    jsonOrder.waiting_charge_settled = payout ? (payout.waiting_charge_settled === "Completed" || payout.waiting_charge_settled === 1) : false;
+    
     ordersWithEarning.push(jsonOrder);
   }
 

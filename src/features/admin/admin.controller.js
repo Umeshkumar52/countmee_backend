@@ -569,11 +569,12 @@ export const getViewPaymentsPage = async (req, res, next) => {
 
 export const postSettlePayments = async (req, res, next) => {
   try {
-    const { ids, payable, settlement_amount } = req.body;
+    const { ids, payable, settlement_amount, settle_type } = req.body;
     const result = await adminService.settlePayments(
       ids,
       payable,
       settlement_amount,
+      settle_type
     );
     return res.json(ApiResponse.success(result));
   } catch (err) {

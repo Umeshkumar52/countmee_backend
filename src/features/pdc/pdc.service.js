@@ -935,6 +935,12 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
   // Schedule Agenda job to expire this broadcast in 10 minutes
   const agenda = getAgenda();
   if (agenda) {
+    // Prevent Race Condition: Cancel any previous expiration timers for this specific broadcast
+    await agenda.cancel({ 
+      name: "expire-broadcast", 
+      "data.broadcast_id": broadcast._id.toString() 
+    });
+
     await agenda.schedule("in 10 minutes", "expire-broadcast", {
       broadcast_id: broadcast._id.toString(),
       order_id: orderId.toString(),

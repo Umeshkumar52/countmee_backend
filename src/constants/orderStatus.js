@@ -36,3 +36,8 @@ export const ORDER_REQUEST_COMPLETE_STATUS = {
 export const USER_ACTION_STATUS = {
   CANCELLED: "Cancelled"
 };
+
+export const PAYOUT_STATUS = {
+  PENDING: "Pending",
+  COMPLETED: "Completed"
+};
