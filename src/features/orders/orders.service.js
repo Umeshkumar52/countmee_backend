@@ -31,6 +31,8 @@ import { Payment } from "../payments/payment.model.js";
 import { Wallet } from "../payments/wallet.model.js";
 import { WalletTransaction } from "../payments/walletTransaction.model.js";
 import { createRefund } from "../../common/services/refund.service.js";
+import { sendPushNotification } from "../../common/services/firebase.service.js";
+import { getAgenda } from "../../common/services/agenda.service.js";
 
 /**
  * Calculates delivery charges with a hardcoded 5% GST
@@ -191,8 +193,6 @@ export const broadcastOrderToNearbyDPs = async (
       },
     ]);
 
-    const { sendPushNotification } =
-      await import("../../common/services/firebase.service.js");
     let sentCount = 0;
     const dpIds = [];
     // 5. Broadcast (Socket + FCM)
@@ -229,8 +229,6 @@ export const broadcastOrderToNearbyDPs = async (
 
     // 6. Schedule Rebroadcast if this is the first broadcast
     if (!isRebroadcast) {
-      const { getAgenda } =
-        await import("../../common/services/agenda.service.js");
       const agenda = getAgenda();
       if (agenda) {
         // Schedule rebroadcast for 10 minutes

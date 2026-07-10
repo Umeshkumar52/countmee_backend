@@ -1,4 +1,5 @@
 import * as dpService from "./dp.service.js";
+import { TRAVEL_STATES } from "../../common/utils/constants.js";
 import {
   ROLES,
   ORDER_STATUS,
@@ -68,7 +69,6 @@ export const getVehicleTypes = asyncHandler(async (req, res) => {
 });
 
 export const getTravelStates = asyncHandler(async (req, res) => {
-  const { TRAVEL_STATES } = await import("../../common/utils/constants.js");
   return res.json(
     ApiResponse.success(
       { states: TRAVEL_STATES },
@@ -895,9 +895,6 @@ export const deliverPdc = asyncHandler(async (req, res) => {
     session.endSession();
 
     // Send a real-time socket notification to the PDC so their "Orders To Receive" tab updates automatically
-    const { ROLES } = await import("../../constants/index.js");
-    const { sendNotification } =
-      await import("../../common/utils/sendNotification.js");
     await sendNotification({
       role: ROLES.PDC,
       userId: pdc.user_id,
@@ -1123,10 +1120,6 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
     session.endSession();
 
     // Send real-time socket notification to the PDC so their UI auto-refreshes
-    const { ROLES } = await import("../../constants/index.js");
-    const { sendNotification } =
-      await import("../../common/utils/sendNotification.js");
-
     const pdcOrderReq = await OrderRequest.findOne({
       order_id: order._id,
       request_type: "deliver to pdc",

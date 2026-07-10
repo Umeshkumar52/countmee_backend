@@ -1,10 +1,8 @@
 import mongoose from "mongoose";
 import { User } from "../users/user.model.js";
 import { ROLES } from "../../constants/index.js";
-const { sendNotificationToUser } =
-  await import("../../common/services/socket.service.js");
-const { sendPushNotification } =
-  await import("../../common/services/firebase.service.js");
+import { sendNotificationToUser } from "../../common/services/socket.service.js";
+import { sendPushNotification } from "../../common/services/firebase.service.js";
 
 const notificationSchema = new mongoose.Schema(
   {

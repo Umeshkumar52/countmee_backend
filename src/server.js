@@ -8,6 +8,7 @@ import { connectDB } from "./config/database.js";
 import { init as initSocket } from "./common/services/socket.service.js";
 import { initAgenda } from "./common/services/agenda.service.js";
 import { initRedis } from "./common/services/redis.service.js";
+import { initDocumentCron } from "./common/utils/documentCron.js";
 
 const PORT = process.env.PORT || 8000;
 const NODE_ENV = process.env.NODE_ENV || "development";
@@ -87,6 +88,7 @@ const startServer = async () => {
     await connectDB();
     await initRedis();
     await initAgenda();
+    initDocumentCron();
 
     server = app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT} in ${NODE_ENV} mode.`);

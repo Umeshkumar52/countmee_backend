@@ -41,12 +41,19 @@ const dpDocumentSchema = new mongoose.Schema({
   vehicle_max_capacity: { type: Number, default: null },
   insurance_expiry_date: { type: String, default: null },
   insurance_document: { type: String, default: null },
+  insurance_status: { type: String, default: null },
+  insurance_reject_reason: { type: String, default: null },
   emission_expiry_date: { type: String, default: null },
   emission_certificate_document: { type: String, default: null },
+  emission_status: { type: String, default: null },
+  emission_reject_reason: { type: String, default: null },
   is_new_vehicle: { type: Boolean, default: false },
   vehicle_registration_date: { type: String, default: null },
   travel_permit_states: { type: [String], default: [] },
   permit_document: { type: String, default: null },
+  permit_expiry: { type: String, default: null },
+  permit_status: { type: String, default: null },
+  permit_reject_reason: { type: String, default: null },
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

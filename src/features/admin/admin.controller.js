@@ -658,7 +658,7 @@ export const getReportsPage = (req, res) => {
 
 export const postReportDataPage = async (req, res, next) => {
   try {
-    const { report_type, start_date, end_date } = validate(
+    const { report_type, start_date, end_date, state, aip_only } = validate(
       adminValidation.reportDataSchema,
       req.body,
     );
@@ -666,6 +666,8 @@ export const postReportDataPage = async (req, res, next) => {
       report_type,
       start_date,
       end_date,
+      state,
+      aip_only
     );
     return res.json(ApiResponse.success(result));
   } catch (err) {

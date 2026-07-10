@@ -1,4 +1,5 @@
 import { Order } from "./order.model.js";
+import { OrderWaitCharge } from "./orderWaitCharge.model.js";
 import { ORDER_STATUS, ACTIVE_ORDER_STATUSES } from "../../constants/index.js";
 import { PackageDetail } from "./packageDetail.model.js";
 import { OrderRequest } from "./orderRequest.model.js";
@@ -84,7 +85,6 @@ export const findOrderHistoryByUserId = async (user_id) => {
       : null;
     const dpimages = await DeliveryPartnerImage.find({ order_id: order._id });
     const rating = await Rating.findOne({ order_id: order._id });
-    const { OrderWaitCharge } = await import("./orderWaitCharge.model.js");
     const waitCharge = await OrderWaitCharge.findOne({ order_id: order._id });
 
     orderObj.packageDetail = packageDetail ? packageDetail.toObject() : null;
