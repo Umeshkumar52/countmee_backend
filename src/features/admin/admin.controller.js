@@ -903,3 +903,43 @@ export const processManualRefund = async (req, res, next) => {
     next(err);
   }
 };
+
+// DP Cancellation Penalty System Controllers
+export const getDpCancellations = async (req, res, next) => {
+  try {
+    const { month, year } = req.query;
+    const result = await adminService.getDpCancellations(month, year);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getCancellationSetting = async (req, res, next) => {
+  try {
+    const result = await adminService.getCancellationSetting();
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateCancellationSetting = async (req, res, next) => {
+  try {
+    const { limit } = req.body;
+    const result = await adminService.updateCancellationSetting(limit);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const unblockDp = async (req, res, next) => {
+  try {
+    const { dp_id } = req.params;
+    const result = await adminService.unblockDp(dp_id);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};

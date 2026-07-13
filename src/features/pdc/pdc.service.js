@@ -142,6 +142,7 @@ export const submitDocuments = async (userId, bodyData, files) => {
   ];
 
   const uploadResults = {};
+  const statusResets = {};
 
   for (const field of fileFields) {
     const fileObj = files?.[field]?.[0] || files?.[field];
@@ -152,8 +153,29 @@ export const submitDocuments = async (userId, bodyData, files) => {
       );
       if (uploadResult) {
         uploadResults[field] = uploadResult.secure_url;
+
+        if (field === "aadhar_front_image" || field === "aadhar_back_image") {
+          statusResets.aadhar_status = "Pending";
+          statusResets.aadhar_reject_reason = null;
+        }
+        if (field === "pancard_image") {
+          statusResets.pan_status = "Pending";
+          statusResets.pan_reject_reason = null;
+        }
+        if (field === "gst_doc") {
+          statusResets.gst_status = "Pending";
+          statusResets.gst_reject_reason = null;
+        }
+        if (field === "passbook_image") {
+          statusResets.bank_status = "Pending";
+          statusResets.bank_reject_reason = null;
+        }
       }
     }
+  }
+
+  if (Object.keys(statusResets).length > 0) {
+    statusResets.status = "Pending";
   }
 
   // Strictly require latitude and longitude from the frontend
@@ -219,6 +241,7 @@ export const submitDocuments = async (userId, bodyData, files) => {
       coordinates: [Number(longitude), Number(latitude)],
     },
     ...uploadResults,
+    ...statusResets,
   };
 
   console.log("==== DEBUG: SUBMIT DOCUMENTS ====");
@@ -227,6 +250,18 @@ export const submitDocuments = async (userId, bodyData, files) => {
   console.log("Final updateData to save:", updateData);
 
   await pdcRepository.updatePdcDocumentByUserId(userId, { $set: updateData });
+
+  if (Object.keys(statusResets).length > 0) {
+    const user = await User.findById(userId);
+    if (user) {
+      await sendNotification({
+        role: ROLES.ADMIN,
+        title: "PDC Documents Updated",
+        message: `${user.name || 'A PDC'} has submitted documents for verification.`,
+      });
+    }
+  }
+
   return true;
 };
 

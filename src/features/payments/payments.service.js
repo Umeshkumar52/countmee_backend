@@ -113,6 +113,41 @@ export const cashfreeWebhook = async (data) => {
               `Cashfree Webhook: Direct Order Payment already processed for ${orderId}`,
             );
           }
+        } else if (orderId.startsWith("WAIT_")) {
+          // Waiting Charge Payment Logic
+          const payment = await Payment.findOneAndUpdate(
+            { cf_order_id: orderId, status: "ACTIVE" },
+            { status: "SUCCESS" },
+            { new: true, session },
+          );
+
+          if (payment) {
+            const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+            const waitChargeDoc = await OrderWaitCharge.findOne({ order_id: payment.order_id }).session(session);
+            if (waitChargeDoc && waitChargeDoc.payment_status === "unpaid") {
+              waitChargeDoc.payment_status = "paid";
+              waitChargeDoc.payment_method = "cashfree";
+              waitChargeDoc.paid_at = new Date();
+              await waitChargeDoc.save({ session });
+
+              await sendNotification({
+                role: ROLES.USER,
+                userId: waitChargeDoc.user_id,
+                title: "Waiting Charge Paid",
+                message: `Waiting charge of ₹${payment.amount} for Order #${payment.order_id} completed successfully via Cashfree.`,
+                session,
+              });
+            }
+            await session.commitTransaction();
+            console.log(
+              `Cashfree Webhook: Waiting Charge Payment Successful for ${orderId}`,
+            );
+          } else {
+            await session.abortTransaction();
+            console.log(
+              `Cashfree Webhook: Waiting Charge Payment already processed for ${orderId}`,
+            );
+          }
         } else {
           await session.abortTransaction();
           console.log(
@@ -144,6 +179,14 @@ export const cashfreeWebhook = async (data) => {
       );
       console.log(
         `Cashfree Webhook: Direct Order Payment Failed for ${orderId}`,
+      );
+    } else if (orderId.startsWith("WAIT_")) {
+      await Payment.findOneAndUpdate(
+        { cf_order_id: orderId, status: "ACTIVE" },
+        { status: "FAILED" },
+      );
+      console.log(
+        `Cashfree Webhook: Waiting Charge Payment Failed for ${orderId}`,
       );
     }
   }
@@ -589,3 +632,184 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
     throw new Error("Payment verification failed");
   }
 };
+
+export const payWaitingChargeFromWallet = async (user_id, order_id) => {
+  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+  const waitChargeDoc = await OrderWaitCharge.findOne({ order_id, user_id, payment_status: "unpaid" });
+  if (!waitChargeDoc) {
+    throw new Error("No unpaid waiting charge found for this order");
+  }
+
+  const amount = waitChargeDoc.total_waiting_charge;
+  if (amount <= 0) return true;
+
+  const wallet = await paymentsRepository.findWalletByUserId(user_id);
+  if (!wallet || wallet.balance < amount) {
+    throw new Error("Insufficient wallet balance");
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    wallet.balance -= amount;
+    await wallet.save({ session });
+
+    await paymentsRepository.createWalletTransaction({
+      wallet_id: wallet._id,
+      amount,
+      type: "debit",
+      description: `Manual payment for waiting charges of Order #${order_id}`,
+      transaction_type: "waiting_charge",
+      reference_id: order_id,
+      status: "completed",
+    }, session);
+
+    waitChargeDoc.payment_status = "paid";
+    waitChargeDoc.payment_method = "wallet";
+    waitChargeDoc.paid_at = new Date();
+    await waitChargeDoc.save({ session });
+
+    await sendNotification({
+      role: ROLES.USER,
+      userId: user_id,
+      title: "Waiting Charge Paid",
+      message: `Waiting charge of ₹${amount} for Order #${order_id} was successfully paid from your wallet.`,
+      orderId: order_id,
+      session,
+    });
+
+    await session.commitTransaction();
+    session.endSession();
+    return true;
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
+  }
+};
+
+export const initiateWaitingChargePayment = async (user_id, order_id) => {
+  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+  const user = await User.findById(user_id);
+  if (!user) throw new Error("User not found");
+
+  const waitChargeDoc = await OrderWaitCharge.findOne({ order_id, user_id, payment_status: "unpaid" });
+  if (!waitChargeDoc) {
+    throw new Error("No unpaid waiting charge found for this order");
+  }
+
+  const amount = waitChargeDoc.total_waiting_charge;
+  if (amount <= 0) throw new Error("Waiting charge amount is zero");
+
+  const cf_order_id = `WAIT_${order_id}_${Date.now()}`;
+
+  const postData = {
+    order_id: cf_order_id,
+    order_amount: amount,
+    order_currency: "INR",
+    customer_details: {
+      customer_id: String(user._id),
+      customer_email: user.email || "customer@countmee.in",
+      customer_phone: user.phone,
+    },
+    order_meta: {
+      return_url: `https://countmee.in/payment-status?order_id=${order_id}&cf_order_id=${cf_order_id}&payment_for=waiting_charge`,
+    },
+  };
+
+  try {
+    const response = await axios.post(CASHFREE_BASE_URL, postData, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-version": "2022-09-01",
+        "x-client-id": CASHFREE_APP_ID,
+        "x-client-secret": CASHFREE_SECRET_KEY,
+      },
+      timeout: 15000,
+    });
+
+    const result = response.data;
+    if (result.payment_session_id) {
+      await Payment.create({
+        user_id,
+        order_id,
+        cf_order_id,
+        amount,
+        currency: "INR",
+        status: "ACTIVE",
+        payment_mode: "Cashfree Waiting Charge",
+      });
+
+      return {
+        cf_order_id,
+        payment_session_id: result.payment_session_id,
+      };
+    }
+    throw new Error("Failed to retrieve payment_session_id from Cashfree API");
+  } catch (error) {
+    console.error("Cashfree Initiate Error (Waiting Charge):", error);
+    throw new Error("Failed to create Cashfree order for waiting charge payment");
+  }
+};
+
+export const verifyWaitingChargePayment = async (cf_order_id, order_id) => {
+  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+  try {
+    const response = await axios.get(`${CASHFREE_BASE_URL}/${cf_order_id}`, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-version": "2022-09-01",
+        "x-client-id": CASHFREE_APP_ID,
+        "x-client-secret": CASHFREE_SECRET_KEY,
+      },
+      timeout: 15000,
+    });
+
+    const result = response.data;
+    if (result.order_status === "PAID") {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+        const payment = await Payment.findOneAndUpdate(
+          { cf_order_id, status: "ACTIVE" },
+          { status: "SUCCESS" },
+          { new: true, session },
+        );
+
+        if (payment) {
+          const waitChargeDoc = await OrderWaitCharge.findOne({ order_id }).session(session);
+          if (waitChargeDoc && waitChargeDoc.payment_status === "unpaid") {
+            waitChargeDoc.payment_status = "paid";
+            waitChargeDoc.payment_method = "cashfree";
+            waitChargeDoc.paid_at = new Date();
+            await waitChargeDoc.save({ session });
+
+            await sendNotification({
+              role: ROLES.USER,
+              userId: waitChargeDoc.user_id,
+              title: "Waiting Charge Paid",
+              message: `Waiting charge of ₹${payment.amount} for Order #${order_id} completed successfully via Cashfree.`,
+              session,
+            });
+          }
+          await session.commitTransaction();
+          session.endSession();
+          return { success: true, message: "Waiting charge payment verified successfully" };
+        } else {
+          await session.abortTransaction();
+          session.endSession();
+          return { already_processed: true };
+        }
+      } catch (err) {
+        await session.abortTransaction();
+        session.endSession();
+        throw err;
+      }
+    }
+    throw new Error("Waiting charge payment verification failed at Cashfree");
+  } catch (error) {
+    console.error("Cashfree Verify Error (Waiting Charge):", error);
+    throw new Error("Waiting charge payment verification failed");
+  }
+};
+

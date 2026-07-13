@@ -12,6 +12,9 @@ import { PackageDetail } from "../orders/packageDetail.model.js";
 import { User } from "../users/user.model.js";
 import { sendNotificationToUser } from "../../common/services/socket.service.js";
 import { sendPushNotification } from "../../common/services/firebase.service.js";
+import { AdminSetting } from "./adminSetting.model.js";
+import { DpCancellation } from "../deliveryPartner/dpCancellation.model.js";
+import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 
 export const loginAdmin = async (email, password, fcmToken) => {
   const adminEmail = process.env.ADMIN_EMAIL || "admin@countmee.com";
@@ -1201,11 +1204,11 @@ export const getFeedbacks = async (role, page = 1, limit = 10) => {
   return await adminRepository.findPaginatedRatings(query, page, limit);
 };
 
-import { getExpiryCutoffDate, getLateRevenueCutoffDate } from "../../utils/waitingChargeStatus.js";
+import { getExpiryCutoffDate, getLateRevenueCutoffDate } from "../../common/utils/waitingChargeStatus.js";
 
 export const getAdminWaitingCharges = async (status) => {
   const mongoose = await import("mongoose");
-  const { getExpiryCutoffDate } = await import("../../utils/waitingChargeStatus.js");
+  const { getExpiryCutoffDate } = await import("../../common/utils/waitingChargeStatus.js");
   const { DpPayout } = await import("../deliveryPartner/dpPayout.model.js");
   const { User } = await import("../users/user.model.js");
   const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
@@ -1741,10 +1744,54 @@ export const editVehicleSubcategory = async (id, body) => {
     }
   }
 
-  if (body.status === "Approved") {
+    if (body.status === "Approved") {
     body.is_active = true;
+
+    if (subcat.requested_by) {
+      const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
+      const { sendNotification } = await import("../../common/utils/sendNotification.js");
+      const { ROLES } = await import("../../constants/index.js");
+
+      const finalVehicleName = body.sub_vehicle_type || subcat.sub_vehicle_type;
+      await DpDocument.findOneAndUpdate(
+        { user_id: subcat.requested_by },
+        {
+          sub_vehicle_type: finalVehicleName,
+          other_vehicle_details: null,
+        }
+      );
+
+      await sendNotification({
+        role: ROLES.DP,
+        userId: subcat.requested_by,
+        title: "Vehicle Category Approved",
+        message: `Your requested vehicle type '${finalVehicleName}' has been approved by admin.`,
+      });
+    }
   } else if (body.status === "Rejected") {
     body.is_active = false;
+
+    if (subcat.requested_by) {
+      const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
+      const { sendNotification } = await import("../../common/utils/sendNotification.js");
+      const { ROLES } = await import("../../constants/index.js");
+
+      const rejectedName = body.sub_vehicle_type || subcat.sub_vehicle_type;
+      await DpDocument.findOneAndUpdate(
+        { user_id: subcat.requested_by },
+        {
+          rv_status: "Rejected",
+          rv_reject_reason: `Your custom vehicle type '${rejectedName}' was rejected. Please select a valid vehicle type.`,
+        }
+      );
+
+      await sendNotification({
+        role: ROLES.DP,
+        userId: subcat.requested_by,
+        title: "Vehicle Category Rejected",
+        message: `Your requested vehicle type '${rejectedName}' was rejected. Please update your vehicle details.`,
+      });
+    }
   }
 
   Object.assign(subcat, body);
@@ -2381,4 +2428,106 @@ export const processManualRefund = async (order_id, amount, reason) => {
     order_id: order._id,
     refundAmount,
   };
+};
+
+// --- DP Cancellation Penalty System ---
+export const getDpCancellations = async (month, year) => {
+  const queryMonth = parseInt(month) || new Date().getMonth() + 1;
+  const queryYear = parseInt(year) || new Date().getFullYear();
+
+  const records = await DpCancellation.aggregate([
+    {
+      $match: {
+        month: queryMonth,
+        year: queryYear,
+      },
+    },
+    {
+      $group: {
+        _id: "$dp_id",
+        totalCancellations: { $sum: 1 },
+        orders: {
+          $push: {
+            order_id: "$order_id",
+            reason: "$reason",
+            date: "$createdAt",
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "_id",
+        as: "dp_user",
+      },
+    },
+    {
+      $lookup: {
+        from: "dpdetails",
+        localField: "_id",
+        foreignField: "user_id",
+        as: "dp_detail",
+      },
+    },
+    {
+      $unwind: { path: "$dp_user", preserveNullAndEmptyArrays: true },
+    },
+    {
+      $unwind: { path: "$dp_detail", preserveNullAndEmptyArrays: true },
+    },
+    {
+      $project: {
+        _id: 1,
+        totalCancellations: 1,
+        orders: 1,
+        name: "$dp_user.name",
+        phone: "$dp_user.phone",
+        status: "$dp_detail.status",
+      },
+    },
+  ]);
+
+  return { records, month: queryMonth, year: queryYear };
+};
+
+export const getCancellationSetting = async () => {
+  let setting = await AdminSetting.findOne();
+  if (!setting) {
+    setting = await AdminSetting.create({});
+  }
+  return { limit: setting.max_dp_cancellation_limit };
+};
+
+export const updateCancellationSetting = async (limit) => {
+  if (limit === undefined || limit < 0) {
+    throw new Error("Invalid limit value");
+  }
+  
+  let setting = await AdminSetting.findOne();
+  if (!setting) {
+    setting = await AdminSetting.create({ max_dp_cancellation_limit: limit });
+  } else {
+    setting.max_dp_cancellation_limit = limit;
+    await setting.save();
+  }
+  
+  return { message: "Cancellation limit updated successfully", limit: setting.max_dp_cancellation_limit };
+};
+
+export const unblockDp = async (dp_id) => {
+  const dpDetail = await DpDetail.findOne({ user_id: dp_id });
+  if (!dpDetail) {
+    throw new Error("DP Detail not found");
+  }
+  
+  dpDetail.status = null; // Unblock the DP
+  const currentMonth = new Date().getMonth() + 1;
+  const currentYear = new Date().getFullYear();
+  await DpCancellation.deleteMany({ dp_id, month: currentMonth, year: currentYear });
+  
+  await dpDetail.save();
+  
+  return { message: "DP successfully unblocked and their cancellation penalty record for this month has been reset." };
 };

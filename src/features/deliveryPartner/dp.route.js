@@ -54,6 +54,7 @@ router.get('/travelStates', dpController.getTravelStates);
 router.post('/arrival', dpController.arrival);
 router.post('/cancel_assignment', dpController.cancelAssignment);
 router.post('/bundle-response', dpController.postRespondToBundle);
+
 ///////////////////////////////////
 
 // Order workflows
@@ -81,6 +82,7 @@ router.post('/request_type', dpController.requestType);
 router.get('/totalorder/:user_id', dpController.totalorder);
 router.get('/earning_history/:userId', dpController.earning_history);
 router.post('/online', dpController.online);
+
 
 // Documents & Bank details
 router.get('/documents/:user_id', dpController.documents);

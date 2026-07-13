@@ -1,5 +1,5 @@
 import * as dpRepository from "./dp.repository.js";
-import { getExpiryCutoffDate } from "../../utils/waitingChargeStatus.js";
+import { getExpiryCutoffDate } from "../../common/utils/waitingChargeStatus.js";
 import {
   ROLES,
   ORDER_STATUS,
@@ -32,6 +32,8 @@ import { sendOTPViaSMS } from "../notifications/sms.service.js";
 import * as mapsService from "../tracking/maps.service.js";
 import mongoose from "mongoose";
 import { ApiError } from "../../common/utils/ApiError.js";
+import { AdminSetting } from "../admin/adminSetting.model.js";
+import { DpCancellation } from "./dpCancellation.model.js";
 
 export const findTravelByOrderAndUser = async (order_id, user_id) => {
   return await dpRepository.findTravelByOrderAndUser(order_id, user_id);
@@ -759,6 +761,49 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
       orderId: order_id,
       session,
     });
+
+    // --- DP Cancellation Penalty Logic ---
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentYear = currentDate.getFullYear();
+
+    await DpCancellation.create([{
+      dp_id: user_id,
+      order_id,
+      reason: cancel_reason || "",
+      month: currentMonth,
+      year: currentYear
+    }], { session });
+
+    let adminSetting = await AdminSetting.findOne().session(session);
+    if (!adminSetting) {
+      adminSetting = await AdminSetting.create([{}], { session });
+      adminSetting = adminSetting[0];
+    }
+    const limit = adminSetting.max_dp_cancellation_limit;
+
+    const cancelCount = await DpCancellation.countDocuments({
+      dp_id: user_id,
+      month: currentMonth,
+      year: currentYear
+    }).session(session);
+
+    if (cancelCount >= limit) {
+      await DpDetail.findOneAndUpdate(
+        { user_id },
+        { status: "Blocked", online: false },
+        { session }
+      );
+
+      await sendNotification({
+        role: ROLES.DP,
+        userId: user_id,
+        title: "Account Blocked",
+        message: `You are inactive/blocked due to more than ${limit} order cancellations this month.`,
+        session
+      });
+    }
+    // -------------------------------------
 
     await session.commitTransaction();
     session.endSession();
@@ -1692,9 +1737,27 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
           waitChargeDoc.payment_status = "paid";
           waitChargeDoc.payment_method = "wallet";
           waitChargeDoc.paid_at = new Date();
+
+          await sendNotification({
+            role: ROLES.USER,
+            userId: order.user_id,
+            title: "Waiting Charge Paid",
+            message: `₹${totalCharge} was automatically deducted from your wallet for waiting charges.`,
+            orderId: order._id,
+            session,
+          });
         } else {
           waitChargeDoc.payment_status = "unpaid";
           waitChargeDoc.payment_method = null;
+
+          await sendNotification({
+            role: ROLES.USER,
+            userId: order.user_id,
+            title: "Pending Waiting Charge",
+            message: `You have pending waiting charges of ₹${totalCharge} to clear.`,
+            orderId: order._id,
+            session,
+          });
         }
       } else {
         waitChargeDoc.payment_status = "paid";
@@ -2105,6 +2168,11 @@ export const toggleOnlineStatus = async (
   latitude,
   longitude,
 ) => {
+  const dpDetail = await DpDetail.findOne({ user_id });
+  if (dpDetail && dpDetail.status === "Blocked") {
+    throw new ApiError(403, "Connect to admin, you cancelled orders more than the limit.");
+  }
+
   await DpDetail.findOneAndUpdate(
     { user_id },
     {

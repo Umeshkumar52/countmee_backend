@@ -96,6 +96,12 @@ export const initiateOrderPayment = asyncHandler(async (req, res) => {
     }
   } else if (payment_for === "wallet_recharge") {
     result = await paymentsService.initiateCashfreePayment(userId, Number(amount));
+  } else if (payment_for === "waiting_charge") {
+    if (payment_method === "wallet") {
+      result = await paymentsService.payWaitingChargeFromWallet(userId, order_id);
+    } else if (payment_method === "cashfree") {
+      result = await paymentsService.initiateWaitingChargePayment(userId, order_id);
+    }
   }
 
   return res.json(
@@ -122,6 +128,11 @@ export const verifyOrderPayment = asyncHandler(async (req, res) => {
     message = result.already_processed
       ? "Recharge already processed"
       : "Wallet recharged successfully";
+  } else if (payment_for === "waiting_charge") {
+    result = await paymentsService.verifyWaitingChargePayment(cf_order_id, order_id);
+    message = result.already_processed
+      ? "Payment already processed"
+      : "Waiting charge payment verified successfully";
   }
   
   return res.json(ApiResponse.success(result, message));

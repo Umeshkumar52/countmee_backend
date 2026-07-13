@@ -166,4 +166,10 @@ router.post('/orders/assign-bundle-final', adminController.postAssignBundleFinal
 // Bundle Summary
 router.post('/orders/bundle-summary', adminController.postBundleSummary);
 
+// DP Cancellation Penalty System
+router.get('/dp-cancellations', adminController.getDpCancellations);
+router.get('/cancellation-setting', adminController.getCancellationSetting);
+router.put('/cancellation-setting', adminController.updateCancellationSetting);
+router.put('/unblock-dp/:dp_id', adminController.unblockDp);
+
 export default router;

@@ -67,7 +67,7 @@ export const verifyPaymentSchema = Joi.object({
 
 export const initiateOrderPaymentSchema = Joi.object({
   payment_for: Joi.string()
-    .valid("order_payment", "wallet_recharge")
+    .valid("order_payment", "wallet_recharge", "waiting_charge")
     .required()
     .messages({
       "string.empty": "Payment for is required",
@@ -79,14 +79,14 @@ export const initiateOrderPaymentSchema = Joi.object({
   }),
   order_id: Joi.string().regex(objectIdRegex)
     .when('payment_for', {
-      is: "order_payment",
+      is: Joi.valid("order_payment", "waiting_charge"),
       then: Joi.required(),
       otherwise: Joi.optional()
     })
     .messages({
       "string.empty": "Order ID cannot be empty",
       "string.pattern.base": "Invalid Order ID format",
-      "any.required": "Order ID is required for order payment",
+      "any.required": "Order ID is required",
     }),
   amount: Joi.number().min(1)
     .when('payment_for', {
@@ -103,7 +103,7 @@ export const initiateOrderPaymentSchema = Joi.object({
 
 export const verifyOrderPaymentSchema = Joi.object({
   payment_for: Joi.string()
-    .valid("order_payment", "wallet_recharge")
+    .valid("order_payment", "wallet_recharge", "waiting_charge")
     .required()
     .messages({
       "string.empty": "Payment for is required",
@@ -115,13 +115,13 @@ export const verifyOrderPaymentSchema = Joi.object({
   }),
   order_id: Joi.string().regex(objectIdRegex)
     .when('payment_for', {
-      is: "order_payment",
+      is: Joi.valid("order_payment", "waiting_charge"),
       then: Joi.required(),
       otherwise: Joi.optional()
     })
     .messages({
       "string.empty": "Order ID cannot be empty",
       "string.pattern.base": "Invalid Order ID format",
-      "any.required": "Order ID is required for order payment",
+      "any.required": "Order ID is required",
     }),
 });
