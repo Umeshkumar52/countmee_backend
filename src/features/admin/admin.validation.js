@@ -112,11 +112,11 @@ export const addDpSchema = Joi.object({
 });
 
 export const editDpSchema = Joi.object({
-  name: Joi.string().trim().required().messages({
+  name: Joi.string().trim().messages({
     "string.empty": "Name cannot be empty",
     "any.required": "Name is required",
   }),
-  phone: Joi.string().length(10).pattern(/^\d+$/).required().messages({
+  phone: Joi.string().length(10).pattern(/^\d+$/).messages({
     "string.empty": "Phone number is required",
     "string.length": "Phone number must be exactly 10 digits",
     "string.pattern.base": "Phone number must contain only digits",

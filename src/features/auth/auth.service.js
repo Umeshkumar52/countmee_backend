@@ -310,7 +310,7 @@ export const dpOtpVerification = async (userId, otp) => {
     };
   }
 
-  if (dpDetail.document_approval === "Approved") {
+  if (dpDetail.document_approval === DOCUMENT_APPROVAL_STATUS.APPROVED) {
     return {
       dp,
       argumnet1: true,
@@ -330,7 +330,7 @@ export const dpOtpVerification = async (userId, otp) => {
       if (dpDocument.reference2_name) {
         argumnet3 = true;
       }
-      if (dpDetail.document_approval === "Approved") {
+      if (dpDetail.document_approval === DOCUMENT_APPROVAL_STATUS.APPROVED) {
         argumnet4 = true;
       }
     }

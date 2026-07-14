@@ -260,7 +260,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
         },
         otp: broadcastObj?.pickup_otp || null,
         ratings: avgRating,
-        status: "Approved",
+        status: DOCUMENT_APPROVAL_STATUS.APPROVED,
       };
 
       return res.json(
@@ -269,7 +269,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     } else {
       return res.json(
         ApiResponse.success(
-          { status: "Pending" },
+          { status: ORDER_REQUEST_STATUS.PENDING },
           "No drivers have accepted yet. Please wait...",
         ),
       );
@@ -315,7 +315,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
       });
     } else {
       // Fix: Visibility bug when reusing after a cancellation
-      broadcastObj.status = "Broadcasting";
+      broadcastObj.status = BROADCAST_STATUS.BROADCASTING;
       await broadcastObj.save();
     }
 
@@ -335,7 +335,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
 
     if (!nearestDps.length) {
       return res.json(
-        ApiResponse.success({ status: "Pending" }, "no dp found in this area"),
+        ApiResponse.success({ status: ORDER_REQUEST_STATUS.PENDING }, "no dp found in this area"),
       );
     }
 
@@ -358,7 +358,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
       order.delivery_type = "broadcast";
       order.broadcast_id = broadcastObj._id;
       order.status_completed = "broadcasted";
-      order.status = ORDER_STATUS.PROCESSING;
+      order.status = ORDER_STATUS.ACCEPTED;
       await order.save();
     }
 
@@ -385,7 +385,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
       broadcast_id: broadcastObj._id,
       broadcast: broadcastObj,
       orderRequest: orderReq,
-      status: "Pending",
+      status: ORDER_REQUEST_STATUS.PENDING,
     };
 
     return res.json(ApiResponse.success(data, "dp"));
@@ -400,13 +400,13 @@ export const broadcastDeliver = asyncHandler(async (req, res) => {
   const { broadcastId } = req.params;
   const broadcast = await Broadcast.findById(broadcastId);
   if (broadcast) {
-    if (broadcast.status === "Completed") {
+    if (broadcast.status === BROADCAST_STATUS.COMPLETED) {
       return res.json(
-        ApiResponse.success({ status: "Completed" }, "Order Delivered"),
+        ApiResponse.success({ status: BROADCAST_STATUS.COMPLETED }, "Order Delivered"),
       );
     } else {
       return res.json(
-        ApiResponse.success({ status: "Pending" }, "Order not delivered yet."),
+        ApiResponse.success({ status: ORDER_REQUEST_STATUS.PENDING }, "Order not delivered yet."),
       );
     }
   }
@@ -610,7 +610,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
     order.broadcast_id = nextBroadcast[0]._id;
     order.delivery_type = "broadcast_pdc";
     order.status_completed = "delivered to pdc";
-    order.status = ORDER_STATUS.PROCESSING;
+    order.status = ORDER_STATUS.ACCEPTED;
     await order.save({ session });
 
     await session.commitTransaction();
@@ -888,7 +888,7 @@ export const deliverPdc = asyncHandler(async (req, res) => {
       order.broadcast_id = broadcast[0]._id;
       order.delivery_type = "pdc";
       order.status_completed = "delivering to pdc";
-      order.status = ORDER_STATUS.PROCESSING;
+      order.status = ORDER_STATUS.ACCEPTED;
       await order.save({ session });
     }
 
@@ -943,7 +943,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    broadcast.status = "Completed";
+    broadcast.status = BROADCAST_STATUS.COMPLETED;
     await broadcast.save({ session });
 
     const orderRequests = await OrderRequest.find({ order_id: order._id })
@@ -1077,7 +1077,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
         let nextBroadcast = await Broadcast.findOne({
           order_id: order._id,
           broadcasted_by: pdc.user_id,
-          status: "Pending",
+          status: ORDER_REQUEST_STATUS.PENDING,
         }).session(session);
 
         if (!nextBroadcast) {
@@ -1101,7 +1101,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
                 drop_latitude: order.receiver_latitude,
                 drop_longitude: order.receiver_longitude,
                 distance: `${broadcastDistanceVal} km`,
-                status: "Pending",
+                status: ORDER_REQUEST_STATUS.PENDING,
               },
             ],
             { session },
@@ -1112,7 +1112,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
         order.broadcast_id = nextBroadcast._id;
         order.delivery_type = "broadcast_pdc";
         order.status_completed = "delivered to pdc";
-        order.status = ORDER_STATUS.PROCESSING;
+        order.status = ORDER_STATUS.ACCEPTED;
         await order.save({ session });
       }
     }

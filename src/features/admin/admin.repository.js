@@ -246,7 +246,7 @@ export const assignDpToOrder = async (order_id, dp_id, customer_id) => {
       {
         pickup_dp_id: dp_id,
         status_completed: "order accepted",
-        status: ORDER_STATUS.PROCESSING,
+        status: ORDER_STATUS.ACCEPTED,
         dp_accept_time: new Date(),
       },
       { session },

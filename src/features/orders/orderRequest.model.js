@@ -13,7 +13,7 @@ const orderRequestSchema = new mongoose.Schema(
       ref: "User",
     },
     notified_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    status: { type: String, enum: ["Pending", "Accepted", "Rejected"], default: "Pending" },
+    status: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
     request_type: { type: String, required: true },
     broadcast_id: {
       type: mongoose.Schema.Types.ObjectId,
@@ -26,7 +26,7 @@ const orderRequestSchema = new mongoose.Schema(
       default: null,
     },
     rejected_by: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    complete_status: { type: String, enum: ["Pending", "Completed"], default: "Pending" },
+    complete_status: { type: String, enum: ["pending", "completed"], default: "pending" },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

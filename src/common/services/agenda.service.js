@@ -7,7 +7,7 @@ import { ROLES } from "../../constants/index.js";
 import { PdcDocument } from "../../features/pdc/pdcDocument.model.js";
 import { Broadcast } from "../../features/orders/broadcast.model.js";
 import { getAllCachedDpLocations } from "./redis.service.js";
-import { ORDER_STATUS } from "../../constants/orderStatus.js";
+import { BROADCAST_STATUS, ORDER_STATUS } from "../../constants/orderStatus.js";
 import { PackageDetail } from "../../features/orders/packageDetail.model.js";
 import { broadcastOrderToNearbyDPs } from "../../features/orders/orders.service.js";
 import { OrderBundle } from "../../features/orders/orderBundle.model.js";
@@ -29,11 +29,11 @@ export const initAgenda = async () => {
       // Check if it's still pending
       if (
         orderRequest &&
-        orderRequest.status === "Pending" &&
+        orderRequest.status === ORDER_STATUS.PENDING &&
         orderRequest.request_type === "deliver to pdc"
       ) {
-        orderRequest.status = "Accepted"; // accepted
-        orderRequest.accepted_by = orderRequest.notified_ids[0]; // The PDC who accepted
+        orderRequest.status = ORDER_STATUS.ACCEPTED;
+        orderRequest.accepted_by = orderRequest.notified_ids[0];
         await orderRequest.save();
 
         // Notify PDC and DP
@@ -67,9 +67,9 @@ export const initAgenda = async () => {
 
     try {
       const broadcast = await Broadcast.findById(broadcast_id);
-      if (broadcast && broadcast.status === "Broadcasting") {
+      if (broadcast && broadcast.status === BROADCAST_STATUS.BROADCASTING) {
         // The 10-minute window has closed and no DP accepted it
-        broadcast.status = "Pending";
+        broadcast.status = ORDER_STATUS.PENDING;
         broadcast.pickup_otp = null;
         await broadcast.save();
 
@@ -148,13 +148,13 @@ export const initAgenda = async () => {
 
       // If order still not accepted
       if (order && order.status === ORDER_STATUS.CONFIRMED) {
-          console.log(
-            `No DP accepted order ${order._id} within time limit. Re-broadcasting...`,
-          );
-          const packageDetail = await PackageDetail.findById(order.package_id);
+        console.log(
+          `No DP accepted order ${order._id} within time limit. Re-broadcasting...`,
+        );
+        const packageDetail = await PackageDetail.findById(order.package_id);
 
-          // Pass true as the third parameter to signify it's a rebroadcast (so it doesn't loop infinitely)
-          broadcastOrderToNearbyDPs(order, packageDetail, true);
+        // Pass true as the third parameter to signify it's a rebroadcast (so it doesn't loop infinitely)
+        broadcastOrderToNearbyDPs(order, packageDetail, true);
       }
     } catch (error) {
       console.error(
@@ -172,15 +172,15 @@ export const initAgenda = async () => {
     const { bundle_id } = job.attrs.data;
     try {
       const bundle = await OrderBundle.findOne({ bundle_id });
-      if (bundle && bundle.status === "broadcasting") {
+      if (bundle && bundle.status === BROADCAST_STATUS.BROADCASTING) {
         bundle.status = "expired";
         await bundle.save();
         console.log(
           `[Agenda] Bundle ${bundle_id} broadcasting expired due to timeout`,
         );
 
-          // Optionally broadcast to admin about expiration
-          broadcastToAdmins("bundle:expired", { bundle_id });
+        // Optionally broadcast to admin about expiration
+        broadcastToAdmins("bundle:expired", { bundle_id });
       }
     } catch (error) {
       console.error("[Agenda] Error in expire-bundle-broadcast job:", error);

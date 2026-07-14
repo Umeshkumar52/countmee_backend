@@ -4,7 +4,7 @@ import { User } from "../users/user.model.js";
 import { Wallet } from "./wallet.model.js";
 import { WalletTransaction } from "./walletTransaction.model.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
-import { ROLES, ORDER_STATUS } from "../../constants/index.js";
+import { ROLES, ORDER_STATUS, PAYOUT_STATUS, PAYMENT_STATUS } from "../../constants/index.js";
 import { broadcastOrderToNearbyDPs } from "../orders/orders.service.js";
 import { PackageDetail } from "../orders/packageDetail.model.js";
 import axios from "axios";
@@ -35,8 +35,8 @@ export const cashfreeWebhook = async (data) => {
         if (orderId.startsWith("WAL_")) {
           // Wallet Recharge Logic
           const transaction = await WalletTransaction.findOneAndUpdate(
-            { transaction_id: orderId, status: "pending" },
-            { status: "completed" },
+            { transaction_id: orderId, status: PAYOUT_STATUS.PENDING },
+            { status: PAYOUT_STATUS.COMPLETED },
             { new: true, session },
           );
 
@@ -66,7 +66,7 @@ export const cashfreeWebhook = async (data) => {
         } else if (orderId.startsWith("DIR_")) {
           // Direct Order Payment Logic
           const payment = await Payment.findOneAndUpdate(
-            { cf_order_id: orderId, status: "ACTIVE" },
+            { cf_order_id: orderId, status: PAYMENT_STATUS.ACTIVE },
             { status: "SUCCESS" },
             { new: true, session },
           );
@@ -168,13 +168,13 @@ export const cashfreeWebhook = async (data) => {
     const orderId = data.data.order.order_id;
     if (orderId.startsWith("WAL_")) {
       await WalletTransaction.findOneAndUpdate(
-        { transaction_id: orderId, status: "pending" },
-        { status: "failed" },
+        { transaction_id: orderId, status: PAYOUT_STATUS.PENDING },
+        { status: PAYMENT_STATUS.FAILED },
       );
       console.log(`Cashfree Webhook: Wallet Recharge Failed for ${orderId}`);
     } else if (orderId.startsWith("DIR_")) {
       await Payment.findOneAndUpdate(
-        { cf_order_id: orderId, status: "ACTIVE" },
+        { cf_order_id: orderId, status: PAYMENT_STATUS.ACTIVE },
         { status: "FAILED" },
       );
       console.log(
@@ -249,7 +249,7 @@ export const payOrder = async (user_id, order_id, amount) => {
         description: `Payment for Order #${order._id}`,
         transaction_type: "order_payment",
         reference_id: order._id,
-        status: "completed",
+        status: PAYOUT_STATUS.COMPLETED,
       },
       session,
     );
@@ -304,7 +304,7 @@ export const recharge = async (
     wallet = await paymentsRepository.createWallet({ user_id, balance: 0 });
   }
 
-  const isSuccessful = ["PAID", "SUCCESS", "COMPLETED"].includes(
+  const isSuccessful = [PAYMENT_STATUS.PAID, PAYMENT_STATUS.SUCCESS, PAYMENT_STATUS.COMPLETED].includes(
     status.toUpperCase(),
   );
 
@@ -320,7 +320,7 @@ export const recharge = async (
         transaction_type: "recharge",
         transaction_id,
         payment_method,
-        status: isSuccessful ? "completed" : "failed",
+        status: isSuccessful ? PAYOUT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED,
       },
       session,
     );
@@ -408,7 +408,7 @@ export const initiateCashfreePayment = async (user_id, amount) => {
         transaction_type: "recharge",
         transaction_id: orderId,
         payment_method: "Cashfree",
-        status: "pending",
+        status: PAYOUT_STATUS.PENDING,
       });
 
       return {
@@ -446,8 +446,8 @@ export const verifyCashfreePayment = async (order_id) => {
       session.startTransaction();
       try {
         const transaction = await WalletTransaction.findOneAndUpdate(
-          { transaction_id: order_id, status: "pending" },
-          { status: "completed" },
+          { transaction_id: order_id, status: PAYOUT_STATUS.PENDING },
+          { status: PAYOUT_STATUS.COMPLETED },
           { new: true, session },
         );
 
@@ -537,7 +537,7 @@ export const initiateOrderPayment = async (user_id, order_id) => {
         cf_order_id,
         amount,
         currency: "INR",
-        status: "ACTIVE",
+        status: PAYMENT_STATUS.ACTIVE,
         payment_mode: "Cashfree Direct",
       });
 
@@ -574,7 +574,7 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
       session.startTransaction();
       try {
         const payment = await Payment.findOneAndUpdate(
-          { cf_order_id, status: "ACTIVE" },
+          { cf_order_id, status: PAYMENT_STATUS.ACTIVE },
           { status: "SUCCESS" },
           { new: true, session },
         );
