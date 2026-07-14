@@ -141,7 +141,7 @@ export const sendNotificationToUser = (userId, payload) => {
 
   if (socketIds && socketIds.size > 0) {
     for (const socketId of socketIds) {
-      ioInstance.to(socketId).emit("notification:received", payload);
+      ioInstance.to(socketId).emit("notification:received", [{...payload}]);
     }
     console.log(
       `[Socket] Sent notification to user ${userIdStr} across ${socketIds.size} socket(s)`,

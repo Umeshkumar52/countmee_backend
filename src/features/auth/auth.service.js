@@ -1,5 +1,10 @@
 import * as authRepository from "./auth.repository.js";
-import { ROLES, ORDER_STATUS, ACTIVE_ORDER_STATUSES, ORDER_REQUEST_COMPLETE_STATUS } from "../../constants/index.js";
+import {
+  ROLES,
+  ORDER_STATUS,
+  ACTIVE_ORDER_STATUSES,
+  ORDER_REQUEST_COMPLETE_STATUS,
+} from "../../constants/index.js";
 import { sendOTPViaSMS } from "../notifications/sms.service.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
@@ -17,6 +22,8 @@ import { Wallet } from "../payments/wallet.model.js";
 import { WalletTransaction } from "../payments/walletTransaction.model.js";
 import { deleteFromCloudinary } from "../../common/services/cloudinary.service.js";
 import { getRedisClient } from "../../common/services/redis.service.js";
+import { User } from "../users/user.model.js";
+import jwt from "jsonwebtoken";
 
 const extractCloudinaryPublicId = (url) => {
   if (!url) return null;
@@ -399,7 +406,6 @@ export const deleteAccount = async (userId) => {
 };
 
 export const rotateRefreshToken = async (refreshToken) => {
-  const jwt = await import("jsonwebtoken");
   const JWT_REFRESH_SECRET =
     process.env.JWT_REFRESH_SECRET ||
     "supersecretjwtrefreshsecretkeyforrotationandrevocation";
@@ -446,7 +452,7 @@ export const forgotPassword = async (identifier) => {
   }
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  
+
   const redisClient = getRedisClient();
   if (redisClient) {
     await redisClient.setEx(`password_reset_otp:${user._id}`, 600, otp);
@@ -457,10 +463,22 @@ export const forgotPassword = async (identifier) => {
   const message = `Your CountMee Courier password reset code is ${otp}`;
 
   if (user.phone) {
-    try { await sendOTPViaSMS(user.phone, message); } catch (e) { console.error("SMS error:", e); }
+    try {
+      await sendOTPViaSMS(user.phone, message);
+    } catch (e) {
+      console.error("SMS error:", e);
+    }
   }
   if (user.email) {
-    try { await sendEmailUtil({ to: user.email, subject: "CountMee - Password Reset OTP", text: message }); } catch (e) { console.error("Email error:", e); }
+    try {
+      await sendEmailUtil({
+        to: user.email,
+        subject: "CountMee - Password Reset OTP",
+        text: message,
+      });
+    } catch (e) {
+      console.error("Email error:", e);
+    }
   }
 
   return { message: "OTP sent successfully" };
@@ -486,7 +504,7 @@ export const resetPassword = async (identifier, otp, newPassword) => {
   }
 
   const storedOtp = await redisClient.get(`password_reset_otp:${user._id}`);
-  
+
   if (!storedOtp) {
     throw new Error("OTP has expired or does not exist");
   }
@@ -499,7 +517,7 @@ export const resetPassword = async (identifier, otp, newPassword) => {
 
   user.password = hashedPassword;
   await user.save();
-  
+
   await redisClient.del(`password_reset_otp:${user._id}`);
 
   return { message: "Password reset successful" };

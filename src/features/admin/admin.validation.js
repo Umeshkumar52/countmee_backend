@@ -30,11 +30,11 @@ export const updateDocStatusSchema = Joi.object({
       'any.required': 'Document ID is required'
     }),
   document_type: Joi.string()
-    .valid('aadhar', 'dl', 'bank', 'rc', 'rv')
+    .valid('aadhar', 'dl', 'bank', 'rc', 'rv', 'insurance', 'emission', 'permit')
     .required()
     .messages({
       'string.empty': 'Document type is required',
-      'any.only': 'Document type must be one of: aadhar, dl, bank, rc, rv',
+      'any.only': 'Document type must be one of: aadhar, dl, bank, rc, rv, insurance, emission, permit',
       'any.required': 'Document type is required'
     }),
   status: Joi.string()
@@ -164,6 +164,8 @@ export const addDpSchema = Joi.object({
   vehicle_registration_date: Joi.string()
     .allow('', null),
   travel_permit_states: Joi.string()
+    .allow('', null),
+  permit_expiry: Joi.string()
     .allow('', null)
 });
 
@@ -256,6 +258,8 @@ export const editDpSchema = Joi.object({
   vehicle_registration_date: Joi.string()
     .allow('', null),
   travel_permit_states: Joi.string()
+    .allow('', null),
+  permit_expiry: Joi.string()
     .allow('', null)
 });
 
@@ -448,27 +452,26 @@ export const minBroadcastSchema = Joi.object({
 
 export const reportDataSchema = Joi.object({
   report_type: Joi.string()
-    .valid('order', 'user', 'feedback')
+    .valid('order', 'user', 'feedback', 'travel_permit')
     .required()
     .messages({
       'string.empty': 'Report type is required',
-      'any.only': 'Report type must be order, user or feedback',
+      'any.only': 'Report type must be order, user, feedback or travel_permit',
       'any.required': 'Report type is required'
     }),
   start_date: Joi.date()
     .iso()
-    .required()
-    .messages({
-      'date.base': 'Start date must be a valid ISO date',
-      'any.required': 'Start date is required'
-    }),
+    .allow('', null)
+    .optional(),
   end_date: Joi.date()
     .iso()
-    .required()
-    .messages({
-      'date.base': 'End date must be a valid ISO date',
-      'any.required': 'End date is required'
-    })
+    .allow('', null)
+    .optional(),
+  state: Joi.string()
+    .allow('', null)
+    .optional(),
+  aip_only: Joi.boolean()
+    .optional()
 });
 
 const deliverChargeItemSchema = Joi.object({

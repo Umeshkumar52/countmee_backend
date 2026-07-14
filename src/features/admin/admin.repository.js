@@ -607,3 +607,16 @@ export const findPaginatedOrders = async (query, page = 1, limit = 10) => {
     totalPages: Math.ceil(total / limit),
   };
 };
+
+export const findDpTravelPermits = async (state, aip_only) => {
+  const query = {};
+  query.travel_permit_states = { $exists: true, $not: { $size: 0 } };
+
+  if (aip_only) {
+    query.travel_permit_states = "All India Permit (AIP)";
+  } else if (state) {
+    query.travel_permit_states = { $in: [state, "All India Permit (AIP)"] };
+  }
+
+  return await DpDocument.find(query).populate("user_id", "name phone email");
+};

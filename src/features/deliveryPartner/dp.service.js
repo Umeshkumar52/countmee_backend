@@ -14,6 +14,9 @@ import { OrderWaitCharge } from "../orders/orderWaitCharge.model.js";
 import { OrderRequest } from "../orders/orderRequest.model.js";
 import { DpDetail } from "./dpDetail.model.js";
 import { DpDocument } from "./dpDocument.model.js";
+import { VehicleSubcategory } from "./vehicleSubcategory.model.js";
+import { OrderBundle } from "../orders/orderBundle.model.js";
+import { broadcastToAdmins } from "../../common/services/socket.service.js";
 import { Wallet } from "../payments/wallet.model.js";
 import { WalletTransaction } from "../payments/walletTransaction.model.js";
 import { DpPayout } from "./dpPayout.model.js";
@@ -91,7 +94,6 @@ export const saveDetails = async (
 };
 
 export const getVehicleSubcategories = async (vehicleType) => {
-  const { VehicleSubcategory } = await import("./vehicleSubcategory.model.js");
   const subcategories = await VehicleSubcategory.find({
     vehicle_type: vehicleType,
     is_active: true,
@@ -180,8 +182,6 @@ export const saveDocuments = async (user_id, docData, files) => {
   );
 
   if (docData.sub_vehicle_type === "Other" && docData.other_vehicle_details) {
-    const { VehicleSubcategory } =
-      await import("./vehicleSubcategory.model.js");
     const existing = await VehicleSubcategory.findOne({
       vehicle_type: docData.vehicle_type,
       sub_vehicle_type: {
@@ -351,7 +351,6 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
 
   // 2. If not authorized via OrderRequest, check if order is part of an active OrderBundle
   if (!isAuthorized) {
-    const { OrderBundle } = await import("../orders/orderBundle.model.js");
     const bundle = await OrderBundle.findOne({
       orders: order_id,
       status: "broadcasting",
@@ -662,7 +661,6 @@ export const getNewOrders = async (user_id) => {
   const ordersWithPickup = await Promise.all(ordersWithPickupPromises);
 
   // Fetch pending OrderBundles for this DP
-  const { OrderBundle } = await import("../orders/orderBundle.model.js");
   const activeBundles = await OrderBundle.find({
     status: "broadcasting",
     notified_dps: user_id,
@@ -996,14 +994,6 @@ export const orderAccept = async (orderIds, status, user_id) => {
           // Previous segment leg payout - ONLY recalculate for direct DP-to-DP handovers
           // For broadcast_pdc, the PDC drop-off already locked in the exact PDC coordinates
           if (orderRequest.request_type === "broadcast_dp") {
-            // const travel = oldOrderRequest
-            //   ? await Travel.findOne({
-            //       order_id: order._id,
-            //       user_id: oldOrderRequest.accepted_by,
-            //     })
-            //       .sort({ created_at: -1 })
-            //       .session(session)
-            //   : null;
             let travel = oldOrderRequest
               ? await Travel.findOne({
                 order_id: order._id,
@@ -1050,11 +1040,6 @@ export const orderAccept = async (orderIds, status, user_id) => {
 
             let distance = 0;
 
-            // const oldDpDetail = oldOrderRequest
-            //   ? await DpDetail.findOne({
-            //       user_id: oldOrderRequest.accepted_by,
-            //     }).session(session)
-            //   : null;
             const oldDpDetail = oldOrderRequest
               ? await DpDetail.findOne({
                 user_id: oldOrderRequest.accepted_by,
@@ -2372,7 +2357,6 @@ export const getDropOtpDetails = async (orderId) => {
 };
 
 export const respondToBundle = async (dp_id, bundle_id, response) => {
-  const { OrderBundle } = await import("../orders/orderBundle.model.js");
   const bundle = await OrderBundle.findOne({ bundle_id });
   if (!bundle) throw new Error("Bundle not found");
   const dpExist = await User.findOne({ _id: dp_id, role: ROLES.DP });
@@ -2399,8 +2383,6 @@ export const respondToBundle = async (dp_id, bundle_id, response) => {
   await bundle.save();
 
   // Notify admin real-time
-  const { broadcastToAdmins } =
-    await import("../../common/services/socket.service.js");
   broadcastToAdmins("BUNDLE_DP_RESPONDED", {
     bundle_id,
     dp_id,

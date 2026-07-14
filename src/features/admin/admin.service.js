@@ -129,6 +129,9 @@ export const updateDpDocumentStatus = async (
     bank: "bank_status",
     rc: "rc_status",
     rv: "rv_status",
+    insurance: "insurance_status",
+    emission: "emission_status",
+    permit: "permit_status",
   };
 
   const rejectFieldMap = {
@@ -137,6 +140,9 @@ export const updateDpDocumentStatus = async (
     bank: "bank_reject_reason",
     rc: "rc_reject_reason",
     rv: "rv_reject_reason",
+    insurance: "insurance_reject_reason",
+    emission: "emission_reject_reason",
+    permit: "permit_reject_reason",
   };
 
   const statusField = fieldMap[document_type];
@@ -160,6 +166,9 @@ export const updateDpDocumentStatus = async (
     "dl_status",
     "bank_status",
     "rv_status",
+    "insurance_status",
+    "emission_status",
+    "permit_status",
   ];
   let allVerified = true;
   let atLeastOneRejected = false;
@@ -286,6 +295,22 @@ export const addDp = async (body, files) => {
     vehicle_img: uploadResults.vehicle_img || null,
     reference1_name,
     reference1_phone,
+    reference2_name: reference2_name || null,
+    reference2_phone: reference2_phone || null,
+    dl_expiry_date: dl_expiry_date || null,
+    sub_vehicle_type: sub_vehicle_type || null,
+    other_vehicle_details: other_vehicle_details || null,
+    vehicle_min_capacity: vehicle_min_capacity || null,
+    vehicle_max_capacity: vehicle_max_capacity || null,
+    insurance_expiry_date: insurance_expiry_date || null,
+    emission_expiry_date: emission_expiry_date || null,
+    is_new_vehicle: is_new_vehicle === 'true' || is_new_vehicle === true,
+    vehicle_registration_date: vehicle_registration_date || null,
+    travel_permit_states: travel_permit_states ? travel_permit_states.split(',').map(s => s.trim()) : [],
+    permit_expiry: permit_expiry || null,
+    insurance_document: uploadResults.insurance_document || null,
+    emission_certificate_document: uploadResults.emission_certificate_document || null,
+    permit_document: uploadResults.permit_document || null,
   });
 
   return { message: "Delivery Partner registered successfully" };
@@ -332,6 +357,9 @@ export const bulkAddDp = async (dps, files) => {
       "dl_imgback",
       "bank_imagefront",
       "bank_imageback",
+      "insurance_document",
+      "emission_certificate_document",
+      "permit_document",
       "residence_img",
       "vehicle_img",
     ];
@@ -458,6 +486,22 @@ export const bulkAddDp = async (dps, files) => {
         vehicle_img: uploadResults.vehicle_img || dp.vehicle_img || null,
         reference1_name: dp.reference1_name || null,
         reference1_phone: dp.reference1_phone || null,
+        reference2_name: dp.reference2_name || null,
+        reference2_phone: dp.reference2_phone || null,
+        dl_expiry_date: dp.dl_expiry_date || null,
+        sub_vehicle_type: dp.sub_vehicle_type || null,
+        other_vehicle_details: dp.other_vehicle_details || null,
+        vehicle_min_capacity: dp.vehicle_min_capacity || null,
+        vehicle_max_capacity: dp.vehicle_max_capacity || null,
+        insurance_expiry_date: dp.insurance_expiry_date || null,
+        emission_expiry_date: dp.emission_expiry_date || null,
+        is_new_vehicle: dp.is_new_vehicle === 'true' || dp.is_new_vehicle === true,
+        vehicle_registration_date: dp.vehicle_registration_date || null,
+        travel_permit_states: dp.travel_permit_states ? dp.travel_permit_states.split(',').map(s => s.trim()) : [],
+        permit_expiry: dp.permit_expiry || null,
+        insurance_document: uploadResults.insurance_document || dp.insurance_document || null,
+        emission_certificate_document: uploadResults.emission_certificate_document || dp.emission_certificate_document || null,
+        permit_document: uploadResults.permit_document || dp.permit_document || null,
         status: "Verified",
         adhar_status: "Accept",
         rc_status: "Accept",
@@ -1541,7 +1585,7 @@ export const getPastPayments = async (userId, onlySpecificOrder = false) => {
   return formattedPayouts;
 };
 
-export const getReportData = async (report_type, start_date, end_date) => {
+export const getReportData = async (report_type, start_date, end_date, state, aip_only) => {
   let reportData = [];
   if (report_type === "order") {
     const orders = await adminRepository.findOrdersInDateRange(
@@ -1612,7 +1656,36 @@ export const getReportData = async (report_type, start_date, end_date) => {
           : "N/A",
       };
     });
-  }
+  } else if (report_type === "travel_permit") {
+      const dps = await adminRepository.findDpTravelPermits(state, aip_only);
+      reportData = dps.map(dp => {
+        const hasAIP = dp.travel_permit_states?.includes("All India Permit (AIP)");
+        let permitType = "None";
+        if (hasAIP) permitType = "AIP";
+        else if (dp.travel_permit_states?.length > 0) permitType = "State";
+
+        let statesDisplay = "N/A";
+        if (hasAIP) {
+           statesDisplay = "All India";
+        } else if (dp.travel_permit_states?.length > 0) {
+           statesDisplay = dp.travel_permit_states.join(", ");
+        }
+
+        const dpIdStr = (dp.user_id?._id || dp._id).toString();
+        const shortDpId = `DP-${dpIdStr.substring(dpIdStr.length - 4).toUpperCase()}`;
+
+        return {
+          id: dp._id,
+          dp_name: dp.user_id?.name || "N/A",
+          dp_id: shortDpId,
+          mobile: dp.user_id?.phone || "N/A",
+          vehicle: dp.vehicle_number || "N/A",
+          permit_type: permitType,
+          states: statesDisplay,
+          expiry: dp.permit_expiry || "N/A"
+        };
+      });
+    }
   return reportData;
 };
 
