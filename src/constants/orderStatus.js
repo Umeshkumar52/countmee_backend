@@ -24,21 +24,43 @@ export const ACTIVE_ORDER_STATUSES = [
 ];
 
 export const ORDER_REQUEST_STATUS = {
-  PENDING: "Pending",
-  REJECTED: "Rejected",
-  ACCEPTED: "Accepted",
+  PENDING: "pending",
+  REJECTED: "rejected",
+  ACCEPTED: "accepted",
 };
 
 export const ORDER_REQUEST_COMPLETE_STATUS = {
-  PENDING: "Pending",
-  COMPLETED: "Completed",
+  PENDING: "pending",
+  COMPLETED: "completed",
 };
 
 export const USER_ACTION_STATUS = {
-  CANCELLED: "Cancelled",
+  CANCELLED: "cancelled",
 };
 
 export const PAYOUT_STATUS = {
-  PENDING: "Pending",
-  COMPLETED: "Completed",
+  PENDING: "pending",
+  COMPLETED: "completed",
+};
+
+export const BROADCAST_STATUS = {
+  PENDING: "pending",
+  BROADCASTING: "broadcasting",
+  ACCEPTED: "accepted",
+  COMPLETED: "completed",
+  ACTIVE: "active",
+};
+
+export const DOCUMENT_APPROVAL_STATUS = {
+  PENDING: "pending",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+};
+
+export const PAYMENT_STATUS = {
+  ACTIVE: "active",
+  COMPLETED: "completed",
+  PAID: "paid",
+  SUCCESS: "success",
+  FAILED: "failed",
 };

@@ -93,7 +93,7 @@ export const getVehicleSubcategories = async (vehicleType) => {
   const subcategories = await VehicleSubcategory.find({
     vehicle_type: vehicleType,
     is_active: true,
-    status: "Approved",
+    status: DOCUMENT_APPROVAL_STATUS.APPROVED,
   })
     .select("sub_vehicle_type")
     .lean();
@@ -190,7 +190,7 @@ export const saveDocuments = async (user_id, docData, files) => {
         vehicle_type: docData.vehicle_type,
         sub_vehicle_type: docData.other_vehicle_details,
         is_active: false,
-        status: "Pending",
+        status: ORDER_REQUEST_STATUS.PENDING,
         requested_by: user_id,
       });
 
@@ -349,7 +349,7 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
   if (!isAuthorized) {
     const bundle = await OrderBundle.findOne({
       orders: order_id,
-      status: "broadcasting",
+      status: BROADCAST_STATUS.BROADCASTING,
     }).lean();
 
     if (
@@ -486,7 +486,7 @@ export const getNewOrders = async (user_id) => {
   if (uniqueBroadcastIds.length > 0) {
     broadcasts = await Broadcast.find({
       _id: { $in: uniqueBroadcastIds },
-      status: "Broadcasting",
+      status: BROADCAST_STATUS.BROADCASTING,
       updatedAt: { $gte: tenMinutesAgo },
     }).lean();
 
@@ -658,7 +658,7 @@ export const getNewOrders = async (user_id) => {
 
   // Fetch pending OrderBundles for this DP
   const activeBundles = await OrderBundle.find({
-    status: "broadcasting",
+    status: BROADCAST_STATUS.BROADCASTING,
     notified_dps: user_id,
     accepted_dps: { $ne: user_id },
     rejected_dps: { $ne: user_id },
@@ -712,7 +712,7 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     }
 
     // Revert OrderRequest
-    orderRequest.status = "Rejected"; // REJECTED
+    orderRequest.status = ORDER_REQUEST_STATUS.REJECTED; // REJECTED
     orderRequest.accepted_by = null;
     orderRequest.rejected_by.push(user_id);
     await orderRequest.save({ session });
@@ -735,7 +735,7 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     if (orderRequest.broadcast_id) {
       await Broadcast.findByIdAndUpdate(
         orderRequest.broadcast_id,
-        { pickup_dp_id: null, status: "Pending" },
+        { pickup_dp_id: null, status: ORDER_REQUEST_STATUS.PENDING },
         { session },
       );
     }
@@ -920,7 +920,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
 
         if (orderRequest.request_type === "direct") {
           order.status_completed = "order accepted";
-          order.status = ORDER_STATUS.PROCESSING;
+          order.status = ORDER_STATUS.ACCEPTED;
           order.pickup_dp_id = user_id;
           order.dp_accept_time = new Date();
           await order.save({ session });
@@ -933,7 +933,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
           orderRequest.request_type === "broadcast_pdc"
         ) {
           order.status_completed = "broadcast accepted";
-          order.status = ORDER_STATUS.PROCESSING;
+          order.status = ORDER_STATUS.ACCEPTED;
           order.delivery_type = "broadcast";
           await order.save({ session });
 
@@ -1140,7 +1140,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
             if (orderRequest.broadcast_id) {
               await Broadcast.findByIdAndUpdate(
                 orderRequest.broadcast_id,
-                { pickup_dp_id: user_id, status: "Accepted" },
+                { pickup_dp_id: user_id, status: ORDER_REQUEST_STATUS.ACCEPTED },
                 { session },
               );
 
@@ -1212,7 +1212,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
             orderRequest.request_type !== "broadcast_pdc" &&
             orderRequest.request_type !== "broadcast_dp"
           ) {
-            orderRequest.status = "Rejected"; // Rejected by all DPs
+            orderRequest.status = ORDER_REQUEST_STATUS.REJECTED; // Rejected by all DPs
           }
           await orderRequest.save({ session });
         }
@@ -1338,7 +1338,7 @@ export const pickupOtp = async (order_id, user_id, otp) => {
 
     if (broadcast) {
       broadcast.status = "1";
-      broadcast.status = "Completed";
+      broadcast.status = BROADCAST_STATUS.COMPLETED;
       await broadcast.save();
     }
 
@@ -1498,7 +1498,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
           .session(session);
         if (latestBroadcast) {
           latestBroadcast.status = "1";
-          latestBroadcast.status = "Completed";
+          latestBroadcast.status = BROADCAST_STATUS.COMPLETED;
           latestBroadcast.save({ session });
         }
       } else {
@@ -1511,7 +1511,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
 
         if (previousBroadcast) {
           previousBroadcast.status = "1";
-          previousBroadcast.status = "Completed";
+          previousBroadcast.status = BROADCAST_STATUS.COMPLETED;
           previousBroadcast.save({ session });
         }
 
@@ -1666,7 +1666,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
                 description: `Auto-deducted waiting charges for Order #${order._id}`,
                 transaction_type: "waiting_charge",
                 reference_id: order._id,
-                status: "completed",
+                status: PAYOUT_STATUS.COMPLETED,
               },
             ],
             { session },
@@ -1685,7 +1685,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
     }
 
     order.delivery_dp_id = user_id;
-    order.status_completed = "delivered";
+    order.status_completed = ORDER_STATUS.DELIVERED;
     order.status = ORDER_STATUS.DELIVERED;
     order.dp_deliver_time = new Date();
     await order.save({ session });
@@ -1695,7 +1695,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       : null;
     if (broadcast) {
       broadcast.status = "1";
-      broadcast.status = "Completed";
+      broadcast.status = BROADCAST_STATUS.COMPLETED;
       await broadcast.save({ session });
     }
 
@@ -1946,10 +1946,10 @@ export const getOrderHistory = async (user_id) => {
 
     // Explicitly separate settlement statuses for DP visibility
     jsonOrder.base_settled = payout
-      ? payout.settled === "Completed" || payout.settled === 1
+      ? payout.settled === PAYOUT_STATUS.COMPLETED || payout.settled === 1
       : false;
     jsonOrder.waiting_charge_settled = payout
-      ? payout.waiting_charge_settled === "Completed" ||
+      ? payout.waiting_charge_settled === PAYOUT_STATUS.COMPLETED ||
         payout.waiting_charge_settled === 1
       : false;
 
@@ -2177,29 +2177,29 @@ export const getDocuments = async (user_id) => {
 
   if (!doc) {
     return {
-      adhar_status: "Pending",
+      adhar_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       adhar_reject_reason: null,
-      rc_status: "Pending",
+      rc_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       rc_reject_reason: null,
-      dl_status: "Pending",
+      dl_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       dl_reject_reason: null,
-      bank_status: "Pending",
+      bank_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       bank_reject_reason: null,
-      rv_status: "Pending",
+      rv_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       rv_reject_reason: null,
     };
   }
 
   return {
-    adhar_status: doc.adhar_status || "Pending",
+    adhar_status: doc.adhar_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     adhar_reject_reason: doc.adhar_reject_reason || null,
-    rc_status: doc.rc_status || "Pending",
+    rc_status: doc.rc_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     rc_reject_reason: doc.rc_reject_reason || null,
-    dl_status: doc.dl_status || "Pending",
+    dl_status: doc.dl_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     dl_reject_reason: doc.dl_reject_reason || null,
-    bank_status: doc.bank_status || "Pending",
+    bank_status: doc.bank_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     bank_reject_reason: doc.bank_reject_reason || null,
-    rv_status: doc.rv_status || "Pending",
+    rv_status: doc.rv_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     rv_reject_reason: doc.rv_reject_reason || null,
   };
 };
@@ -2225,7 +2225,7 @@ export const getDocumentVerificationStatus = async (dp_id) => {
     };
   }
 
-  if (dpDetail.document_approval === "Approved") {
+  if (dpDetail.document_approval === DOCUMENT_APPROVAL_STATUS.APPROVED) {
     return {
       status: 200,
       dp,
@@ -2250,7 +2250,7 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       if (dpDocument.reference2_name) {
         argumnet3 = true;
       }
-      if (dpDetail.document_approval === "Approved") {
+      if (dpDetail.document_approval === DOCUMENT_APPROVAL_STATUS.APPROVED) {
         argumnet4 = true;
       }
     }
@@ -2279,7 +2279,7 @@ export const respondToBundle = async (dp_id, bundle_id, response) => {
   if (!bundle) throw new Error("Bundle not found");
   const dpExist = await User.findOne({ _id: dp_id, role: ROLES.DP });
   if (!dpExist) throw new Error("Delivery partner not found");
-  if (bundle.status !== "broadcasting") {
+  if (bundle.status !== BROADCAST_STATUS.BROADCASTING) {
     throw new Error(`Cannot respond because bundle status is ${bundle.status}`);
   }
   if (bundle.rejected_dps.includes(dp_id)) {

@@ -472,12 +472,16 @@ export const getPaginatedOrdersPage = async (req, res, next) => {
 
     let statusList = null;
     if (status && status !== "all") {
-      if (status === "pending") {
-        statusList = ["pending", "created"];
-      } else if (status === "assigned") {
-        statusList = ["processing"];
-      } else if (status === "intransit") {
-        statusList = ["packed", "shipped", "out_for_delivery"];
+      if (status === ORDER_STATUS.PENDING) {
+        statusList = [ORDER_STATUS.PENDING, ORDER_STATUS.CREATED];
+      } else if (status === ORDER_STATUS.ASSIGNED) {
+        statusList = [ORDER_STATUS.ACCEPTED, ORDER_STATUS.ASSIGNED];
+      } else if (status === ORDER_STATUS.IN_TRANSIT) {
+        statusList = [
+          ORDER_STATUS.PACKED,
+          ORDER_STATUS.SHIPPED,
+          ORDER_STATUS.OUT_FOR_DELIVERY,
+        ];
       } else {
         statusList = [status];
       }
@@ -622,7 +626,7 @@ export const postSettlePayments = async (req, res, next) => {
       ids,
       payable,
       settlement_amount,
-      settle_type
+      settle_type,
     );
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -667,7 +671,7 @@ export const postReportDataPage = async (req, res, next) => {
       start_date,
       end_date,
       state,
-      aip_only
+      aip_only,
     );
     return res.json(ApiResponse.success(result));
   } catch (err) {
@@ -891,15 +895,16 @@ export const blockDp = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { is_blocked } = req.body;
-    
-    if (typeof is_blocked !== 'boolean') {
-      return res.status(400).json(ApiResponse.error("is_blocked must be a boolean"));
+
+    if (typeof is_blocked !== "boolean") {
+      return res
+        .status(400)
+        .json(ApiResponse.error("is_blocked must be a boolean"));
     }
-    
+
     const result = await adminService.blockDp(id, is_blocked);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
   }
 };
-

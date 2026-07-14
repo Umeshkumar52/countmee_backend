@@ -52,7 +52,7 @@ export const findActiveOrdersByUserId = async (user_id) => {
   const orders = await Order.find({
     user_id,
     status: { $in: ACTIVE_ORDER_STATUSES },
-  }).sort({ created_at: -1 });
+  }).sort({ createdAt: -1 });
   const result = [];
   for (const order of orders) {
     const orderObj = order.toObject();
@@ -70,11 +70,19 @@ export const findActiveOrdersByUserId = async (user_id) => {
   return result;
 };
 
-export const findOrderHistoryByUserId = async (user_id) => {
-  const orders = await Order.find({
-    user_id,
-    status: { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED] },
-  }).sort({ created_at: -1 });
+export const findOrderHistoryByUserId = async (user_id, order_type) => {
+  const query = { user_id };
+
+  if (order_type === "scheduled") {
+    query.order_type = order_type;
+  } else {
+    query.status = { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED] };
+    if (order_type) {
+      query.order_type = order_type;
+    }
+  }
+
+  const orders = await Order.find(query).sort({ createdAt: -1 });
 
   const result = [];
   for (const order of orders) {
@@ -102,7 +110,7 @@ export const findCancelledOrdersByUserId = async (user_id) => {
   const orders = await Order.find({
     user_id,
     status: ORDER_STATUS.CANCELLED,
-  }).sort({ created_at: -1 });
+  }).sort({ createdAt: -1 });
 
   const result = [];
   for (const order of orders) {
