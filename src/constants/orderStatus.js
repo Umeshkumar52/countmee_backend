@@ -3,6 +3,8 @@ export const ORDER_STATUS = {
   PENDING: "pending",
   CONFIRMED: "confirmed",
   PROCESSING: "processing",
+  ACCEPTED: "accepted",
+  BROADCAST_ACCEPTED: "broadcast_accepted",
   PACKED: "packed",
   SHIPPED: "shipped",
   OUT_FOR_DELIVERY: "out_for_delivery",
@@ -11,33 +13,36 @@ export const ORDER_STATUS = {
   RETURNED: "returned",
   REFUNDED: "refunded",
   FAILED: "failed",
-  SCHEDULED: "scheduled"
+  SCHEDULED: "scheduled",
 };
 
 export const ACTIVE_ORDER_STATUSES = [
+  ORDER_STATUS.CREATED,
   ORDER_STATUS.CONFIRMED,
   ORDER_STATUS.PROCESSING,
+  ORDER_STATUS.ACCEPTED,
+  ORDER_STATUS.BROADCAST_ACCEPTED,
   ORDER_STATUS.PACKED,
   ORDER_STATUS.SHIPPED,
-  ORDER_STATUS.OUT_FOR_DELIVERY
+  ORDER_STATUS.OUT_FOR_DELIVERY,
 ];
 
 export const ORDER_REQUEST_STATUS = {
   PENDING: "Pending",
   REJECTED: "Rejected",
-  ACCEPTED: "Accepted"
+  ACCEPTED: "Accepted",
 };
 
 export const ORDER_REQUEST_COMPLETE_STATUS = {
   PENDING: "Pending",
-  COMPLETED: "Completed"
+  COMPLETED: "Completed",
 };
 
 export const USER_ACTION_STATUS = {
-  CANCELLED: "Cancelled"
+  CANCELLED: "Cancelled",
 };
 
 export const PAYOUT_STATUS = {
   PENDING: "Pending",
-  COMPLETED: "Completed"
+  COMPLETED: "Completed",
 };

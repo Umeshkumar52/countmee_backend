@@ -53,7 +53,6 @@ export const findActiveOrdersByUserId = async (user_id) => {
     user_id,
     status: { $in: ACTIVE_ORDER_STATUSES },
   }).sort({ created_at: -1 });
-
   const result = [];
   for (const order of orders) {
     const orderObj = order.toObject();
@@ -91,7 +90,9 @@ export const findOrderHistoryByUserId = async (user_id) => {
     orderObj.dpimages = dpimages.map((img) => img.toObject());
     orderObj.rating = rating ? rating.toObject() : null;
     orderObj.waiting_charge = waitCharge ? waitCharge.total_waiting_charge : 0;
-    orderObj.waiting_charge_paid = waitCharge ? (waitCharge.payment_status === "paid") : false;
+    orderObj.waiting_charge_paid = waitCharge
+      ? waitCharge.payment_status === "paid"
+      : false;
     result.push(orderObj);
   }
   return result;

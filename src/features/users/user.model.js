@@ -12,9 +12,15 @@ const userSchema = new mongoose.Schema(
     phone: { type: String, default: "" },
     email: { type: String, default: "" },
     dob: { type: Date, default: null },
-    password: { type: String, required: true },
+    password: { 
+      type: String, 
+      required: function() { 
+        return this.role === ROLES.PDC || this.role === ROLES.ADMIN; 
+      } 
+    },
     refreshToken: { type: String, select: false, default: null },
     fcm_tokens: { type: [String], select: false, default: [] },
+    is_blocked: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

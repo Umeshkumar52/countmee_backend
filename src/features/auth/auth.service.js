@@ -24,6 +24,7 @@ import { deleteFromCloudinary } from "../../common/services/cloudinary.service.j
 import { getRedisClient } from "../../common/services/redis.service.js";
 import { User } from "../users/user.model.js";
 import jwt from "jsonwebtoken";
+import { ApiError } from "../../common/utils/ApiError.js";
 
 const extractCloudinaryPublicId = (url) => {
   if (!url) return null;
@@ -44,7 +45,7 @@ export const registerCustomer = async (name, phone, email, dob) => {
     ROLES.USER,
   );
   if (existingUser) {
-    throw new Error("Phone number or email already registered");
+    throw new ApiError(400, "Phone number or email already registered");
   }
 
   // Create user
@@ -57,8 +58,9 @@ export const registerCustomer = async (name, phone, email, dob) => {
   });
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  newUser.otp = otp;
-  await newUser.save();
+  const redisClient = getRedisClient();
+  if (!redisClient) throw new ApiError(500, "Redis cache unavailable");
+  await redisClient.setEx(`otp_login:${newUser._id}`, 300, otp);
 
   // Handle Joining Bonus
   try {
@@ -92,7 +94,9 @@ export const registerCustomer = async (name, phone, email, dob) => {
 
   // Send OTP
   const message = `Your CountMee Courier verification code is ${otp}`;
-  await sendOTPViaSMS(phone, message);
+  sendOTPViaSMS(phone, message).catch((err) =>
+    console.error("SMS Failed:", err.message),
+  );
 
   // Send notifications
   await sendNotification({
@@ -119,15 +123,18 @@ export const registerCustomer = async (name, phone, email, dob) => {
 export const loginCustomer = async (phone) => {
   const user = await authRepository.findUserByPhoneAndType(phone, ROLES.USER);
   if (!user) {
-    throw new Error("Phone number not registered, Please register");
+    throw new ApiError(404, "Phone number not registered, Please register");
   }
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  user.otp = otp;
-  await authRepository.updateUserOtp(user._id, otp);
+  const redisClient = getRedisClient();
+  if (!redisClient) throw new ApiError(500, "Redis cache unavailable");
+  await redisClient.setEx(`otp_login:${user._id}`, 300, otp);
 
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
-  await sendOTPViaSMS(phone, message);
+  sendOTPViaSMS(phone, message).catch((err) =>
+    console.error("SMS Failed:", err.message),
+  );
 
   return user;
 };
@@ -135,25 +142,35 @@ export const loginCustomer = async (phone) => {
 export const verifyOtp = async (userId, otp) => {
   const user = await authRepository.findUserById(userId);
   if (!user) {
-    throw new Error("User not found");
+    throw new ApiError(404, "User not found");
   }
 
-  if (otp === user.otp) {
+  const redisClient = getRedisClient();
+  if (!redisClient) throw new ApiError(500, "Redis cache unavailable");
+  
+  const storedOtp = await redisClient.get(`otp_login:${userId}`);
+  
+  if (!storedOtp) {
+    throw new ApiError(400, "OTP has expired or does not exist");
+  }
+
+  if (otp === storedOtp) {
     const token = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
     user.refreshToken = refreshToken;
     await authRepository.updateUserTokens(user._id, refreshToken);
-    delete user.otp;
+    
+    await redisClient.del(`otp_login:${userId}`);
     return { user, token };
   } else {
-    throw new Error("Invalid OTP try again!");
+    throw new ApiError(400, "Invalid OTP try again!");
   }
 };
 
 export const resendOtp = async (phone) => {
   const user = await User.findOne({ phone }); // Checks phone across types or customer/dp
   if (!user) {
-    throw new Error("User not found");
+    throw new ApiError(404, "User not found");
   }
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -163,8 +180,10 @@ export const resendOtp = async (phone) => {
     : `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
 
   await sendOTPViaSMS(user.phone, message);
-  user.otp = otp;
-  await user.save();
+  
+  const redisClient = getRedisClient();
+  if (!redisClient) throw new ApiError(500, "Redis cache unavailable");
+  await redisClient.setEx(`otp_login:${user._id}`, 300, otp);
 
   return user;
 };
@@ -176,7 +195,7 @@ export const registerDp = async (name, phone, email, dob) => {
     ROLES.DP,
   );
   if (existingUser) {
-    throw new Error("Dp already registered");
+    throw new ApiError(400, "Dp already registered");
   }
 
   const newUser = await authRepository.createUser({
@@ -188,11 +207,15 @@ export const registerDp = async (name, phone, email, dob) => {
   });
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  newUser.otp = otp;
-  await newUser.save();
+  
+  const redisClient = getRedisClient();
+  if (!redisClient) throw new ApiError(500, "Redis cache unavailable");
+  await redisClient.setEx(`otp_login:${newUser._id}`, 300, otp);
 
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
-  await sendOTPViaSMS(phone, message);
+  sendOTPViaSMS(phone, message).catch((err) =>
+    console.error("SMS Failed:", err.message),
+  );
 
   await sendNotification({
     role: ROLES.ADMIN,
@@ -222,15 +245,19 @@ export const registerDp = async (name, phone, email, dob) => {
 export const loginDp = async (phone) => {
   const dp = await authRepository.findUserByPhoneAndType(phone, ROLES.DP);
   if (!dp) {
-    throw new Error("DP Not Fount Go to Register Page");
+    throw new ApiError(404, "DP Not Found Go to Register Page");
   }
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  dp.otp = otp;
-  await authRepository.updateUserOtp(dp._id, otp);
+  
+  const redisClient = getRedisClient();
+  if (!redisClient) throw new ApiError(500, "Redis cache unavailable");
+  await redisClient.setEx(`otp_login:${dp._id}`, 300, otp);
 
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
-  await sendOTPViaSMS(dp.phone, message);
+  sendOTPViaSMS(dp.phone, message).catch((err) =>
+    console.error("SMS Failed:", err.message),
+  );
 
   return dp;
 };
@@ -238,14 +265,23 @@ export const loginDp = async (phone) => {
 export const dpOtpVerification = async (userId, otp) => {
   const dp = await authRepository.findUserById(userId);
   if (!dp) {
-    throw new Error("User not found");
+    throw new ApiError(404, "User not found");
   }
 
-  if (otp !== dp.otp) {
-    throw new Error("Invalid Otp");
+  const redisClient = getRedisClient();
+  if (!redisClient) throw new ApiError(500, "Redis cache unavailable");
+  
+  const storedOtp = await redisClient.get(`otp_login:${userId}`);
+  
+  if (!storedOtp) {
+    throw new ApiError(400, "OTP has expired or does not exist");
   }
 
-  delete dp.otp;
+  if (otp !== storedOtp) {
+    throw new ApiError(400, "Invalid Otp");
+  }
+
+  await redisClient.del(`otp_login:${userId}`);
 
   // Generate tokens for all verified sessions so DPs can upload documents
   const token = generateAccessToken(dp);
@@ -463,22 +499,16 @@ export const forgotPassword = async (identifier) => {
   const message = `Your CountMee Courier password reset code is ${otp}`;
 
   if (user.phone) {
-    try {
-      await sendOTPViaSMS(user.phone, message);
-    } catch (e) {
-      console.error("SMS error:", e);
-    }
+    sendOTPViaSMS(user.phone, message).catch((e) =>
+      console.error("SMS error:", e),
+    );
   }
   if (user.email) {
-    try {
-      await sendEmailUtil({
-        to: user.email,
-        subject: "CountMee - Password Reset OTP",
-        text: message,
-      });
-    } catch (e) {
-      console.error("Email error:", e);
-    }
+    sendEmailUtil({
+      to: user.email,
+      subject: "CountMee - Password Reset OTP",
+      text: message,
+    }).catch((e) => console.error("Email error:", e));
   }
 
   return { message: "OTP sent successfully" };

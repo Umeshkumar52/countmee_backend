@@ -54,6 +54,7 @@ router.post('/adddp', dpUploadFields, adminController.postAddDp);
 router.post('/bulk-adddp', uploadAny(), adminController.postBulkAddDp);
 router.delete('/delete_dp/:id', adminController.deleteDp);
 router.put('/editdp/:id', dpUploadFields, adminController.postEditDp);
+router.put('/block_dp/:id', adminController.blockDp);
 
 // Customer Management
 router.get('/customer', adminController.getCustomerPage);

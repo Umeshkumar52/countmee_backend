@@ -7,10 +7,14 @@ import { ROLES } from "../../constants/index.js";
 import { PdcDocument } from "../../features/pdc/pdcDocument.model.js";
 import { Broadcast } from "../../features/orders/broadcast.model.js";
 import { getAllCachedDpLocations } from "./redis.service.js";
+import { ORDER_STATUS } from "../../constants/orderStatus.js";
+import { PackageDetail } from "../../features/orders/packageDetail.model.js";
+import { broadcastOrderToNearbyDPs } from "../../features/orders/orders.service.js";
+import { OrderBundle } from "../../features/orders/orderBundle.model.js";
+import { broadcastToAdmins } from "./socket.service.js";
+import mongoose from "mongoose";
 
 let agenda;
-
-import mongoose from "mongoose";
 
 export const initAgenda = async () => {
   agenda = new Agenda({
@@ -140,24 +144,17 @@ export const initAgenda = async () => {
   agenda.define("rebroadcast-unaccepted-order", async (job) => {
     const { order_id } = job.attrs.data;
     try {
-      const { Order } = await import("../../features/orders/order.model.js");
-      const { ORDER_STATUS } = await import("../../constants/orderStatus.js");
       const order = await Order.findById(order_id);
 
       // If order still not accepted
       if (order && order.status === ORDER_STATUS.CONFIRMED) {
-        console.log(
-          `[Agenda] Order ${order_id} not accepted after 5 minutes. Rebroadcasting...`,
-        );
-        const { PackageDetail } =
-          await import("../../features/orders/packageDetail.model.js");
-        const packageDetail = await PackageDetail.findById(order.package_id);
+          console.log(
+            `No DP accepted order ${order._id} within time limit. Re-broadcasting...`,
+          );
+          const packageDetail = await PackageDetail.findById(order.package_id);
 
-        const { broadcastOrderToNearbyDPs } =
-          await import("../../features/orders/orders.service.js");
-
-        // Pass true as the third parameter to signify it's a rebroadcast (so it doesn't loop infinitely)
-        await broadcastOrderToNearbyDPs(order, packageDetail, true);
+          // Pass true as the third parameter to signify it's a rebroadcast (so it doesn't loop infinitely)
+          broadcastOrderToNearbyDPs(order, packageDetail, true);
       }
     } catch (error) {
       console.error(
@@ -174,8 +171,6 @@ export const initAgenda = async () => {
   agenda.define("expire-bundle-broadcast", async (job) => {
     const { bundle_id } = job.attrs.data;
     try {
-      const { OrderBundle } =
-        await import("../../features/orders/orderBundle.model.js");
       const bundle = await OrderBundle.findOne({ bundle_id });
       if (bundle && bundle.status === "broadcasting") {
         bundle.status = "expired";
@@ -184,9 +179,8 @@ export const initAgenda = async () => {
           `[Agenda] Bundle ${bundle_id} broadcasting expired due to timeout`,
         );
 
-        // Optionally broadcast to admin about expiration
-        const { broadcastToAdmins } = await import("./socket.service.js");
-        broadcastToAdmins("bundle:expired", { bundle_id });
+          // Optionally broadcast to admin about expiration
+          broadcastToAdmins("bundle:expired", { bundle_id });
       }
     } catch (error) {
       console.error("[Agenda] Error in expire-bundle-broadcast job:", error);
