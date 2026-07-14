@@ -165,6 +165,7 @@ export const saveDocuments = async (user_id, docData, files) => {
       vehicle_max_capacity: docData.vehicle_max_capacity,
       insurance_expiry_date: docData.insurance_expiry_date,
       emission_expiry_date: docData.emission_expiry_date,
+      permit_expiry: docData.permit_expiry,
       is_new_vehicle: docData.is_new_vehicle,
       vehicle_registration_date: docData.vehicle_registration_date,
       travel_permit_states: parsedStates.length > 0 ? parsedStates : undefined,
@@ -254,7 +255,7 @@ export const saveReference = async (user_id, refData) => {
   return true;
 };
 
-export const documentsReupload = async (user_id, files) => {
+export const documentsReupload = async (user_id, files, body) => {
   const dp = await User.findById(user_id);
   if (!dp) return false;
 
@@ -262,19 +263,22 @@ export const documentsReupload = async (user_id, files) => {
   if (!doc) return false;
 
   const fileFields = {
-    aadhar_imgfront: "adhar_status",
-    aadhar_imgback: "adhar_status",
-    rc_imgfront: "rc_status",
-    rc_imgback: "rc_status",
-    dl_imgfront: "dl_status",
-    dl_imgback: "dl_status",
-    bank_imagefront: "bank_status",
-    bank_imageback: "bank_status",
-    residence_img: "rv_status",
-    vehicle_img: "rv_status",
+    aadhar_imgfront: { status: "adhar_status", reason: "adhar_reject_reason" },
+    aadhar_imgback: { status: "adhar_status", reason: "adhar_reject_reason" },
+    rc_imgfront: { status: "rc_status", reason: "rc_reject_reason" },
+    rc_imgback: { status: "rc_status", reason: "rc_reject_reason" },
+    dl_imgfront: { status: "dl_status", reason: "dl_reject_reason" },
+    dl_imgback: { status: "dl_status", reason: "dl_reject_reason" },
+    bank_imagefront: { status: "bank_status", reason: "bank_reject_reason" },
+    bank_imageback: { status: "bank_status", reason: "bank_reject_reason" },
+    residence_img: { status: "rv_status", reason: "rv_reject_reason" },
+    vehicle_img: { status: "rv_status", reason: "rv_reject_reason" },
+    insurance_document: { status: "insurance_status", reason: "insurance_reject_reason" },
+    emission_certificate_document: { status: "emission_status", reason: "emission_reject_reason" },
+    permit_document: { status: "permit_status", reason: "permit_reject_reason" },
   };
 
-  for (const [field, statusField] of Object.entries(fileFields)) {
+  for (const [field, fieldsToReset] of Object.entries(fileFields)) {
     if (files?.[field]?.[0]) {
       const uploadResult = await uploadToCloudinary(
         files[field][0].path,
@@ -282,7 +286,37 @@ export const documentsReupload = async (user_id, files) => {
       );
       if (uploadResult) {
         doc[field] = uploadResult.secure_url;
-        doc[statusField] = null; // Reset status to pending
+        doc[fieldsToReset.status] = null; // Reset status to pending
+        doc[fieldsToReset.reason] = null; // Reset reject reason
+      }
+    }
+  }
+
+  if (body) {
+    const textFields = [
+      "aadhar_number", "rc_number", "dl_number", "dl_expiry_date",
+      "bank_name", "bank_acc_number", "bank_ifsc", "vehicle_number",
+      "insurance_expiry_date", "emission_expiry_date", "permit_expiry"
+    ];
+    for (const tf of textFields) {
+      if (body[tf] !== undefined && body[tf] !== "") {
+        doc[tf] = body[tf];
+      }
+    }
+
+    if (body.travel_permit_states) {
+      let parsedStates = [];
+      try {
+        parsedStates = JSON.parse(body.travel_permit_states);
+      } catch (e) {
+        if (typeof body.travel_permit_states === "string") {
+          parsedStates = body.travel_permit_states.split(",").map((s) => s.trim());
+        } else if (Array.isArray(body.travel_permit_states)) {
+          parsedStates = body.travel_permit_states;
+        }
+      }
+      if (parsedStates.length > 0) {
+        doc.travel_permit_states = parsedStates;
       }
     }
   }

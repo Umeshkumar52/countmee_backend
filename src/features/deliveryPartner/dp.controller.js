@@ -109,7 +109,7 @@ export const documents = asyncHandler(async (req, res) => {
 
 export const documentsReupload = asyncHandler(async (req, res) => {
   const user_id = req.user.id;
-  const success = await dpService.documentsReupload(user_id, req.files);
+  const success = await dpService.documentsReupload(user_id, req.files, req.body);
   if (success) {
     return res.json(ApiResponse.success(null, "documents uploaded"));
   }
