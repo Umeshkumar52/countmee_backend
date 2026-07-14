@@ -886,3 +886,20 @@ export const processManualRefund = async (req, res, next) => {
     next(err);
   }
 };
+
+export const blockDp = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { is_blocked } = req.body;
+    
+    if (typeof is_blocked !== 'boolean') {
+      return res.status(400).json(ApiResponse.error("is_blocked must be a boolean"));
+    }
+    
+    const result = await adminService.blockDp(id, is_blocked);
+    return res.json(ApiResponse.success(result));
+  } catch (err) {
+    next(err);
+  }
+};
+

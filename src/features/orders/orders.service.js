@@ -264,7 +264,6 @@ export const broadcastOrderToNearbyDPs = async (
 
 export const createOrder = async (orderData, files, userId) => {
   const {
-    user_id,
     pickup_location,
     sender_latitude,
     sender_longitude,
@@ -383,7 +382,7 @@ export const createOrder = async (orderData, files, userId) => {
     const packageDetail = await ordersRepository.createPackageDetail(
       [
         {
-          user_id,
+          user_id: userId,
           order_id: newOrder._id,
           product_description,
           product_weight,
@@ -410,7 +409,7 @@ export const createOrder = async (orderData, files, userId) => {
     // In-app notifications
     await sendNotification({
       role: ROLES.USER,
-      userId: user_id,
+      userId: userId,
       title: "Order Placed",
       message: `Your order of ID : ${newOrder.orderNumber} is placed`,
       orderId: newOrder._id,

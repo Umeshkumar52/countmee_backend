@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import * as adminRepository from "./admin.repository.js";
-import { sendOTPViaSMS } from "../notifications/sms.service.js";
+import { sendOTPViaSMS } from "../../common/utils/sendSms.js";
 import { User } from "../users/user.model.js";
 import { ROLES } from "../../constants/index.js";
 
@@ -81,7 +81,8 @@ export const sendOtp = async (credentialsToken, phone, actionType, amount) => {
 
   console.log(`[VERIFICATION SERVICE] Sending OTP to ${phone}: ${message}`);
 
-  const sent = await sendOTPViaSMS(phone, message);
+  sendOTPViaSMS(phone, message).catch((err) => console.error("SMS Failed:", err.message));
+  const sent = true; // Assume true since we are running in background
 
   if (sent) {
     const otpHash = crypto

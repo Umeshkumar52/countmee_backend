@@ -17,7 +17,7 @@ router.post("/createOrder", orderImagesUpload, ordersController.createOrder);
 router.post("/cancelOrder", ordersController.cancelOrder);
 router.get("/my-dues", ordersController.myDues);
 router.get("/order_details/:id", ordersController.order_details);
-router.get("/orderDetails", ordersController.tracking);
+router.post("/orderDetails", ordersController.tracking);
 router.get("/orderHistory/:id", ordersController.orderHistory);
 router.get("/cancelledOrder/:id", ordersController.cancelledOrder);
 router.post("/charges", ordersController.charges);

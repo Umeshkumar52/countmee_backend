@@ -11,9 +11,15 @@ export const createOrder = asyncHandler(async (req, res) => {
   const { _id } = req.user;
 
   // Enforce Restriction: Block order creation if unpaid waiting charges exist
-  const unpaidCharges = await OrderWaitCharge.findOne({ user_id: _id, payment_status: "unpaid" });
+  const unpaidCharges = await OrderWaitCharge.findOne({
+    user_id: _id,
+    payment_status: "unpaid",
+  });
   if (unpaidCharges) {
-    throw new ApiError(400, `You have an overdue waiting charge of ₹${unpaidCharges.total_waiting_charge}. Please clear it before creating a new order.`);
+    throw new ApiError(
+      400,
+      `You have an overdue waiting charge of ₹${unpaidCharges.total_waiting_charge}. Please clear it before creating a new order.`,
+    );
   }
 
   if (typeof req.body.different_dimantion === "string") {
@@ -55,8 +61,9 @@ export const cancelOrder = asyncHandler(async (req, res) => {
 });
 
 export const order_details = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
   const { id } = req.params;
-  const order_details = await ordersService.getOrderDetails(id);
+  const order_details = await ordersService.getOrderDetails(_id ?? id);
   return res.json(
     ApiResponse.success({ order_details }, "all the data of orders"),
   );

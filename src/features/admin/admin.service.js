@@ -12,6 +12,18 @@ import { PackageDetail } from "../orders/packageDetail.model.js";
 import { User } from "../users/user.model.js";
 import { sendNotificationToUser } from "../../common/services/socket.service.js";
 import { sendPushNotification } from "../../common/services/firebase.service.js";
+import mongoose from "mongoose";
+import { Order } from "../orders/order.model.js";
+import { OrderBundle } from "../orders/orderBundle.model.js";
+import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
+import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
+import { MinBroadcastDist } from "../tracking/minBroadcast.model.js";
+import { PAYOUT_STATUS } from "../../constants/orderStatus.js";
+import { OrderWaitCharge } from "../orders/orderWaitCharge.model.js";
+import { VehicleSubcategory } from "../deliveryPartner/vehicleSubcategory.model.js";
+import { calculateDistance } from "../../common/utils/distance.js";
+import { Notification } from "../notifications/notification.model.js";
+import { createRefund } from "../../common/services/refund.service.js";
 
 export const loginAdmin = async (email, password, fcmToken) => {
   const adminEmail = process.env.ADMIN_EMAIL || "admin@countmee.com";
@@ -62,7 +74,6 @@ export const loginAdmin = async (email, password, fcmToken) => {
 
     return {
       token,
-      refreshToken,
       user: {
         id: adminUser._id,
         name: adminUser.name,
@@ -113,7 +124,6 @@ export const updateDpDocumentStatus = async (
   reason,
 ) => {
   const DpDocument = await adminRepository.findDpDocumentByUserId(document_id); // Wait, in the controller: doc = await DpDocument.findById(document_id);
-  const mongoose = await import("mongoose");
   const DpDocModel = mongoose.default.model("DpDocument");
   const DpDetailModel = mongoose.default.model("DpDetail");
 
@@ -191,7 +201,6 @@ export const updateDpDocumentStatus = async (
 };
 
 export const updateDpDocumentApproval = async (userId, document_approval) => {
-  const mongoose = await import("mongoose");
   const DpDetailModel = mongoose.default.model("DpDetail");
   await DpDetailModel.findByIdAndUpdate(userId, { document_approval });
   return { message: `Approval status updated to ${document_approval}` };
@@ -215,6 +224,19 @@ export const addDp = async (body, files) => {
     vehicle_number,
     reference1_name,
     reference1_phone,
+    reference2_name,
+    reference2_phone,
+    dl_expiry_date,
+    sub_vehicle_type,
+    other_vehicle_details,
+    vehicle_min_capacity,
+    vehicle_max_capacity,
+    insurance_expiry_date,
+    emission_expiry_date,
+    is_new_vehicle,
+    vehicle_registration_date,
+    travel_permit_states,
+    permit_expiry,
   } = body;
 
   const existing = await adminRepository.findUserByPhoneAndType(
@@ -246,6 +268,9 @@ export const addDp = async (body, files) => {
     "vehicle_img",
     "bank_imagefront",
     "bank_imageback",
+    "insurance_document",
+    "emission_certificate_document",
+    "permit_document",
   ];
 
   for (const field of fileFields) {
@@ -301,13 +326,24 @@ export const addDp = async (body, files) => {
     vehicle_max_capacity: vehicle_max_capacity || null,
     insurance_expiry_date: insurance_expiry_date || null,
     emission_expiry_date: emission_expiry_date || null,
-    is_new_vehicle: is_new_vehicle === 'true' || is_new_vehicle === true,
+    is_new_vehicle: is_new_vehicle === "true" || is_new_vehicle === true,
     vehicle_registration_date: vehicle_registration_date || null,
-    travel_permit_states: travel_permit_states ? travel_permit_states.split(',').map(s => s.trim()) : [],
+    travel_permit_states: travel_permit_states
+      ? travel_permit_states.split(",").map((s) => s.trim())
+      : [],
     permit_expiry: permit_expiry || null,
     insurance_document: uploadResults.insurance_document || null,
-    emission_certificate_document: uploadResults.emission_certificate_document || null,
+    emission_certificate_document:
+      uploadResults.emission_certificate_document || null,
     permit_document: uploadResults.permit_document || null,
+    adhar_status: "Accept",
+    rc_status: "Accept",
+    dl_status: "Accept",
+    bank_status: "Accept",
+    rv_status: "Accept",
+    insurance_status: "Accept",
+    emission_status: "Accept",
+    permit_status: "Accept",
   });
 
   return { message: "Delivery Partner registered successfully" };
@@ -344,7 +380,7 @@ export const bulkAddDp = async (dps, files) => {
       errors.push({ row, error: "Bank Account Number is required" });
     if (!dp.bank_ifsc) errors.push({ row, error: "Bank IFSC is required" });
 
-    const fileFields = [
+    const requiredFileFields = [
       "profile_img",
       "aadhar_imgfront",
       "aadhar_imgback",
@@ -354,20 +390,27 @@ export const bulkAddDp = async (dps, files) => {
       "dl_imgback",
       "bank_imagefront",
       "bank_imageback",
-      "insurance_document",
-      "emission_certificate_document",
-      "permit_document",
       "residence_img",
       "vehicle_img",
     ];
 
+    const optionalFileFields = [
+      "insurance_document",
+      "emission_certificate_document",
+      "permit_document",
+    ];
+
+    const allFileFields = [...requiredFileFields, ...optionalFileFields];
+
     // Document Images Text Validation
-    for (const field of fileFields) {
+    for (const field of allFileFields) {
       if (!dp[field]) {
-        errors.push({
-          row,
-          error: `Filename text missing in CSV for ${field}`,
-        });
+        if (requiredFileFields.includes(field)) {
+          errors.push({
+            row,
+            error: `Filename text missing in CSV for ${field}`,
+          });
+        }
       } else {
         // Strict Backend Validation: Check if the actual binary file was successfully received
         const expectedFieldName = `row_${i}_${field}`;
@@ -416,6 +459,9 @@ export const bulkAddDp = async (dps, files) => {
         "vehicle_img",
         "bank_imagefront",
         "bank_imageback",
+        "insurance_document",
+        "emission_certificate_document",
+        "permit_document",
       ];
 
       if (files && Array.isArray(files)) {
@@ -492,19 +538,30 @@ export const bulkAddDp = async (dps, files) => {
         vehicle_max_capacity: dp.vehicle_max_capacity || null,
         insurance_expiry_date: dp.insurance_expiry_date || null,
         emission_expiry_date: dp.emission_expiry_date || null,
-        is_new_vehicle: dp.is_new_vehicle === 'true' || dp.is_new_vehicle === true,
+        is_new_vehicle:
+          dp.is_new_vehicle === "true" || dp.is_new_vehicle === true,
         vehicle_registration_date: dp.vehicle_registration_date || null,
-        travel_permit_states: dp.travel_permit_states ? dp.travel_permit_states.split(',').map(s => s.trim()) : [],
+        travel_permit_states: dp.travel_permit_states
+          ? dp.travel_permit_states.split(",").map((s) => s.trim())
+          : [],
         permit_expiry: dp.permit_expiry || null,
-        insurance_document: uploadResults.insurance_document || dp.insurance_document || null,
-        emission_certificate_document: uploadResults.emission_certificate_document || dp.emission_certificate_document || null,
-        permit_document: uploadResults.permit_document || dp.permit_document || null,
+        insurance_document:
+          uploadResults.insurance_document || dp.insurance_document || null,
+        emission_certificate_document:
+          uploadResults.emission_certificate_document ||
+          dp.emission_certificate_document ||
+          null,
+        permit_document:
+          uploadResults.permit_document || dp.permit_document || null,
         status: "Verified",
         adhar_status: "Accept",
         rc_status: "Accept",
         dl_status: "Accept",
         bank_status: "Accept",
         rv_status: "Accept",
+        insurance_status: "Accept",
+        emission_status: "Accept",
+        permit_status: "Accept",
       });
       successCount++;
     } catch (err) {
@@ -549,9 +606,20 @@ export const editDp = async (id, body, files) => {
     vehicle_number,
     reference1_name,
     reference1_phone,
+    reference2_name,
+    reference2_phone,
+    dl_expiry_date,
+    sub_vehicle_type,
+    other_vehicle_details,
+    vehicle_min_capacity,
+    vehicle_max_capacity,
+    insurance_expiry_date,
+    emission_expiry_date,
+    is_new_vehicle,
+    vehicle_registration_date,
+    travel_permit_states,
+    permit_expiry,
   } = body;
-
-  const mongoose = await import("mongoose");
   const UserModel = mongoose.default.model("User");
   await UserModel.updateOne(
     { _id: detail.user_id },
@@ -569,6 +637,21 @@ export const editDp = async (id, body, files) => {
     vehicle_number,
     reference1_name,
     reference1_phone,
+    reference2_name: reference2_name || null,
+    reference2_phone: reference2_phone || null,
+    dl_expiry_date: dl_expiry_date || null,
+    sub_vehicle_type: sub_vehicle_type || null,
+    other_vehicle_details: other_vehicle_details || null,
+    vehicle_min_capacity: vehicle_min_capacity || null,
+    vehicle_max_capacity: vehicle_max_capacity || null,
+    insurance_expiry_date: insurance_expiry_date || null,
+    emission_expiry_date: emission_expiry_date || null,
+    is_new_vehicle: is_new_vehicle === "true" || is_new_vehicle === true,
+    vehicle_registration_date: vehicle_registration_date || null,
+    travel_permit_states: travel_permit_states
+      ? travel_permit_states.split(",").map((s) => s.trim())
+      : [],
+    permit_expiry: permit_expiry || null,
   };
 
   const uploadResults = {};
@@ -584,6 +667,9 @@ export const editDp = async (id, body, files) => {
     "vehicle_img",
     "bank_imagefront",
     "bank_imageback",
+    "insurance_document",
+    "emission_certificate_document",
+    "permit_document",
   ];
 
   for (const field of fileFields) {
@@ -623,6 +709,9 @@ export const editDp = async (id, body, files) => {
     "vehicle_img",
     "bank_imagefront",
     "bank_imageback",
+    "insurance_document",
+    "emission_certificate_document",
+    "permit_document",
   ];
   for (const f of remainingFileFields) {
     if (uploadResults[f]) {
@@ -706,6 +795,10 @@ export const addPdc = async (body, files) => {
     bank_name,
     bank_ifsc,
     bank_acc_no,
+    city,
+    district,
+    state,
+    pincode,
     password,
     confirmPassword,
   } = body;
@@ -730,6 +823,9 @@ export const addPdc = async (body, files) => {
     password: hashedPassword,
     role: ROLES.PDC,
   });
+
+  const fullAddress = `${address}, ${city}, ${district}, ${state} ${pincode}`;
+  const [lat, lng] = await getLatLongFromAddress(fullAddress);
 
   const uploadResults = {};
   const fileFields = [
@@ -772,6 +868,16 @@ export const addPdc = async (body, files) => {
     passbook_image: uploadResults.passbook_image || null,
     profile_image: uploadResults.profile_image || null,
     shop_image: uploadResults.shop_image || null,
+    city: city || null,
+    district: district || null,
+    state: state || null,
+    pincode: pincode || null,
+    latitude: lat,
+    longitude: lng,
+    geo_location:
+      lat && lng
+        ? { type: "Point", coordinates: [lng, lat] }
+        : { type: "Point", coordinates: [0, 0] },
     status: "Approved",
     aadhar_status: "Accept",
     pan_status: "Accept",
@@ -799,13 +905,15 @@ export const editPdc = async (pdcid, body, files) => {
     bank_ifsc,
     bank_acc_no,
     shop_name,
+    city,
+    district,
+    state,
+    pincode,
   } = body;
-
-  const mongoose = await import("mongoose");
   const UserModel = mongoose.default.model("User");
   await UserModel.updateOne({ _id: pdcid }, { name, email, phone });
 
-  const docUpdate = {
+  const updateData = {
     address,
     aadhar_card_no: aadhar,
     gst_no: gst,
@@ -815,6 +923,9 @@ export const editPdc = async (pdcid, body, files) => {
     account_no: bank_acc_no,
     shop_name,
   };
+
+  const fullAddress = `${address}, ${city}, ${district}, ${state} ${pincode}`;
+  const [lat, lng] = await getLatLongFromAddress(fullAddress);
 
   const uploadResults = {};
   const fileFields = [
@@ -996,7 +1107,6 @@ export const getPendingOrders = async () => {
 };
 
 export const getScheduledOrderStats = async () => {
-  const Order = (await import("../orders/order.model.js")).Order;
   const today = new Date();
 
   const formatDate = (date) => {
@@ -1025,7 +1135,7 @@ export const getScheduledOrderStats = async () => {
   dayAfterDate.setDate(dayAfterDate.getDate() + 2);
   const dayAfterStr = formatDate(dayAfterDate);
 
-  const [totalCount, todayCount, tomorrowCount, dayAfterCount] =
+  const [totalCount, todayCount, tomorrowCount, dayAfterCount, pendingCount, completedCount] =
     await Promise.all([
       Order.countDocuments({ order_type: "scheduled" }),
       Order.countDocuments({
@@ -1040,10 +1150,20 @@ export const getScheduledOrderStats = async () => {
         order_type: "scheduled",
         schedule_date: dayAfterStr,
       }),
+      Order.countDocuments({
+        order_type: "scheduled",
+        status: "scheduled",
+      }),
+      Order.countDocuments({
+        order_type: "scheduled",
+        status: "delivered",
+      }),
     ]);
 
   return {
     total: totalCount,
+    pending: pendingCount,
+    completed: completedCount,
     today: {
       count: todayCount,
       date: todayStr,
@@ -1063,7 +1183,6 @@ export const getScheduledOrderStats = async () => {
 };
 
 export const getScheduledFilters = async () => {
-  const Order = (await import("../orders/order.model.js")).Order;
   const filterQuery = { order_type: "scheduled" };
 
   const [pickupPins, deliveryPins, vehicleTypes] = await Promise.all([
@@ -1113,11 +1232,6 @@ export const getDpCancelledOrders = async () => {
 };
 
 export const getAssignOrdersSelect = async (orderId) => {
-  const mongoose = await import("mongoose");
-  const { Order } = await import("../orders/order.model.js");
-  const { DpDetail } = await import("../deliveryPartner/dpDetail.model.js");
-  const { MinBroadcastDist } =
-    await import("../tracking/minBroadcast.model.js");
 
   const order = await Order.findById(orderId);
   if (!order) throw new Error("Order not found");
@@ -1246,7 +1360,6 @@ export const getFeedbacks = async (role, page = 1, limit = 10) => {
 };
 
 export const getPendingPayments = async (type, startDate, endDate) => {
-  const mongoose = await import("mongoose");
   const DpPayout = mongoose.default.model("DpPayout");
   const PdcPayout = mongoose.default.model("PdcPayout");
   const DpDocument = mongoose.default.model("DpDocument");
@@ -1257,21 +1370,26 @@ export const getPendingPayments = async (type, startDate, endDate) => {
   const end = new Date(endDate + "T23:59:59.999Z");
 
   if (type === ROLES.DP) {
-    const { PAYOUT_STATUS } = await import("../../constants/orderStatus.js");
     const payouts = await DpPayout.find({
       $or: [
         { settled: { $in: [0, PAYOUT_STATUS.PENDING] } },
-        { waiting_charge_settled: { $in: [0, PAYOUT_STATUS.PENDING] }, waiting_charge_earning: { $gt: 0 } }
+        {
+          waiting_charge_settled: { $in: [0, PAYOUT_STATUS.PENDING] },
+          waiting_charge_earning: { $gt: 0 },
+        },
       ],
       created_at: { $gte: start, $lte: end },
     }).populate("order_id");
-    
+
     // Fetch all related OrderWaitCharge documents to check customer payment status
-    const orderIdsForWaitCharge = payouts.filter(p => p.order_id).map(p => p.order_id._id);
-    const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
-    const waitCharges = await OrderWaitCharge.find({ order_id: { $in: orderIdsForWaitCharge } });
+    const orderIdsForWaitCharge = payouts
+      .filter((p) => p.order_id)
+      .map((p) => p.order_id._id);
+    const waitCharges = await OrderWaitCharge.find({
+      order_id: { $in: orderIdsForWaitCharge },
+    });
     const waitChargeMap = new Map();
-    waitCharges.forEach(wc => waitChargeMap.set(wc.order_id.toString(), wc));
+    waitCharges.forEach((wc) => waitChargeMap.set(wc.order_id.toString(), wc));
 
     const groups = {};
     for (const p of payouts) {
@@ -1292,8 +1410,13 @@ export const getPendingPayments = async (type, startDate, endDate) => {
       }
       const g = groups[dpId];
       let pendingForThisOrder = 0;
-      if (p.settled === PAYOUT_STATUS.PENDING || p.settled === 0) pendingForThisOrder += p.earnings;
-      if ((p.waiting_charge_settled === PAYOUT_STATUS.PENDING || p.waiting_charge_settled === 0) && p.waiting_charge_earning > 0) {
+      if (p.settled === PAYOUT_STATUS.PENDING || p.settled === 0)
+        pendingForThisOrder += p.earnings;
+      if (
+        (p.waiting_charge_settled === PAYOUT_STATUS.PENDING ||
+          p.waiting_charge_settled === 0) &&
+        p.waiting_charge_earning > 0
+      ) {
         pendingForThisOrder += p.waiting_charge_earning;
       }
 
@@ -1302,9 +1425,9 @@ export const getPendingPayments = async (type, startDate, endDate) => {
       g.payout_ids.push(p._id);
       if (p.order_id) {
         g.order_ids.push(p.order_id._id);
-        
+
         const wc = waitChargeMap.get(p.order_id._id.toString());
-        
+
         g.orders.push({
           id: p.order_id._id,
           payout_id: p._id,
@@ -1312,11 +1435,16 @@ export const getPendingPayments = async (type, startDate, endDate) => {
           pickup_address: p.order_id.pickup_location,
           delivery_address: p.order_id.drop_location,
           amount: p.earnings,
-          base_settled: p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1,
+          base_settled:
+            p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1,
           waiting_charge: p.waiting_charge_earning || 0,
-          waiting_charge_settled: p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1,
+          waiting_charge_settled:
+            p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED ||
+            p.waiting_charge_settled === 1,
           total_amount: p.earnings + (p.waiting_charge_earning || 0),
-          customer_paid_waiting_charge: wc ? (wc.payment_status === "paid") : false
+          customer_paid_waiting_charge: wc
+            ? wc.payment_status === "paid"
+            : false,
         });
       }
     }
@@ -1395,8 +1523,12 @@ export const getPendingPayments = async (type, startDate, endDate) => {
   }
 };
 
-export const settlePayments = async (ids, payable, settlementAmount, settle_type = "both") => {
-  const mongoose = await import("mongoose");
+export const settlePayments = async (
+  ids,
+  payable,
+  settlementAmount,
+  settle_type = "both",
+) => {
   const DpPayout = mongoose.default.model("DpPayout");
   const PdcPayout = mongoose.default.model("PdcPayout");
   const User = mongoose.default.model("User");
@@ -1409,7 +1541,6 @@ export const settlePayments = async (ids, payable, settlementAmount, settle_type
 
   let orderIds = [];
   if (user.role === ROLES.DP) {
-    const { PAYOUT_STATUS } = await import("../../constants/orderStatus.js");
     const updateQuery = {};
     if (settle_type === "base" || settle_type === "both") {
       updateQuery.settled = PAYOUT_STATUS.COMPLETED;
@@ -1422,11 +1553,18 @@ export const settlePayments = async (ids, payable, settlementAmount, settle_type
 
     // Only mark Order as payment_settled if BOTH parts are settled for all payouts
     // (If waiting_charge_earning is 0, we consider the waiting charge part inherently "settled")
-    orderIds = payouts.filter(p => {
-      const baseSettled = p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1;
-      const waitingSettled = (p.waiting_charge_earning || 0) === 0 || p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1;
-      return baseSettled && waitingSettled;
-    }).map((p) => p.order_id).filter(Boolean);
+    orderIds = payouts
+      .filter((p) => {
+        const baseSettled =
+          p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1;
+        const waitingSettled =
+          (p.waiting_charge_earning || 0) === 0 ||
+          p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED ||
+          p.waiting_charge_settled === 1;
+        return baseSettled && waitingSettled;
+      })
+      .map((p) => p.order_id)
+      .filter(Boolean);
   } else if (user.role === ROLES.PDC) {
     await PdcPayout.updateMany({ _id: { $in: ids } }, { settled: 1 });
     const payouts = await PdcPayout.find({ _id: { $in: ids } });
@@ -1479,7 +1617,13 @@ export const getPastPayments = async (userId, onlySpecificOrder = false) => {
   return formattedPayouts;
 };
 
-export const getReportData = async (report_type, start_date, end_date, state, aip_only) => {
+export const getReportData = async (
+  report_type,
+  start_date,
+  end_date,
+  state,
+  aip_only,
+) => {
   let reportData = [];
   if (report_type === "order") {
     const orders = await adminRepository.findOrdersInDateRange(
@@ -1551,35 +1695,37 @@ export const getReportData = async (report_type, start_date, end_date, state, ai
       };
     });
   } else if (report_type === "travel_permit") {
-      const dps = await adminRepository.findDpTravelPermits(state, aip_only);
-      reportData = dps.map(dp => {
-        const hasAIP = dp.travel_permit_states?.includes("All India Permit (AIP)");
-        let permitType = "None";
-        if (hasAIP) permitType = "AIP";
-        else if (dp.travel_permit_states?.length > 0) permitType = "State";
+    const dps = await adminRepository.findDpTravelPermits(state, aip_only);
+    reportData = dps.map((dp) => {
+      const hasAIP = dp.travel_permit_states?.includes(
+        "All India Permit (AIP)",
+      );
+      let permitType = "None";
+      if (hasAIP) permitType = "AIP";
+      else if (dp.travel_permit_states?.length > 0) permitType = "State";
 
-        let statesDisplay = "N/A";
-        if (hasAIP) {
-           statesDisplay = "All India";
-        } else if (dp.travel_permit_states?.length > 0) {
-           statesDisplay = dp.travel_permit_states.join(", ");
-        }
+      let statesDisplay = "N/A";
+      if (hasAIP) {
+        statesDisplay = "All India";
+      } else if (dp.travel_permit_states?.length > 0) {
+        statesDisplay = dp.travel_permit_states.join(", ");
+      }
 
-        const dpIdStr = (dp.user_id?._id || dp._id).toString();
-        const shortDpId = `DP-${dpIdStr.substring(dpIdStr.length - 4).toUpperCase()}`;
+      const dpIdStr = (dp.user_id?._id || dp._id).toString();
+      const shortDpId = `DP-${dpIdStr.substring(dpIdStr.length - 4).toUpperCase()}`;
 
-        return {
-          id: dp._id,
-          dp_name: dp.user_id?.name || "N/A",
-          dp_id: shortDpId,
-          mobile: dp.user_id?.phone || "N/A",
-          vehicle: dp.vehicle_number || "N/A",
-          permit_type: permitType,
-          states: statesDisplay,
-          expiry: dp.permit_expiry || "N/A"
-        };
-      });
-    }
+      return {
+        id: dp._id,
+        dp_name: dp.user_id?.name || "N/A",
+        dp_id: shortDpId,
+        mobile: dp.user_id?.phone || "N/A",
+        vehicle: dp.vehicle_number || "N/A",
+        permit_type: permitType,
+        states: statesDisplay,
+        expiry: dp.permit_expiry || "N/A",
+      };
+    });
+  }
   return reportData;
 };
 
@@ -1661,10 +1807,9 @@ export const getWalletConfigHistory = async () => {
   return history;
 };
 
-export const getVehicleSubcategories = async () => {
-  const { VehicleSubcategory } =
-    await import("../deliveryPartner/vehicleSubcategory.model.js");
-  const subcategories = await VehicleSubcategory.find().sort({
+export const getVehicleSubcategories = async (type) => {
+  const query = type ? { vehicle_type: type } : {};
+  const subcategories = await VehicleSubcategory.find(query).sort({
     vehicle_type: 1,
     created_at: -1,
   });
@@ -1672,8 +1817,6 @@ export const getVehicleSubcategories = async () => {
 };
 
 export const addVehicleSubcategory = async (body) => {
-  const { VehicleSubcategory } =
-    await import("../deliveryPartner/vehicleSubcategory.model.js");
   const existing = await VehicleSubcategory.findOne({
     vehicle_type: body.vehicle_type,
     sub_vehicle_type: { $regex: new RegExp(`^${body.sub_vehicle_type}$`, "i") },
@@ -1691,8 +1834,6 @@ export const addVehicleSubcategory = async (body) => {
 };
 
 export const editVehicleSubcategory = async (id, body) => {
-  const { VehicleSubcategory } =
-    await import("../deliveryPartner/vehicleSubcategory.model.js");
   const subcat = await VehicleSubcategory.findById(id);
   if (!subcat) throw new Error("Vehicle subcategory not found");
 
@@ -1726,21 +1867,17 @@ export const editVehicleSubcategory = async (id, body) => {
 };
 
 export const deleteVehicleSubcategory = async (id) => {
-  const { VehicleSubcategory } =
-    await import("../deliveryPartner/vehicleSubcategory.model.js");
   const subcat = await VehicleSubcategory.findByIdAndDelete(id);
   if (!subcat) throw new Error("Vehicle subcategory not found");
   return { message: "Vehicle subcategory deleted successfully" };
 };
 
 export const findNearestDpsForOrders = async (orderIds) => {
-  const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
   const PackageDetail = mongoose.default.model("PackageDetail");
   const DeliverCharge = mongoose.default.model("DeliverCharge");
   const DpDetail = mongoose.default.model("DpDetail");
   const User = mongoose.default.model("User");
-  const { calculateDistance } = await import("../../common/utils/distance.js");
 
   // 1. Fetch Orders & Packages
   const orders = await Order.find({ _id: { $in: orderIds } }).lean();
@@ -1855,13 +1992,27 @@ export const findNearestDpsForOrders = async (orderIds) => {
 
 // send bundle orders notification to dp to keep the request and then assign the bundle to the dp who accepts the request first
 export const assignOrderBundle = async (orderIds, dpIds) => {
-  const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
-  const { OrderBundle } = await import("../orders/orderBundle.model.js");
-  const { Notification } =
-    await import("../notifications/notification.model.js");
-  // Generate unique bundle ID
-  const bundle_id = `BNDL-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const now = new Date();
+  const year = String(now.getFullYear()).slice(-2);
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const prefix = `${year}${month}-S-`;
+
+  const lastBundle = await OrderBundle.findOne({ bundle_id: new RegExp(`^${prefix}`) })
+    .sort({ bundle_id: -1 })
+    .exec();
+
+  let nextSequenceNumber = 1;
+  if (lastBundle && lastBundle.bundle_id) {
+    const lastSequenceStr = lastBundle.bundle_id.replace(prefix, "");
+    const lastSequenceNumber = parseInt(lastSequenceStr, 10);
+    if (!isNaN(lastSequenceNumber)) {
+      nextSequenceNumber = lastSequenceNumber + 1;
+    }
+  }
+
+  const paddedSequence = String(nextSequenceNumber).padStart(4, "0");
+  const bundle_id = `${prefix}${paddedSequence}`;
 
   // Verify all orders exist and populate package details
   const orders = await Order.find({ _id: { $in: orderIds } }).populate(
@@ -1920,15 +2071,7 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
 
 // assing all orders of bundle  to dp who accepts the request first and update the bundle status to assigned and notify the dp about the assignment
 export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
-  const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
-  const { OrderBundle } = await import("../orders/orderBundle.model.js");
-  const { Notification } =
-    await import("../notifications/notification.model.js");
-  const adminRepository = await import("./admin.repository.js");
-  const { broadcastToAdmins, sendNotificationToUser } =
-    await import("../../common/services/socket.service.js");
-  const { ROLES } = await import("../../constants/index.js");
 
   // 1. Fetch Bundle
   const bundle = await OrderBundle.findOne({ bundle_id }).populate("orders");
@@ -1968,9 +2111,6 @@ export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
 };
 
 export const getBundleResponses = async (bundle_id) => {
-  const { OrderBundle } = await import("../orders/orderBundle.model.js");
-  const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
-  const { User } = await import("../users/user.model.js");
 
   const bundle = await OrderBundle.findOne({ bundle_id })
     .populate("notified_dps", "name email phone")
@@ -2048,9 +2188,6 @@ export const getBundleResponses = async (bundle_id) => {
 };
 
 export const getBundleTracking = async (bundle_id) => {
-  const { OrderBundle } = await import("../orders/orderBundle.model.js");
-  const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
-  const { User } = await import("../users/user.model.js");
 
   const bundle = await OrderBundle.findOne({ bundle_id })
     .populate({
@@ -2073,7 +2210,6 @@ export const getBundleTracking = async (bundle_id) => {
 };
 
 export const getActiveBundles = async () => {
-  const { OrderBundle } = await import("../orders/orderBundle.model.js");
 
   // Fetch bundles that are in broadcasting, pending, or assigned status
   const bundles = await OrderBundle.find({
@@ -2093,7 +2229,6 @@ export const getActiveBundles = async () => {
 };
 
 export const getBundleSummary = async (orderIds) => {
-  const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
   const PackageDetail = mongoose.default.model("PackageDetail");
   const DeliverCharge = mongoose.default.model("DeliverCharge");
@@ -2265,14 +2400,10 @@ export const getBundleSummary = async (orderIds) => {
 };
 
 export const processManualRefund = async (order_id, amount, reason) => {
-  const mongoose = await import("mongoose");
   const Order = mongoose.default.model("Order");
   const Payment = mongoose.default.model("Payment");
   const WalletTransaction = mongoose.default.model("WalletTransaction");
   const Wallet = mongoose.default.model("Wallet");
-  const { sendNotification } =
-    await import("../../common/services/firebase.service.js");
-  const { ROLES } = await import("../../constants/index.js");
 
   const order = await Order.findById(order_id);
   if (!order) throw new Error("Order not found");
@@ -2296,8 +2427,6 @@ export const processManualRefund = async (order_id, amount, reason) => {
     if (!payment || payment.status !== "SUCCESS") {
       throw new Error("No successful direct payment found for this order");
     }
-    const { createRefund } =
-      await import("../../common/services/refund.service.js");
     await createRefund({
       paymentId: payment.cf_order_id,
       amount: refundAmount,
@@ -2352,3 +2481,18 @@ export const processManualRefund = async (order_id, amount, reason) => {
     refundAmount,
   };
 };
+
+export const blockDp = async (id, is_blocked) => {
+  const detail = await adminRepository.findDpDetailById(id);
+  if (!detail) throw new Error("DP not found");
+  
+  const UserModel = mongoose.default.model("User");
+  await UserModel.updateOne(
+    { _id: detail.user_id },
+    { is_blocked }
+  );
+
+  return { message: `Delivery Partner successfully ${is_blocked ? 'blocked' : 'unblocked'}`, is_blocked };
+};
+
+
