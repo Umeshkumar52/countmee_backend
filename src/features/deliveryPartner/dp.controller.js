@@ -22,6 +22,7 @@ import { PdcDocument } from "../pdc/pdcDocument.model.js";
 import { User } from "../users/user.model.js";
 import mongoose from "mongoose";
 import { OrderRequest } from "../orders/orderRequest.model.js";
+import { Notification } from "../notifications/notification.model.js";
 
 export const dpDetails = asyncHandler(async (req, res) => {
   const { gender, address } = validate(dpValidation.dpDetailsSchema, req.body);

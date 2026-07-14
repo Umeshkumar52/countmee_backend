@@ -55,7 +55,7 @@ export const recharge = asyncHandler(async (req, res) => {
 });
 
 export const initiateCashfreePayment = asyncHandler(async (req, res) => {
-  const { _id } = req.body;
+  const { _id } = req.user;
   const { user_id, amount } = validate(
     paymentsValidation.initiatePaymentSchema,
     req.body,
@@ -85,9 +85,9 @@ export const initiateOrderPayment = asyncHandler(async (req, res) => {
     paymentsValidation.initiateOrderPaymentSchema,
     req.body,
   );
-  
+
   let result;
-  
+
   if (payment_for === "order_payment") {
     if (payment_method === "wallet") {
       result = await paymentsService.payOrder(userId, order_id, Number(amount));
@@ -114,10 +114,10 @@ export const verifyOrderPayment = asyncHandler(async (req, res) => {
     paymentsValidation.verifyOrderPaymentSchema,
     req.body,
   );
-  
+
   let result;
   let message;
-  
+
   if (payment_for === "order_payment") {
     result = await paymentsService.verifyOrderPayment(cf_order_id, order_id);
     message = result.already_processed
@@ -134,6 +134,6 @@ export const verifyOrderPayment = asyncHandler(async (req, res) => {
       ? "Payment already processed"
       : "Waiting charge payment verified successfully";
   }
-  
+
   return res.json(ApiResponse.success(result, message));
 });

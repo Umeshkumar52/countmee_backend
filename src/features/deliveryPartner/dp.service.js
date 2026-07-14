@@ -31,7 +31,7 @@ import * as adminService from "../admin/admin.service.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
 import { DeliverCharge } from "../orders/deliverCharge.model.js";
 import { uploadToCloudinary } from "../../common/services/cloudinary.service.js";
-import { sendOTPViaSMS } from "../notifications/sms.service.js";
+import { sendOTPViaSMS } from "../../common/utils/sendSms.js";
 import * as mapsService from "../tracking/maps.service.js";
 import mongoose from "mongoose";
 import { ApiError } from "../../common/utils/ApiError.js";
@@ -862,10 +862,10 @@ export const markArrival = async (
   try {
     if (location_type === "pickup") {
       order.dp_pickup_arrival_time = new Date();
-      await sendOTPViaSMS(
+      sendOTPViaSMS(
         order.sender_phone,
         `Your Delivery Partner has arrived at the pickup location. Please handover the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`,
-      );
+      ).catch((err) => console.error("SMS Failed:", err.message));
 
       await OrderWaitCharge.findOneAndUpdate(
         { order_id },
@@ -881,10 +881,10 @@ export const markArrival = async (
       );
     } else {
       order.dp_drop_arrival_time = new Date();
-      await sendOTPViaSMS(
+      sendOTPViaSMS(
         order.receiver_phone,
         `Your Delivery Partner has arrived at the drop location. Please collect the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`,
-      );
+      ).catch((err) => console.error("SMS Failed:", err.message));
 
       await OrderWaitCharge.findOneAndUpdate(
         { order_id },
@@ -967,20 +967,20 @@ export const orderAccept = async (orderIds, status, user_id) => {
 
         if (orderRequest.request_type === "direct") {
           order.status_completed = "order accepted";
-          order.status = ORDER_STATUS.PROCESSING;
+          order.status = ORDER_STATUS.ACCEPTED;
           order.pickup_dp_id = user_id;
           order.dp_accept_time = new Date();
           await order.save({ session });
 
           // SMS drop OTP to receiver
           const message2 = `Your CountMee Courier verification code is ${order.drop_otp}`;
-          await sendOTPViaSMS(order.receiver_phone, message2);
+          sendOTPViaSMS(order.receiver_phone, message2).catch((err) => console.error("SMS Failed:", err.message));
         } else if (
           orderRequest.request_type === "broadcast_dp" ||
           orderRequest.request_type === "broadcast_pdc"
         ) {
           order.status_completed = "broadcast accepted";
-          order.status = ORDER_STATUS.PROCESSING;
+          order.status = ORDER_STATUS.BROADCAST_ACCEPTED;
           order.delivery_type = "broadcast";
           await order.save({ session });
 
@@ -2006,9 +2006,6 @@ export const getOrderHistory = async (user_id) => {
     jsonOrder.waiting_charge_earning = payout
       ? payout.waiting_charge_earning || 0
       : 0;
-    // Total = base + waiting
-    jsonOrder.total_earning =
-      jsonOrder.my_earning + jsonOrder.waiting_charge_earning;
 
     // Explicitly separate settlement statuses for DP visibility
     jsonOrder.base_settled = payout
@@ -2018,15 +2015,18 @@ export const getOrderHistory = async (user_id) => {
       ? payout.waiting_charge_settled === "Completed" ||
       payout.waiting_charge_settled === 1
       : false;
-
     // Status for waiting charge visibility
     if (jsonOrder.waiting_charge_settled) {
       jsonOrder.waiting_charge_status = "Settled";
     } else if (order.created_at < getExpiryCutoffDate()) {
       jsonOrder.waiting_charge_status = "Expired";
+      jsonOrder.waiting_charge_earning = 0; // The DP forfeits it
     } else {
       jsonOrder.waiting_charge_status = "Pending";
     }
+
+    // Total = base + waiting (calculated AFTER cutoff zeroing)
+    jsonOrder.total_earning = jsonOrder.my_earning + jsonOrder.waiting_charge_earning;
 
     ordersWithEarning.push(jsonOrder);
   }
@@ -2045,7 +2045,18 @@ export const getTotalOrdersCount = async (user_id) => {
   const totalorder = acceptorder + rejectorder;
 
   const payouts = await DpPayout.find({ dp_auth_id: user_id });
-  const totalEarning = payouts.reduce((acc, curr) => acc + curr.earnings, 0);
+
+  const calculateValidWC = (p) => {
+    let wc = p.waiting_charge_earning || 0;
+    if (p.waiting_charge_settled !== "Completed" && p.waiting_charge_settled !== 1) {
+      if (new Date(p.created_at) < getExpiryCutoffDate()) {
+        wc = 0;
+      }
+    }
+    return wc;
+  };
+
+  const totalEarning = payouts.reduce((acc, curr) => acc + curr.earnings + calculateValidWC(curr), 0);
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -2056,10 +2067,7 @@ export const getTotalOrdersCount = async (user_id) => {
     dp_auth_id: user_id,
     created_at: { $gte: todayStart, $lte: todayEnd },
   });
-  const todayEarning = todayPayouts.reduce(
-    (acc, curr) => acc + curr.earnings,
-    0,
-  );
+  const todayEarning = todayPayouts.reduce((acc, curr) => acc + curr.earnings + calculateValidWC(curr), 0);
 
   const lastPayout = await DpPayout.findOne({
     dp_auth_id: user_id,
@@ -2081,7 +2089,17 @@ export const getEarningHistory = async (userId) => {
     created_at: -1,
   });
 
-  const totalEarning = payouts.reduce((acc, curr) => acc + curr.earnings, 0);
+  const calculateValidWC = (p) => {
+    let wc = p.waiting_charge_earning || 0;
+    if (p.waiting_charge_settled !== "Completed" && p.waiting_charge_settled !== 1) {
+      if (new Date(p.created_at) < getExpiryCutoffDate()) {
+        wc = 0;
+      }
+    }
+    return wc;
+  };
+
+  const totalEarning = payouts.reduce((acc, curr) => acc + curr.earnings + calculateValidWC(curr), 0);
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -2090,7 +2108,7 @@ export const getEarningHistory = async (userId) => {
 
   const todayEarning = payouts
     .filter((p) => p.created_at >= todayStart && p.created_at <= todayEnd)
-    .reduce((acc, curr) => acc + curr.earnings, 0);
+    .reduce((acc, curr) => acc + curr.earnings + calculateValidWC(curr), 0);
 
   const payoutDetails = [];
 
@@ -2113,6 +2131,17 @@ export const getEarningHistory = async (userId) => {
       }
     }
     jsonOrder.my_earning = payout.earnings;
+
+    const wc = calculateValidWC(payout);
+    let wcStatus = "Pending";
+    if (payout.waiting_charge_settled === "Completed" || payout.waiting_charge_settled === 1) {
+      wcStatus = "Settled";
+    } else if (new Date(payout.created_at) < getExpiryCutoffDate()) {
+      wcStatus = "Expired";
+    }
+    jsonOrder.waiting_charge_earning = wc;
+    jsonOrder.total_earning = payout.earnings + wc;
+    jsonOrder.waiting_charge_status = wcStatus;
 
     const travel = await Travel.findOne({
       order_id: payout.order_id,
@@ -2419,7 +2448,7 @@ export const resendPickupOtp = async (orderId, dpId) => {
   }
 
   const message = `Your CountMee pickup OTP for Order #${order._id} is ${newOtp}`;
-  await sendOTPViaSMS(order.sender_phone, message);
+  sendOTPViaSMS(order.sender_phone, message).catch((err) => console.error("SMS Failed:", err.message));
 
   return { message: "Pickup OTP resent to sender" };
 };
@@ -2443,7 +2472,7 @@ export const resendReceiverOtp = async (orderId, dpId) => {
   await order.save();
 
   const message = `Your CountMee delivery verification code is ${newOtp}`;
-  await sendOTPViaSMS(order.receiver_phone, message);
+  sendOTPViaSMS(order.receiver_phone, message).catch((err) => console.error("SMS Failed:", err.message));
 
   return { message: "Delivery OTP resent to receiver" };
 };

@@ -31,6 +31,9 @@ export const initRedis = async () => {
 };
 
 export const getRedisClient = () => {
+    if (!redisClient || !redisClient.isReady) {
+        return null;
+    }
     return redisClient;
 };
 

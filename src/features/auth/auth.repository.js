@@ -8,6 +8,7 @@ export const findUserByPhoneAndType = async (phone, role) => {
   const user = await User.findOne({ phone, role });
   if (user) {
     const userObj = user.toObject();
+    if (userObj.otp) delete userObj.otp;
     if (role === ROLES.DP) {
       userObj.dpDetail = await DpDetail.findOne({ user_id: user?._id });
     }
@@ -17,13 +18,20 @@ export const findUserByPhoneAndType = async (phone, role) => {
 };
 
 export const findUserByEmailPhoneAndType = async (email, phone, role) => {
-  return await User.findOne({ $or: [{ email }, { phone }], role });
+  const user = await User.findOne({ $or: [{ email }, { phone }], role });
+  if (user) {
+    const userObj = user.toObject();
+    if (userObj.otp) delete userObj.otp;
+    return userObj;
+  }
+  return null;
 };
 
 export const findUserById = async (id) => {
-  const user = await User.findById(id).select("+otp");
+  const user = await User.findById(id);
   if (user) {
     const userObj = user.toObject();
+    if (userObj.otp) delete userObj.otp;
     if (user.role === ROLES.DP) {
       userObj.dpDetail = await DpDetail.findOne({ user_id: id });
       userObj.dpDocuments = await DpDocument.findOne({ user_id: id });
@@ -43,9 +51,7 @@ export const updateUserTokens = async (userId, refreshToken) => {
   return await User.findByIdAndUpdate(userId, { refreshToken }, { new: true });
 };
 
-export const updateUserOtp = async (userId, otp) => {
-  return await User.findByIdAndUpdate(userId, { otp }, { new: true });
-};
+
 
 export const deleteUserByPhone = async (phone) => {
   return await User.findOneAndDelete({ phone });

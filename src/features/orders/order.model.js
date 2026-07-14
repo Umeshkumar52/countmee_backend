@@ -4,6 +4,7 @@ import {
   USER_ACTION_STATUS,
 } from "../../constants/orderStatus.js";
 import { VEHICLE_TYPES } from "../../constants/index.js";
+import { Counter } from "../../common/counter.model.js";
 
 const orderSchema = new mongoose.Schema(
   {
@@ -112,13 +113,22 @@ const orderSchema = new mongoose.Schema(
   },
 );
 
-orderSchema.pre("save", function (next) {
+orderSchema.pre("save", async function (next) {
   if (!this.orderNumber) {
-    const datePart = Date.now().toString().slice(-5);
-    const idPart = this._id.toString().slice(-5);
-    this.orderNumber = `order_${datePart}${idPart}`;
+    try {
+      const counter = await Counter.findOneAndUpdate(
+        { id: "orderNumber" },
+        { $inc: { seq: 1 } },
+        { new: true, upsert: true }
+      );
+      this.orderNumber = `order_${counter.seq}`;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  } else {
+    next();
   }
-  next();
 });
 
 export const Order = mongoose.model("Order", orderSchema);
