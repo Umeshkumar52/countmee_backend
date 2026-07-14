@@ -292,9 +292,9 @@ export const getDashboardData = async (userId) => {
   const currentlyBroadcastingIds = broadcasts
     .filter(
       (b) =>
-        b.status === "Pending" ||
-        b.status === "Active" ||
-        b.status === "Broadcasting",
+        b.status === BROADCAST_STATUS.PENDING ||
+        b.status === BROADCAST_STATUS.ACTIVE ||
+        b.status === BROADCAST_STATUS.BROADCASTING,
     )
     .map((b) => b.order_id.toString());
 
@@ -747,7 +747,7 @@ export const getOrderHistory = async (userId) => {
   // We also include orders that might have been completed directly at the PDC
   const completedOrders = await Order.find({
     _id: { $in: acceptedOrderIds },
-    status_completed: "delivered",
+    status_completed: ORDER_STATUS.DELIVERED,
   });
 
   const validOrderIds = [
@@ -821,7 +821,7 @@ export const getOrderHistory = async (userId) => {
 
 export const updatePdcStatus = async (id, acceptStatus) => {
   const updateFields = { status: acceptStatus };
-  if (acceptStatus === "Approved") {
+  if (acceptStatus === DOCUMENT_APPROVAL_STATUS.APPROVED) {
     updateFields.otp = String(Math.floor(1000 + Math.random() * 9000));
   }
 
@@ -946,7 +946,7 @@ export const processActionDrop = async (orderId, pdcId, action) => {
     return "Drop-off request accepted successfully";
   } else {
     // action === 'reject'
-    orderRequest.status = "Rejected"; // rejected/cancelled
+    orderRequest.status = ORDER_REQUEST_STATUS.REJECTED; // rejected/cancelled
     await orderRequest.save();
 
     await sendNotification({
@@ -974,7 +974,7 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
   let broadcast = await Broadcast.findOne({
     order_id: orderId,
     broadcasted_by: pdcId,
-    status: "Pending",
+    status: BROADCAST_STATUS.PENDING,
   });
 
   if (!broadcast) {
@@ -1006,7 +1006,7 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
   // We must open the 10-minute broadcasting window regardless!
 
   // Update status to Broadcasting and generate the pickup OTP for the DP
-  broadcast.status = "Broadcasting";
+  broadcast.status = BROADCAST_STATUS.BROADCASTING;
   broadcast.pickup_otp = Math.floor(1000 + Math.random() * 9000);
   await broadcast.save();
 

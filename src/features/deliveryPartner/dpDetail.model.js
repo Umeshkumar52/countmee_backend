@@ -13,8 +13,8 @@ const dpDetailSchema = new mongoose.Schema(
     online: { type: Boolean, default: false },
     document_approval: {
       type: String,
-      enum: ["Approved", "Rejected", "Pending"],
-      default: "Pending",
+      enum: ["approved", "rejected", "pending"],
+      default: "pending",
     },
     status: { type: String, default: null },
     latitude: { type: Number, default: null },

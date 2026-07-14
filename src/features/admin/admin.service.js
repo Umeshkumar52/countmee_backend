@@ -1,7 +1,14 @@
 import bcrypt from "bcryptjs";
 import * as adminRepository from "./admin.repository.js";
 import { normalizeOrder } from "../../common/utils/orderNormalization.js";
-import { ROLES } from "../../constants/index.js";
+import {
+  ROLES,
+  ORDER_STATUS,
+  ORDER_REQUEST_STATUS,
+  BROADCAST_STATUS,
+  DOCUMENT_APPROVAL_STATUS,
+  PAYOUT_STATUS,
+} from "../../constants/index.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -21,7 +28,6 @@ import { OrderBundle } from "../orders/orderBundle.model.js";
 import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
 
 import { MinBroadcastDist } from "../tracking/minBroadcast.model.js";
-import { PAYOUT_STATUS } from "../../constants/orderStatus.js";
 import { OrderWaitCharge } from "../orders/orderWaitCharge.model.js";
 import { VehicleSubcategory } from "../deliveryPartner/vehicleSubcategory.model.js";
 import { calculateDistance } from "../../common/utils/distance.js";
@@ -191,9 +197,9 @@ export const updateDpDocumentStatus = async (
   }
 
   let overallStatus = "Pending";
-  if (atLeastOneRejected) overallStatus = "Rejected";
+  if (atLeastOneRejected) overallStatus = DOCUMENT_APPROVAL_STATUS.REJECTED;
   else if (allVerified) overallStatus = "Verified";
-  else if (anyPending) overallStatus = "Pending";
+  else if (anyPending) overallStatus = DOCUMENT_APPROVAL_STATUS.PENDING;
 
   await DpDetailModel.updateOne(
     { user_id: doc.user_id },
@@ -294,7 +300,7 @@ export const addDp = async (body, files) => {
     address,
     profile_img: uploadResults.profile_img || null,
     online: false,
-    document_approval: "Approved",
+    document_approval: { $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"] },
     status: "Verified",
   });
 
@@ -502,7 +508,9 @@ export const bulkAddDp = async (dps, files) => {
         address: dp.address || "",
         profile_img: uploadResults.profile_img || dp.profile_img || null,
         online: false,
-        document_approval: "Approved",
+        document_approval: {
+          $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
+        },
         status: "Verified",
       });
 
@@ -624,38 +632,61 @@ export const editDp = async (id, body, files) => {
     permit_expiry,
   } = body;
   const UserModel = mongoose.default.model("User");
-  await UserModel.updateOne(
-    { _id: detail.user_id },
-    { name, phone, email, dob },
-  );
 
-  const docUpdate = {
-    vehicle_type,
-    aadhar_number,
-    rc_number,
-    dl_number,
-    bank_name,
-    bank_acc_number,
-    bank_ifsc,
-    vehicle_number,
-    reference1_name,
-    reference1_phone,
-    reference2_name: reference2_name || null,
-    reference2_phone: reference2_phone || null,
-    dl_expiry_date: dl_expiry_date || null,
-    sub_vehicle_type: sub_vehicle_type || null,
-    other_vehicle_details: other_vehicle_details || null,
-    vehicle_min_capacity: vehicle_min_capacity || null,
-    vehicle_max_capacity: vehicle_max_capacity || null,
-    insurance_expiry_date: insurance_expiry_date || null,
-    emission_expiry_date: emission_expiry_date || null,
-    is_new_vehicle: is_new_vehicle === "true" || is_new_vehicle === true,
-    vehicle_registration_date: vehicle_registration_date || null,
-    travel_permit_states: travel_permit_states
+  const userUpdate = {};
+  if (name !== undefined) userUpdate.name = name;
+  if (phone !== undefined) userUpdate.phone = phone;
+  if (email !== undefined) userUpdate.email = email;
+  if (dob !== undefined) userUpdate.dob = dob;
+
+  if (Object.keys(userUpdate).length > 0) {
+    await UserModel.updateOne({ _id: detail.user_id }, { $set: userUpdate });
+  }
+
+  const docUpdate = {};
+  if (vehicle_type !== undefined) docUpdate.vehicle_type = vehicle_type;
+  if (aadhar_number !== undefined) docUpdate.aadhar_number = aadhar_number;
+  if (rc_number !== undefined) docUpdate.rc_number = rc_number;
+  if (dl_number !== undefined) docUpdate.dl_number = dl_number;
+  if (bank_name !== undefined) docUpdate.bank_name = bank_name;
+  if (bank_acc_number !== undefined)
+    docUpdate.bank_acc_number = bank_acc_number;
+  if (bank_ifsc !== undefined) docUpdate.bank_ifsc = bank_ifsc;
+  if (vehicle_number !== undefined) docUpdate.vehicle_number = vehicle_number;
+  if (reference1_name !== undefined)
+    docUpdate.reference1_name = reference1_name;
+  if (reference1_phone !== undefined)
+    docUpdate.reference1_phone = reference1_phone;
+  if (reference2_name !== undefined)
+    docUpdate.reference2_name = reference2_name || null;
+  if (reference2_phone !== undefined)
+    docUpdate.reference2_phone = reference2_phone || null;
+  if (dl_expiry_date !== undefined)
+    docUpdate.dl_expiry_date = dl_expiry_date || null;
+  if (sub_vehicle_type !== undefined)
+    docUpdate.sub_vehicle_type = sub_vehicle_type || null;
+  if (other_vehicle_details !== undefined)
+    docUpdate.other_vehicle_details = other_vehicle_details || null;
+  if (vehicle_min_capacity !== undefined)
+    docUpdate.vehicle_min_capacity = vehicle_min_capacity || null;
+  if (vehicle_max_capacity !== undefined)
+    docUpdate.vehicle_max_capacity = vehicle_max_capacity || null;
+  if (insurance_expiry_date !== undefined)
+    docUpdate.insurance_expiry_date = insurance_expiry_date || null;
+  if (emission_expiry_date !== undefined)
+    docUpdate.emission_expiry_date = emission_expiry_date || null;
+  if (is_new_vehicle !== undefined)
+    docUpdate.is_new_vehicle =
+      is_new_vehicle === "true" || is_new_vehicle === true;
+  if (vehicle_registration_date !== undefined)
+    docUpdate.vehicle_registration_date = vehicle_registration_date || null;
+  if (travel_permit_states !== undefined) {
+    docUpdate.travel_permit_states = travel_permit_states
       ? travel_permit_states.split(",").map((s) => s.trim())
-      : [],
-    permit_expiry: permit_expiry || null,
-  };
+      : [];
+  }
+  if (permit_expiry !== undefined)
+    docUpdate.permit_expiry = permit_expiry || null;
 
   const uploadResults = {};
   const fileFields = [
@@ -690,15 +721,16 @@ export const editDp = async (id, body, files) => {
     detail.profile_img = uploadResults.profile_img;
   }
 
-  const dpUpdate = {
-    gender,
-    address,
-  };
+  const dpUpdate = {};
+  if (gender !== undefined) dpUpdate.gender = gender;
+  if (address !== undefined) dpUpdate.address = address;
   if (detail.profile_img) {
     dpUpdate.profile_img = detail.profile_img;
   }
 
-  await adminRepository.updateDpDetail(id, dpUpdate);
+  if (Object.keys(dpUpdate).length > 0) {
+    await adminRepository.updateDpDetail(id, { $set: dpUpdate });
+  }
 
   // Map remaining file fields to docUpdate
   const remainingFileFields = [
@@ -722,7 +754,9 @@ export const editDp = async (id, body, files) => {
     }
   }
 
-  await adminRepository.updateDpDocument(detail.user_id, docUpdate);
+  if (Object.keys(docUpdate).length > 0) {
+    await adminRepository.updateDpDocument(detail.user_id, { $set: docUpdate });
+  }
 
   return { message: "Delivery partner details updated successfully" };
 };
@@ -881,7 +915,7 @@ export const addPdc = async (body, files) => {
       lat && lng
         ? { type: "Point", coordinates: [lng, lat] }
         : { type: "Point", coordinates: [0, 0] },
-    status: "Approved",
+    status: DOCUMENT_APPROVAL_STATUS.APPROVED,
     aadhar_status: "Accept",
     pan_status: "Accept",
     pancard_status: "Accept",
@@ -972,7 +1006,7 @@ export const deletePdc = async (id) => {
 
 export const activatePdc = async (id) => {
   await adminRepository.updatePdcDocument(id, {
-    status: "Approved",
+    status: DOCUMENT_APPROVAL_STATUS.APPROVED,
     aadhar_status: "Accept",
     pan_status: "Accept",
     pancard_status: "Accept",
@@ -984,7 +1018,7 @@ export const activatePdc = async (id) => {
 
 export const deactivatePdc = async (id) => {
   await adminRepository.updatePdcDocument(id, {
-    status: "Pending",
+    status: DOCUMENT_APPROVAL_STATUS.PENDING,
     aadhar_status: "Reject",
     pan_status: "Reject",
     pancard_status: "Reject",
@@ -1138,30 +1172,36 @@ export const getScheduledOrderStats = async () => {
   dayAfterDate.setDate(dayAfterDate.getDate() + 2);
   const dayAfterStr = formatDate(dayAfterDate);
 
-  const [totalCount, todayCount, tomorrowCount, dayAfterCount, pendingCount, completedCount] =
-    await Promise.all([
-      Order.countDocuments({ order_type: "scheduled" }),
-      Order.countDocuments({
-        order_type: "scheduled",
-        schedule_date: todayStr,
-      }),
-      Order.countDocuments({
-        order_type: "scheduled",
-        schedule_date: tomorrowStr,
-      }),
-      Order.countDocuments({
-        order_type: "scheduled",
-        schedule_date: dayAfterStr,
-      }),
-      Order.countDocuments({
-        order_type: "scheduled",
-        status: "scheduled",
-      }),
-      Order.countDocuments({
-        order_type: "scheduled",
-        status: "delivered",
-      }),
-    ]);
+  const [
+    totalCount,
+    todayCount,
+    tomorrowCount,
+    dayAfterCount,
+    pendingCount,
+    completedCount,
+  ] = await Promise.all([
+    Order.countDocuments({ order_type: "scheduled" }),
+    Order.countDocuments({
+      order_type: "scheduled",
+      schedule_date: todayStr,
+    }),
+    Order.countDocuments({
+      order_type: "scheduled",
+      schedule_date: tomorrowStr,
+    }),
+    Order.countDocuments({
+      order_type: "scheduled",
+      schedule_date: dayAfterStr,
+    }),
+    Order.countDocuments({
+      order_type: "scheduled",
+      status: ORDER_STATUS.SCHEDULED,
+    }),
+    Order.countDocuments({
+      order_type: "scheduled",
+      status: ORDER_STATUS.DELIVERED,
+    }),
+  ]);
 
   return {
     total: totalCount,
@@ -1216,7 +1256,7 @@ export const getInTransitOrders = async () => {
 };
 
 export const getDeliveredOrders = async () => {
-  return await getOrders(["delivered"]);
+  return await getOrders([ORDER_STATUS.DELIVERED]);
 };
 
 export const getBroadcastedOrders = async () => {
@@ -1235,7 +1275,6 @@ export const getDpCancelledOrders = async () => {
 };
 
 export const getAssignOrdersSelect = async (orderId) => {
-
   const order = await Order.findById(orderId);
   if (!order) throw new Error("Order not found");
 
@@ -1261,7 +1300,9 @@ export const getAssignOrdersSelect = async (orderId) => {
         spherical: true,
         query: {
           online: true,
-          document_approval: "Approved",
+          document_approval: {
+            $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
+          },
           active_order_ids: { $size: 0 },
         },
       },
@@ -1362,11 +1403,15 @@ export const getFeedbacks = async (role, page = 1, limit = 10) => {
   return await adminRepository.findPaginatedRatings(query, page, limit);
 };
 
-import { getExpiryCutoffDate, getLateRevenueCutoffDate } from "../../common/utils/waitingChargeStatus.js";
+import {
+  getExpiryCutoffDate,
+  getLateRevenueCutoffDate,
+} from "../../common/utils/waitingChargeStatus.js";
 
 export const getAdminWaitingCharges = async (status) => {
   const mongoose = await import("mongoose");
-  const { getExpiryCutoffDate } = await import("../../common/utils/waitingChargeStatus.js");
+  const { getExpiryCutoffDate } =
+    await import("../../common/utils/waitingChargeStatus.js");
   const { DpPayout } = await import("../deliveryPartner/dpPayout.model.js");
   const { User } = await import("../users/user.model.js");
   const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
@@ -1386,11 +1431,16 @@ export const getAdminWaitingCharges = async (status) => {
 
   const payouts = await DpPayout.find(query).populate("order_id");
 
-  const orderIdsForWaitCharge = payouts.filter(p => p.order_id).map(p => p.order_id._id);
-  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
-  const waitCharges = await OrderWaitCharge.find({ order_id: { $in: orderIdsForWaitCharge } });
+  const orderIdsForWaitCharge = payouts
+    .filter((p) => p.order_id)
+    .map((p) => p.order_id._id);
+  const { OrderWaitCharge } =
+    await import("../orders/orderWaitCharge.model.js");
+  const waitCharges = await OrderWaitCharge.find({
+    order_id: { $in: orderIdsForWaitCharge },
+  });
   const waitChargeMap = new Map();
-  waitCharges.forEach(wc => waitChargeMap.set(wc.order_id.toString(), wc));
+  waitCharges.forEach((wc) => waitChargeMap.set(wc.order_id.toString(), wc));
 
   const groups = {};
   for (const p of payouts) {
@@ -1427,9 +1477,11 @@ export const getAdminWaitingCharges = async (status) => {
         amount: p.earnings, // base amount for display
         base_settled: p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1,
         waiting_charge: p.waiting_charge_earning || 0,
-        waiting_charge_settled: p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1,
+        waiting_charge_settled:
+          p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED ||
+          p.waiting_charge_settled === 1,
         total_amount: p.earnings + (p.waiting_charge_earning || 0),
-        customer_paid_waiting_charge: wc ? (wc.payment_status === "paid") : false
+        customer_paid_waiting_charge: wc ? wc.payment_status === "paid" : false,
       });
     }
   }
@@ -1453,7 +1505,8 @@ export const getAdminWaitingCharges = async (status) => {
 };
 
 export const getLatePaidWaitingCharges = async () => {
-  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+  const { OrderWaitCharge } =
+    await import("../orders/orderWaitCharge.model.js");
   const cutoff = getExpiryCutoffDate();
   const lateCutoff = getLateRevenueCutoffDate();
 
@@ -1461,7 +1514,9 @@ export const getLatePaidWaitingCharges = async () => {
     created_at: { $lt: cutoff },
     payment_status: "paid",
     paid_at: { $gte: lateCutoff },
-  }).populate("order_id").sort({ paid_at: -1 });
+  })
+    .populate("order_id")
+    .sort({ paid_at: -1 });
 
   return rows;
 };
@@ -1480,7 +1535,7 @@ export const getPendingPayments = async (type, startDate, endDate) => {
     const payouts = await DpPayout.find({
       $or: [
         { settled: { $in: [0, PAYOUT_STATUS.PENDING] } },
-        { waiting_charge_settled: { $in: [0, PAYOUT_STATUS.PENDING] } }
+        { waiting_charge_settled: { $in: [0, PAYOUT_STATUS.PENDING] } },
       ],
       created_at: { $gte: start, $lte: end },
     }).populate("order_id");
@@ -1514,10 +1569,15 @@ export const getPendingPayments = async (type, startDate, endDate) => {
       }
       const g = groups[dpId];
       let pendingForThisOrder = 0;
-      if (p.settled === PAYOUT_STATUS.PENDING || p.settled === 0) pendingForThisOrder += p.earnings;
-      
+      if (p.settled === PAYOUT_STATUS.PENDING || p.settled === 0)
+        pendingForThisOrder += p.earnings;
+
       const isExpired = new Date(p.created_at) < getExpiryCutoffDate();
-      if ((p.waiting_charge_settled === PAYOUT_STATUS.PENDING || p.waiting_charge_settled === 0) && p.waiting_charge_earning > 0) {
+      if (
+        (p.waiting_charge_settled === PAYOUT_STATUS.PENDING ||
+          p.waiting_charge_settled === 0) &&
+        p.waiting_charge_earning > 0
+      ) {
         if (!isExpired) {
           pendingForThisOrder += p.waiting_charge_earning;
         }
@@ -1541,8 +1601,15 @@ export const getPendingPayments = async (type, startDate, endDate) => {
           base_settled:
             p.settled === PAYOUT_STATUS.COMPLETED || p.settled === 1,
           waiting_charge: p.waiting_charge_earning || 0,
-          waiting_charge_settled: p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1,
-          waiting_charge_expired: (new Date(p.created_at) < getExpiryCutoffDate()) && !(p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED || p.waiting_charge_settled === 1),
+          waiting_charge_settled:
+            p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED ||
+            p.waiting_charge_settled === 1,
+          waiting_charge_expired:
+            new Date(p.created_at) < getExpiryCutoffDate() &&
+            !(
+              p.waiting_charge_settled === PAYOUT_STATUS.COMPLETED ||
+              p.waiting_charge_settled === 1
+            ),
           total_amount: p.earnings + (p.waiting_charge_earning || 0),
           customer_paid_waiting_charge: wc
             ? wc.payment_status === "paid"
@@ -1644,25 +1711,29 @@ export const settlePayments = async (
   let orderIds = [];
   if (user.role === ROLES.DP) {
     const payoutsToSettle = await DpPayout.find({ _id: { $in: ids } });
-    const { getExpiryCutoffDate } = await import("../../common/utils/waitingChargeStatus.js");
+    const { getExpiryCutoffDate } =
+      await import("../../common/utils/waitingChargeStatus.js");
     const cutoff = getExpiryCutoffDate();
 
     if (settle_type === "base" || settle_type === "both") {
-      await DpPayout.updateMany({ _id: { $in: ids } }, { settled: PAYOUT_STATUS.COMPLETED });
+      await DpPayout.updateMany(
+        { _id: { $in: ids } },
+        { settled: PAYOUT_STATUS.COMPLETED },
+      );
     }
-    
+
     if (settle_type === "waiting" || settle_type === "both") {
       const unexpiredIds = payoutsToSettle
         .filter((p) => new Date(p.created_at) >= cutoff)
         .map((p) => p._id);
-        
+
       if (unexpiredIds.length > 0) {
         await DpPayout.updateMany(
           { _id: { $in: unexpiredIds } },
-          { waiting_charge_settled: PAYOUT_STATUS.COMPLETED }
+          { waiting_charge_settled: PAYOUT_STATUS.COMPLETED },
         );
       }
-      
+
       if (settle_type === "waiting" && unexpiredIds.length === 0) {
         throw new Error("Cannot settle expired waiting charges");
       }
@@ -1700,7 +1771,7 @@ export const settlePayments = async (
     user_id: payable,
     order_id: orderIds,
     settled_amount: Number(settlementAmount),
-    settle_type: user.role === ROLES.DP ? (settle_type || 'base') : 'base'
+    settle_type: user.role === ROLES.DP ? settle_type || "base" : "base",
   });
 
   return { message: "Settlement completed successfully" };
@@ -1708,7 +1779,7 @@ export const settlePayments = async (
 
 export const getPastPayments = async (userId, onlySpecificOrder = false) => {
   if (onlySpecificOrder) {
-    const query = { status: "Delivered" };
+    const query = { status: ORDER_STATUS.DELIVERED };
     if (userId) {
       query.user_id = userId;
     }
@@ -1728,7 +1799,7 @@ export const getPastPayments = async (userId, onlySpecificOrder = false) => {
     role: p.user_id?.role || ROLES.DP,
     settled_amount: p.settled_amount,
     order_id: p.order_id || [],
-    settle_type: p.settle_type || 'base',
+    settle_type: p.settle_type || "base",
     created_at: p.created_at
       ? new Date(p.created_at).toISOString().split("T")[0]
       : "N/A",
@@ -1972,12 +2043,14 @@ export const editVehicleSubcategory = async (id, body) => {
     }
   }
 
-  if (body.status === "Approved") {
+  if (body.status === DOCUMENT_APPROVAL_STATUS.APPROVED) {
     body.is_active = true;
 
     if (subcat.requested_by) {
-      const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
-      const { sendNotification } = await import("../../common/utils/sendNotification.js");
+      const { DpDocument } =
+        await import("../deliveryPartner/dpDocument.model.js");
+      const { sendNotification } =
+        await import("../../common/utils/sendNotification.js");
       const { ROLES } = await import("../../constants/index.js");
 
       const finalVehicleName = body.sub_vehicle_type || subcat.sub_vehicle_type;
@@ -1986,7 +2059,7 @@ export const editVehicleSubcategory = async (id, body) => {
         {
           sub_vehicle_type: finalVehicleName,
           other_vehicle_details: null,
-        }
+        },
       );
 
       await sendNotification({
@@ -1996,12 +2069,14 @@ export const editVehicleSubcategory = async (id, body) => {
         message: `Your requested vehicle type '${finalVehicleName}' has been approved by admin.`,
       });
     }
-  } else if (body.status === "Rejected") {
+  } else if (body.status === DOCUMENT_APPROVAL_STATUS.REJECTED) {
     body.is_active = false;
 
     if (subcat.requested_by) {
-      const { DpDocument } = await import("../deliveryPartner/dpDocument.model.js");
-      const { sendNotification } = await import("../../common/utils/sendNotification.js");
+      const { DpDocument } =
+        await import("../deliveryPartner/dpDocument.model.js");
+      const { sendNotification } =
+        await import("../../common/utils/sendNotification.js");
       const { ROLES } = await import("../../constants/index.js");
 
       const rejectedName = body.sub_vehicle_type || subcat.sub_vehicle_type;
@@ -2010,7 +2085,7 @@ export const editVehicleSubcategory = async (id, body) => {
         {
           rv_status: "Rejected",
           rv_reject_reason: `Your custom vehicle type '${rejectedName}' was rejected. Please select a valid vehicle type.`,
-        }
+        },
       );
 
       await sendNotification({
@@ -2100,7 +2175,9 @@ export const findNearestDpsForOrders = async (orderIds) => {
         spherical: true,
         query: {
           online: true,
-          document_approval: "Approved",
+          document_approval: {
+            $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
+          },
           $or: [
             { active_order_ids: { $size: 0 } },
             { active_order_ids: { $exists: false } },
@@ -2157,12 +2234,11 @@ export const findNearestDpsForOrders = async (orderIds) => {
 // send bundle orders notification to dp to keep the request and then assign the bundle to the dp who accepts the request first
 export const assignOrderBundle = async (orderIds, dpIds) => {
   const Order = mongoose.default.model("Order");
-  const now = new Date();
-  const year = String(now.getFullYear()).slice(-2);
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const prefix = `${year}${month}-S-`;
+  const prefix = `SO-`;
 
-  const lastBundle = await OrderBundle.findOne({ bundle_id: new RegExp(`^${prefix}`) })
+  const lastBundle = await OrderBundle.findOne({
+    bundle_id: new RegExp(`^${prefix}`),
+  })
     .sort({ bundle_id: -1 })
     .exec();
 
@@ -2193,7 +2269,7 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
     dp_id: null,
     notified_dps: dpIds,
     orders: orderIds,
-    status: "broadcasting",
+    status: BROADCAST_STATUS.BROADCASTING,
   });
   await bundle.save();
 
@@ -2223,7 +2299,7 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
   // Update order statuses to processing
   await Order.updateMany(
     { _id: { $in: orderIds } },
-    { $set: { status: "processing" } },
+    { $set: { status: ORDER_STATUS.ACCEPTED } },
   );
 
   return {
@@ -2240,7 +2316,10 @@ export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
   // 1. Fetch Bundle
   const bundle = await OrderBundle.findOne({ bundle_id }).populate("orders");
   if (!bundle) throw new Error("Order bundle not found");
-  if (bundle.status !== "broadcasting" && bundle.status !== "pending") {
+  if (
+    bundle.status !== BROADCAST_STATUS.BROADCASTING &&
+    bundle.status !== BROADCAST_STATUS.PENDING
+  ) {
     throw new Error(`Cannot assign bundle in ${bundle.status} status`);
   }
 
@@ -2275,7 +2354,6 @@ export const finalizeBundleAssignment = async (bundle_id, dp_id) => {
 };
 
 export const getBundleResponses = async (bundle_id) => {
-
   const bundle = await OrderBundle.findOne({ bundle_id })
     .populate("notified_dps", "name email phone")
     .populate("accepted_dps", "name email phone")
@@ -2330,9 +2408,10 @@ export const getBundleResponses = async (bundle_id) => {
 
   for (const dp of uniqueDps) {
     const idStr = dp._id.toString();
-    let status = "Pending";
-    if (acceptedIds.includes(idStr)) status = "Accepted";
-    else if (rejectedIds.includes(idStr)) status = "Rejected";
+    let status = ORDER_REQUEST_STATUS.PENDING;
+    if (acceptedIds.includes(idStr)) status = ORDER_REQUEST_STATUS.ACCEPTED;
+    else if (rejectedIds.includes(idStr))
+      status = ORDER_REQUEST_STATUS.REJECTED;
 
     await addDpToResponses(dp, status);
   }
@@ -2352,7 +2431,6 @@ export const getBundleResponses = async (bundle_id) => {
 };
 
 export const getBundleTracking = async (bundle_id) => {
-
   const bundle = await OrderBundle.findOne({ bundle_id })
     .populate({
       path: "orders",
@@ -2374,10 +2452,15 @@ export const getBundleTracking = async (bundle_id) => {
 };
 
 export const getActiveBundles = async () => {
-
   // Fetch bundles that are in broadcasting, pending, or assigned status
   const bundles = await OrderBundle.find({
-    status: { $in: ["broadcasting", "pending", "assigned"] },
+    status: {
+      $in: [
+        BROADCAST_STATUS.BROADCASTING,
+        BROADCAST_STATUS.PENDING,
+        "assigned",
+      ],
+    },
   })
     .populate("notified_dps", "name email phone")
     .populate("accepted_dps", "name email phone")
@@ -2465,7 +2548,7 @@ export const getBundleSummary = async (orderIds) => {
 
   // Fetch Capable DPs directly using optimized spatial aggregation
   let capableDps = [];
-  if (recommendedVehicle && orders.length > 0) {
+  if (orders.length > 0) {
     const DpDetail = mongoose.default.model("DpDetail");
     const MinBroadcastDist = mongoose.default.model("MinBroadcastDist");
 
@@ -2481,6 +2564,7 @@ export const getBundleSummary = async (orderIds) => {
     const firstOrder = orders[0];
     const lng = parseFloat(firstOrder.sender_longitude);
     const lat = parseFloat(firstOrder.sender_latitude);
+    const orderTransportMode = firstOrder.mode_of_transport;
 
     if (!isNaN(lng) && !isNaN(lat)) {
       const targetDps = await DpDetail.aggregate([
@@ -2495,7 +2579,9 @@ export const getBundleSummary = async (orderIds) => {
             spherical: true,
             query: {
               online: true,
-              document_approval: "Approved",
+              document_approval: {
+                $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
+              },
               $or: [
                 { active_order_ids: { $exists: false } },
                 { active_order_ids: { $size: 0 } },
@@ -2515,7 +2601,7 @@ export const getBundleSummary = async (orderIds) => {
         { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
         {
           $match: {
-            "dpDocument.vehicle_type": recommendedVehicle.vehicle_type,
+            "dpDocument.vehicle_type": orderTransportMode,
           },
         },
         // Get full user details
@@ -2537,7 +2623,7 @@ export const getBundleSummary = async (orderIds) => {
         profile_pic: dp.profile_img || "",
         vehicle_type: dp.dpDocument.vehicle_type,
         vehicle_no: dp.dpDocument.rc_number || "N/A",
-        capacity: recommendedVehicle.max_weight,
+        capacity: recommendedVehicle ? recommendedVehicle.max_weight : "N/A",
         location: dp.location || dp.address || "Unknown Location",
         latitude: dp.latitude,
         longitude: dp.longitude,
@@ -2619,7 +2705,7 @@ export const processManualRefund = async (order_id, amount, reason) => {
         : `Admin Refund for Order #${order._id}`,
       transaction_type: "refund",
       reference_id: order._id,
-      status: "completed",
+      status: PAYOUT_STATUS.COMPLETED,
     });
 
     order.wallet_transaction_id = refundTransaction._id;
@@ -2651,15 +2737,13 @@ export const blockDp = async (id, is_blocked) => {
   if (!detail) throw new Error("DP not found");
 
   const UserModel = mongoose.default.model("User");
-  await UserModel.updateOne(
-    { _id: detail.user_id },
-    { is_blocked }
-  );
+  await UserModel.updateOne({ _id: detail.user_id }, { is_blocked });
 
-  return { message: `Delivery Partner successfully ${is_blocked ? 'blocked' : 'unblocked'}`, is_blocked };
+  return {
+    message: `Delivery Partner successfully ${is_blocked ? "blocked" : "unblocked"}`,
+    is_blocked,
+  };
 };
-
-
 
 // --- DP Cancellation Penalty System ---
 export const getDpCancellations = async (month, year) => {
@@ -2744,7 +2828,10 @@ export const updateCancellationSetting = async (limit) => {
     await setting.save();
   }
 
-  return { message: "Cancellation limit updated successfully", limit: setting.max_dp_cancellation_limit };
+  return {
+    message: "Cancellation limit updated successfully",
+    limit: setting.max_dp_cancellation_limit,
+  };
 };
 
 export const unblockDp = async (dp_id) => {
@@ -2756,9 +2843,16 @@ export const unblockDp = async (dp_id) => {
   dpDetail.status = null; // Unblock the DP
   const currentMonth = new Date().getMonth() + 1;
   const currentYear = new Date().getFullYear();
-  await DpCancellation.deleteMany({ dp_id, month: currentMonth, year: currentYear });
+  await DpCancellation.deleteMany({
+    dp_id,
+    month: currentMonth,
+    year: currentYear,
+  });
 
   await dpDetail.save();
 
-  return { message: "DP successfully unblocked and their cancellation penalty record for this month has been reset." };
+  return {
+    message:
+      "DP successfully unblocked and their cancellation penalty record for this month has been reset.",
+  };
 };

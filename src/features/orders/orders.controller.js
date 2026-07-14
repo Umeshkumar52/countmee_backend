@@ -77,7 +77,8 @@ export const tracking = asyncHandler(async (req, res) => {
 
 export const orderHistory = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const orders = await ordersService.getOrderHistory(id);
+  const { order_type } = req.query;
+  const orders = await ordersService.getOrderHistory(id, order_type);
   return res.json(ApiResponse.success({ orders }, "Order History"));
 });
 

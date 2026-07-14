@@ -157,7 +157,7 @@ export const broadcastOrderToNearbyDPs = async (
           distanceField: "distance_meters",
           maxDistance: maxDistanceMeters,
           spherical: true,
-          query: { online: true, document_approval: "Approved" },
+          query: { online: true, document_approval: DOCUMENT_APPROVAL_STATUS.APPROVED },
         },
       },
       // Join Vehicle Document to filter by mode_of_transport
@@ -240,11 +240,11 @@ export const broadcastOrderToNearbyDPs = async (
 
     const existorderRest = await OrderRequest.findOne({
       order_id: order._id,
-      status: "pending",
+      status: ORDER_REQUEST_STATUS.PENDING,
     });
     if (existorderRest) {
       await OrderRequest.findOneAndUpdate(
-        { order_id: order._id, status: "pending" },
+        { order_id: order._id, status: ORDER_REQUEST_STATUS.PENDING },
         { notified_ids: dpIds },
       );
     } else {
@@ -457,7 +457,7 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
     // Process Refund if order was paid
     let refundPercentage = 0;
 
-    if (order.order_type === "scheduled") {
+    if (order.order_type === ORDER_STATUS.SCHEDULED) {
       if (
         [
           ORDER_STATUS.SCHEDULED,
@@ -531,7 +531,7 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
               description: `Refund for Cancelled Order #${order.orderNumber} (${refundPercentage}%)`,
               transaction_type: "refund",
               reference_id: order._id,
-              status: "completed",
+              status: PAYOUT_STATUS.COMPLETED,
             });
             order.wallet_transaction_id = refundTransaction?._id || null;
             await sendNotification({
@@ -638,8 +638,8 @@ export const getTrackingDetails = async (userId, orderId) => {
   return { order_details, assigned_order: assigned, dpAvgRating };
 };
 
-export const getOrderHistory = async (userId) => {
-  return await ordersRepository.findOrderHistoryByUserId(userId);
+export const getOrderHistory = async (userId, order_type) => {
+  return await ordersRepository.findOrderHistoryByUserId(userId, order_type);
 };
 
 export const getCancelledOrders = async (userId) => {
@@ -719,7 +719,7 @@ export const notifyDp = async (orderId, packageDetailsId) => {
   // Find eligible online DPs
   const eligibleDps = await DpDetail.find({
     online: true,
-    document_approval: "Approved",
+    document_approval: DOCUMENT_APPROVAL_STATUS.APPROVED,
     user_id: { $nin: busyDpIds },
   }).populate({
     path: "dpDocument",

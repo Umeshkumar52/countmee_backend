@@ -97,7 +97,7 @@ export const getVehicleSubcategories = async (vehicleType) => {
   const subcategories = await VehicleSubcategory.find({
     vehicle_type: vehicleType,
     is_active: true,
-    status: "Approved",
+    status: DOCUMENT_APPROVAL_STATUS.APPROVED,
   })
     .select("sub_vehicle_type")
     .lean();
@@ -195,7 +195,7 @@ export const saveDocuments = async (user_id, docData, files) => {
         vehicle_type: docData.vehicle_type,
         sub_vehicle_type: docData.other_vehicle_details,
         is_active: false,
-        status: "Pending",
+        status: ORDER_REQUEST_STATUS.PENDING,
         requested_by: user_id,
       });
 
@@ -387,7 +387,7 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
   if (!isAuthorized) {
     const bundle = await OrderBundle.findOne({
       orders: order_id,
-      status: "broadcasting",
+      status: BROADCAST_STATUS.BROADCASTING,
     }).lean();
 
     if (
@@ -524,7 +524,7 @@ export const getNewOrders = async (user_id) => {
   if (uniqueBroadcastIds.length > 0) {
     broadcasts = await Broadcast.find({
       _id: { $in: uniqueBroadcastIds },
-      status: "Broadcasting",
+      status: BROADCAST_STATUS.BROADCASTING,
       updatedAt: { $gte: tenMinutesAgo },
     }).lean();
 
@@ -696,7 +696,7 @@ export const getNewOrders = async (user_id) => {
 
   // Fetch pending OrderBundles for this DP
   const activeBundles = await OrderBundle.find({
-    status: "broadcasting",
+    status: BROADCAST_STATUS.BROADCASTING,
     notified_dps: user_id,
     accepted_dps: { $ne: user_id },
     rejected_dps: { $ne: user_id },
@@ -750,7 +750,7 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     }
 
     // Revert OrderRequest
-    orderRequest.status = "Rejected"; // REJECTED
+    orderRequest.status = ORDER_REQUEST_STATUS.REJECTED; // REJECTED
     orderRequest.accepted_by = null;
     orderRequest.rejected_by.push(user_id);
     await orderRequest.save({ session });
@@ -773,7 +773,7 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     if (orderRequest.broadcast_id) {
       await Broadcast.findByIdAndUpdate(
         orderRequest.broadcast_id,
-        { pickup_dp_id: null, status: "Pending" },
+        { pickup_dp_id: null, status: ORDER_REQUEST_STATUS.PENDING },
         { session },
       );
     }
@@ -799,13 +799,18 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     const currentMonth = currentDate.getMonth() + 1;
     const currentYear = currentDate.getFullYear();
 
-    await DpCancellation.create([{
-      dp_id: user_id,
-      order_id,
-      reason: cancel_reason || "",
-      month: currentMonth,
-      year: currentYear
-    }], { session });
+    await DpCancellation.create(
+      [
+        {
+          dp_id: user_id,
+          order_id,
+          reason: cancel_reason || "",
+          month: currentMonth,
+          year: currentYear,
+        },
+      ],
+      { session },
+    );
 
     let adminSetting = await AdminSetting.findOne().session(session);
     if (!adminSetting) {
@@ -817,14 +822,14 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     const cancelCount = await DpCancellation.countDocuments({
       dp_id: user_id,
       month: currentMonth,
-      year: currentYear
+      year: currentYear,
     }).session(session);
 
     if (cancelCount >= limit) {
       await DpDetail.findOneAndUpdate(
         { user_id },
         { status: "Blocked", online: false },
-        { session }
+        { session },
       );
 
       await sendNotification({
@@ -832,7 +837,7 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
         userId: user_id,
         title: "Account Blocked",
         message: `You are inactive/blocked due to more than ${limit} order cancellations this month.`,
-        session
+        session,
       });
     }
     // -------------------------------------
@@ -1008,13 +1013,15 @@ export const orderAccept = async (orderIds, status, user_id) => {
 
           // SMS drop OTP to receiver
           const message2 = `Your CountMee Courier verification code is ${order.drop_otp}`;
-          sendOTPViaSMS(order.receiver_phone, message2).catch((err) => console.error("SMS Failed:", err.message));
+          sendOTPViaSMS(order.receiver_phone, message2).catch((err) =>
+            console.error("SMS Failed:", err.message),
+          );
         } else if (
           orderRequest.request_type === "broadcast_dp" ||
           orderRequest.request_type === "broadcast_pdc"
         ) {
           order.status_completed = "broadcast accepted";
-          order.status = ORDER_STATUS.BROADCAST_ACCEPTED;
+          order.status = ORDER_STATUS.ACCEPTED;
           order.delivery_type = "broadcast";
           await order.save({ session });
 
@@ -1030,11 +1037,11 @@ export const orderAccept = async (orderIds, status, user_id) => {
           if (orderRequest.request_type === "broadcast_dp") {
             let travel = oldOrderRequest
               ? await Travel.findOne({
-                order_id: order._id,
-                user_id: oldOrderRequest.accepted_by,
-              })
-                .sort({ created_at: -1 })
-                .session(session)
+                  order_id: order._id,
+                  user_id: oldOrderRequest.accepted_by,
+                })
+                  .sort({ created_at: -1 })
+                  .session(session)
               : null;
 
             if (!travel && oldOrderRequest) {
@@ -1076,8 +1083,8 @@ export const orderAccept = async (orderIds, status, user_id) => {
 
             const oldDpDetail = oldOrderRequest
               ? await DpDetail.findOne({
-                user_id: oldOrderRequest.accepted_by,
-              }).session(session)
+                  user_id: oldOrderRequest.accepted_by,
+                }).session(session)
               : null;
 
             if (travel && oldOrderRequest && oldDpDetail) {
@@ -1221,7 +1228,10 @@ export const orderAccept = async (orderIds, status, user_id) => {
             if (orderRequest.broadcast_id) {
               await Broadcast.findByIdAndUpdate(
                 orderRequest.broadcast_id,
-                { pickup_dp_id: user_id, status: "Accepted" },
+                {
+                  pickup_dp_id: user_id,
+                  status: ORDER_REQUEST_STATUS.ACCEPTED,
+                },
                 { session },
               );
 
@@ -1293,7 +1303,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
             orderRequest.request_type !== "broadcast_pdc" &&
             orderRequest.request_type !== "broadcast_dp"
           ) {
-            orderRequest.status = "Rejected"; // Rejected by all DPs
+            orderRequest.status = ORDER_REQUEST_STATUS.REJECTED; // Rejected by all DPs
           }
           await orderRequest.save({ session });
         }
@@ -1419,7 +1429,7 @@ export const pickupOtp = async (order_id, user_id, otp) => {
 
     if (broadcast) {
       broadcast.status = "1";
-      broadcast.status = "Completed";
+      broadcast.status = BROADCAST_STATUS.COMPLETED;
       await broadcast.save();
     }
 
@@ -1579,7 +1589,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
           .session(session);
         if (latestBroadcast) {
           latestBroadcast.status = "1";
-          latestBroadcast.status = "Completed";
+          latestBroadcast.status = BROADCAST_STATUS.COMPLETED;
           latestBroadcast.save({ session });
         }
       } else {
@@ -1592,7 +1602,7 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
 
         if (previousBroadcast) {
           previousBroadcast.status = "1";
-          previousBroadcast.status = "Completed";
+          previousBroadcast.status = BROADCAST_STATUS.COMPLETED;
           previousBroadcast.save({ session });
         }
 
@@ -1747,7 +1757,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
                 description: `Auto-deducted waiting charges for Order #${order._id}`,
                 transaction_type: "waiting_charge",
                 reference_id: order._id,
-                status: "completed",
+                status: PAYOUT_STATUS.COMPLETED,
               },
             ],
             { session },
@@ -1785,7 +1795,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
     }
 
     order.delivery_dp_id = user_id;
-    order.status_completed = "delivered";
+    order.status_completed = ORDER_STATUS.DELIVERED;
     order.status = ORDER_STATUS.DELIVERED;
     order.dp_deliver_time = new Date();
     await order.save({ session });
@@ -1795,7 +1805,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       : null;
     if (broadcast) {
       broadcast.status = "1";
-      broadcast.status = "Completed";
+      broadcast.status = BROADCAST_STATUS.COMPLETED;
       await broadcast.save({ session });
     }
 
@@ -2043,11 +2053,11 @@ export const getOrderHistory = async (user_id) => {
 
     // Explicitly separate settlement statuses for DP visibility
     jsonOrder.base_settled = payout
-      ? payout.settled === "Completed" || payout.settled === 1
+      ? payout.settled === PAYOUT_STATUS.COMPLETED || payout.settled === 1
       : false;
     jsonOrder.waiting_charge_settled = payout
-      ? payout.waiting_charge_settled === "Completed" ||
-      payout.waiting_charge_settled === 1
+      ? payout.waiting_charge_settled === PAYOUT_STATUS.COMPLETED ||
+        payout.waiting_charge_settled === 1
       : false;
     // Status for waiting charge visibility
     if (jsonOrder.waiting_charge_settled) {
@@ -2060,7 +2070,8 @@ export const getOrderHistory = async (user_id) => {
     }
 
     // Total = base + waiting (calculated AFTER cutoff zeroing)
-    jsonOrder.total_earning = jsonOrder.my_earning + jsonOrder.waiting_charge_earning;
+    jsonOrder.total_earning =
+      jsonOrder.my_earning + jsonOrder.waiting_charge_earning;
 
     ordersWithEarning.push(jsonOrder);
   }
@@ -2082,7 +2093,10 @@ export const getTotalOrdersCount = async (user_id) => {
 
   const calculateValidWC = (p) => {
     let wc = p.waiting_charge_earning || 0;
-    if (p.waiting_charge_settled !== "Completed" && p.waiting_charge_settled !== 1) {
+    if (
+      p.waiting_charge_settled !== "Completed" &&
+      p.waiting_charge_settled !== 1
+    ) {
       if (new Date(p.created_at) < getExpiryCutoffDate()) {
         wc = 0;
       }
@@ -2090,7 +2104,10 @@ export const getTotalOrdersCount = async (user_id) => {
     return wc;
   };
 
-  const totalEarning = payouts.reduce((acc, curr) => acc + curr.earnings + calculateValidWC(curr), 0);
+  const totalEarning = payouts.reduce(
+    (acc, curr) => acc + curr.earnings + calculateValidWC(curr),
+    0,
+  );
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -2101,7 +2118,10 @@ export const getTotalOrdersCount = async (user_id) => {
     dp_auth_id: user_id,
     created_at: { $gte: todayStart, $lte: todayEnd },
   });
-  const todayEarning = todayPayouts.reduce((acc, curr) => acc + curr.earnings + calculateValidWC(curr), 0);
+  const todayEarning = todayPayouts.reduce(
+    (acc, curr) => acc + curr.earnings + calculateValidWC(curr),
+    0,
+  );
 
   const lastPayout = await DpPayout.findOne({
     dp_auth_id: user_id,
@@ -2125,7 +2145,10 @@ export const getEarningHistory = async (userId) => {
 
   const calculateValidWC = (p) => {
     let wc = p.waiting_charge_earning || 0;
-    if (p.waiting_charge_settled !== "Completed" && p.waiting_charge_settled !== 1) {
+    if (
+      p.waiting_charge_settled !== "Completed" &&
+      p.waiting_charge_settled !== 1
+    ) {
       if (new Date(p.created_at) < getExpiryCutoffDate()) {
         wc = 0;
       }
@@ -2133,7 +2156,10 @@ export const getEarningHistory = async (userId) => {
     return wc;
   };
 
-  const totalEarning = payouts.reduce((acc, curr) => acc + curr.earnings + calculateValidWC(curr), 0);
+  const totalEarning = payouts.reduce(
+    (acc, curr) => acc + curr.earnings + calculateValidWC(curr),
+    0,
+  );
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -2168,7 +2194,10 @@ export const getEarningHistory = async (userId) => {
 
     const wc = calculateValidWC(payout);
     let wcStatus = "Pending";
-    if (payout.waiting_charge_settled === "Completed" || payout.waiting_charge_settled === 1) {
+    if (
+      payout.waiting_charge_settled === "Completed" ||
+      payout.waiting_charge_settled === 1
+    ) {
       wcStatus = "Settled";
     } else if (new Date(payout.created_at) < getExpiryCutoffDate()) {
       wcStatus = "Expired";
@@ -2218,7 +2247,10 @@ export const toggleOnlineStatus = async (
 ) => {
   const dpDetail = await DpDetail.findOne({ user_id });
   if (dpDetail && dpDetail.status === "Blocked") {
-    throw new ApiError(403, "Connect to admin, you cancelled orders more than the limit.");
+    throw new ApiError(
+      403,
+      "Connect to admin, you cancelled orders more than the limit.",
+    );
   }
 
   await DpDetail.findOneAndUpdate(
@@ -2322,29 +2354,29 @@ export const getDocuments = async (user_id) => {
 
   if (!doc) {
     return {
-      adhar_status: "Pending",
+      adhar_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       adhar_reject_reason: null,
-      rc_status: "Pending",
+      rc_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       rc_reject_reason: null,
-      dl_status: "Pending",
+      dl_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       dl_reject_reason: null,
-      bank_status: "Pending",
+      bank_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       bank_reject_reason: null,
-      rv_status: "Pending",
+      rv_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       rv_reject_reason: null,
     };
   }
 
   return {
-    adhar_status: doc.adhar_status || "Pending",
+    adhar_status: doc.adhar_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     adhar_reject_reason: doc.adhar_reject_reason || null,
-    rc_status: doc.rc_status || "Pending",
+    rc_status: doc.rc_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     rc_reject_reason: doc.rc_reject_reason || null,
-    dl_status: doc.dl_status || "Pending",
+    dl_status: doc.dl_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     dl_reject_reason: doc.dl_reject_reason || null,
-    bank_status: doc.bank_status || "Pending",
+    bank_status: doc.bank_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     bank_reject_reason: doc.bank_reject_reason || null,
-    rv_status: doc.rv_status || "Pending",
+    rv_status: doc.rv_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     rv_reject_reason: doc.rv_reject_reason || null,
   };
 };
@@ -2370,7 +2402,7 @@ export const getDocumentVerificationStatus = async (dp_id) => {
     };
   }
 
-  if (dpDetail.document_approval === "Approved") {
+  if (dpDetail.document_approval === DOCUMENT_APPROVAL_STATUS.APPROVED) {
     return {
       status: 200,
       dp,
@@ -2395,7 +2427,7 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       if (dpDocument.reference2_name) {
         argumnet3 = true;
       }
-      if (dpDetail.document_approval === "Approved") {
+      if (dpDetail.document_approval === DOCUMENT_APPROVAL_STATUS.APPROVED) {
         argumnet4 = true;
       }
     }
@@ -2424,7 +2456,7 @@ export const respondToBundle = async (dp_id, bundle_id, response) => {
   if (!bundle) throw new Error("Bundle not found");
   const dpExist = await User.findOne({ _id: dp_id, role: ROLES.DP });
   if (!dpExist) throw new Error("Delivery partner not found");
-  if (bundle.status !== "broadcasting") {
+  if (bundle.status !== BROADCAST_STATUS.BROADCASTING) {
     throw new Error(`Cannot respond because bundle status is ${bundle.status}`);
   }
   if (bundle.rejected_dps.includes(dp_id)) {
@@ -2482,7 +2514,9 @@ export const resendPickupOtp = async (orderId, dpId) => {
   }
 
   const message = `Your CountMee pickup OTP for Order #${order._id} is ${newOtp}`;
-  sendOTPViaSMS(order.sender_phone, message).catch((err) => console.error("SMS Failed:", err.message));
+  sendOTPViaSMS(order.sender_phone, message).catch((err) =>
+    console.error("SMS Failed:", err.message),
+  );
 
   return { message: "Pickup OTP resent to sender" };
 };
@@ -2506,7 +2540,9 @@ export const resendReceiverOtp = async (orderId, dpId) => {
   await order.save();
 
   const message = `Your CountMee delivery verification code is ${newOtp}`;
-  sendOTPViaSMS(order.receiver_phone, message).catch((err) => console.error("SMS Failed:", err.message));
+  sendOTPViaSMS(order.receiver_phone, message).catch((err) =>
+    console.error("SMS Failed:", err.message),
+  );
 
   return { message: "Delivery OTP resent to receiver" };
 };

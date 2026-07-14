@@ -28,8 +28,8 @@ const broadcastSchema = new mongoose.Schema(
     drop_otp: { type: Number },
     status: {
       type: String,
-      enum: ["Pending", "Broadcasting", "Accepted", "Completed", "Active"],
-      default: "Pending",
+      enum: ["pending", "broadcasting", "accepted", "completed", "active"],
+      default: "pending",
     },
   },
   {
