@@ -21,6 +21,7 @@ import {
 import {
   distanceBetween,
   haversineGreatCircleDistance,
+  parseDistanceTextToKm,
 } from "../tracking/maps.service.js";
 import { DpDocument } from "../deliveryPartner/dpDocument.model.js";
 import { MinBroadcastDist } from "../tracking/minBroadcast.model.js";
@@ -91,7 +92,7 @@ export const getCharges = async (
     drop_lng,
     googleMapMode,
   );
-  const distanceValue = parseFloat(distanceText) || 0;
+  const distanceValue = parseDistanceTextToKm(distanceText);
 
   const calc = calculateFinalCharges(deliverCharge, distanceValue);
 

@@ -15,7 +15,10 @@ router.post(
   uploadSingle("profile_pic"),
   usersController.editProfile,
 );
+router.get("/my-dues", ordersController.myDues);
 router.post("/createAddress", usersController.createAddress);
 router.get("/myAddress/:customer_id", usersController.myAddress);
 router.get("/myNotifications/:user_id", ordersController.myNotifications);
+router.post("/recommend-vehicle", usersController.recommendVehicle);
+
 export default router;

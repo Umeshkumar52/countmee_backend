@@ -34,3 +34,18 @@ export const myAddress = asyncHandler(async (req, res) => {
 
   return res.json(ApiResponse.success({ myAddresses }, 'All my addresses '));
 });
+
+export const recommendVehicle = asyncHandler(async (req, res) => {
+  const { vehicle_type, weight, length, width, height, dimension_unit } = validate(usersValidation.recommendVehicleSchema, req.body);
+
+  const result = await usersService.recommendVehicle(
+    vehicle_type,
+    Number(weight),
+    Number(length),
+    Number(width),
+    Number(height),
+    dimension_unit || 'cm'
+  );
+
+  return res.json(ApiResponse.success(result, result.message));
+});

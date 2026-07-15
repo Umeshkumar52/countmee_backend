@@ -341,7 +341,7 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
             broadcast.pickup_latitude,
             broadcast.pickup_longitude,
           );
-          if (parseFloat(dist) <= maxDistanceInKm) {
+          if (mapsService.parseDistanceTextToKm(dist) <= maxDistanceInKm) {
             isAuthorized = true;
           }
         }
@@ -425,7 +425,7 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
   if (broadcastObj) {
     const mode = order.mode_of_transport === "By Hand" ? "walking" : "driving";
     const distToReceiver =
-      parseFloat(
+      mapsService.parseDistanceTextToKm(
         await mapsService.distanceBetween(
           jsonOrder.pickup_lat,
           jsonOrder.pickup_lon,
@@ -513,7 +513,7 @@ export const getNewOrders = async (user_id) => {
         broadcast.pickup_latitude,
         broadcast.pickup_longitude,
       );
-      if (parseFloat(dist) <= maxDistanceInKm) {
+      if (mapsService.parseDistanceTextToKm(dist) <= maxDistanceInKm) {
         validBroadcasts.add(broadcast._id.toString());
       }
     });
@@ -633,7 +633,7 @@ export const getNewOrders = async (user_id) => {
       const mode =
         order.mode_of_transport === "By Hand" ? "walking" : "driving";
       const distToReceiver =
-        parseFloat(
+        mapsService.parseDistanceTextToKm(
           await mapsService.distanceBetween(
             jsonOrder.pickup_lat,
             jsonOrder.pickup_lon,
@@ -1063,9 +1063,9 @@ export const orderAccept = async (orderIds, status, user_id) => {
                 oldDpDetail.longitude,
                 mode,
               );
-              distance = parseFloat(chkDistance) || 0;
+              distance = mapsService.parseDistanceTextToKm(chkDistance) || 0;
               const distToReceiver =
-                parseFloat(
+                mapsService.parseDistanceTextToKm(
                   await mapsService.distanceBetween(
                     oldDpDetail.latitude,
                     oldDpDetail.longitude,
@@ -1136,7 +1136,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
               activeBroadcast?.pickup_location || order.pickup_location;
 
             const distToReceiver =
-              parseFloat(
+              mapsService.parseDistanceTextToKm(
                 await mapsService.distanceBetween(
                   pickupLatitude,
                   pickupLongitude,
@@ -1146,7 +1146,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
                 ),
               ) || 0;
 
-            const pickupToDrop = parseFloat(activeBroadcast?.distance) || 0;
+            const pickupToDrop = mapsService.parseDistanceTextToKm(activeBroadcast?.distance) || 0;
             const fraction =
               pickupToDrop + distToReceiver > 0
                 ? pickupToDrop / (pickupToDrop + distToReceiver)
@@ -1825,7 +1825,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
         order.receiver_longitude,
         mode,
       );
-      const distanceValue = parseFloat(distance) || 0;
+      const distanceValue = mapsService.parseDistanceTextToKm(distance) || 0;
 
       let earning = 0;
 
@@ -2555,8 +2555,8 @@ export const findNearestPdc = async (
   }
 
   results.sort((a, b) => {
-    const distA = parseFloat(a.distance) || 0;
-    const distB = parseFloat(b.distance) || 0;
+    const distA = mapsService.parseDistanceTextToKm(a.distance) || 0;
+    const distB = mapsService.parseDistanceTextToKm(b.distance) || 0;
     return distA - distB;
   });
 
