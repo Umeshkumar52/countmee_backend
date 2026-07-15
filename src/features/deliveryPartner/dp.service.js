@@ -467,7 +467,7 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
           order.receiver_latitude,
           order.receiver_longitude,
           mode,
-        )).replace(/[^0-9.]/g, '')) || 0;
+        )) || 0;
     remaining_distance = Math.round(distToReceiver * 1000) / 1000;
   }
 
@@ -674,7 +674,7 @@ export const getNewOrders = async (user_id) => {
             order.receiver_latitude,
             order.receiver_longitude,
             mode,
-          )).replace(/[^0-9.]/g, '')) || 0;
+          )) || 0;
   remaining_distance = Math.round(distToReceiver * 1000) / 1000;
 }
 
@@ -1105,7 +1105,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
                     order.receiver_latitude,
                     order.receiver_longitude,
                     mode,
-                  )).replace(/[^0-9.]/g, '')) || 0;
+                  )) || 0;
 
               const fraction =
                 distance + distToReceiver > 0
@@ -1175,7 +1175,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
                   order.receiver_latitude,
                   order.receiver_longitude,
                   mode,
-                )).replace(/[^0-9.]/g, '')) || 0;
+                )) || 0;
 
             const pickupToDrop = mapsService.parseDistanceTextToKm(activeBroadcast?.distance) || 0;
             const fraction =
