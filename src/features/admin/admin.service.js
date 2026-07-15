@@ -211,8 +211,13 @@ export const updateDpDocumentStatus = async (
 
 export const updateDpDocumentApproval = async (userId, document_approval) => {
   const DpDetailModel = mongoose.default.model("DpDetail");
-  await DpDetailModel.findByIdAndUpdate(userId, { document_approval });
-  return { message: `Approval status updated to ${document_approval}` };
+  const sanitizedStatus = document_approval ? document_approval.toLowerCase() : document_approval;
+  await DpDetailModel.findByIdAndUpdate(
+    userId, 
+    { document_approval: sanitizedStatus },
+    { runValidators: true }
+  );
+  return { message: `Approval status updated to ${sanitizedStatus}` };
 };
 
 export const addDp = async (body, files) => {
@@ -300,7 +305,7 @@ export const addDp = async (body, files) => {
     address,
     profile_img: uploadResults.profile_img || null,
     online: false,
-    document_approval: { $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"] },
+    document_approval: DOCUMENT_APPROVAL_STATUS.APPROVED,
     status: "Verified",
   });
 
@@ -508,9 +513,7 @@ export const bulkAddDp = async (dps, files) => {
         address: dp.address || "",
         profile_img: uploadResults.profile_img || dp.profile_img || null,
         online: false,
-        document_approval: {
-          $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
-        },
+        document_approval: DOCUMENT_APPROVAL_STATUS.APPROVED,
         status: "Verified",
       });
 

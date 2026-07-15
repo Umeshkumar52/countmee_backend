@@ -31,7 +31,7 @@ import { PdcPayout } from "../pdc/pdcPayout.model.js";
 import * as adminService from "../admin/admin.service.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
 import { DeliverCharge } from "../orders/deliverCharge.model.js";
-import { uploadToCloudinary } from "../../common/services/cloudinary.service.js";
+import { uploadToCloudinary, deleteFromCloudinary } from "../../common/services/cloudinary.service.js";
 import { sendOTPViaSMS } from "../../common/utils/sendSms.js";
 import * as mapsService from "../tracking/maps.service.js";
 import mongoose from "mongoose";
@@ -1877,7 +1877,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
           order_id: order._id,
         }).session(session);
         const sumPrev = previousPayouts
-          .filter((p) => p.travel_id !== travel._id)
+          .filter((p) => String(p.travel_id) !== String(travel._id))
           .reduce((acc, curr) => acc + curr.earnings, 0);
 
         earning = Math.max(0, Math.round((totalDpPot - sumPrev) * 100) / 100);
@@ -2263,6 +2263,18 @@ export const toggleOnlineStatus = async (
   return true;
 };
 
+const getPublicIdFromUrl = (url) => {
+  if (!url) return null;
+  try {
+    const splitUrl = url.split("/");
+    const lastItem = splitUrl[splitUrl.length - 1];
+    const secondLastItem = splitUrl[splitUrl.length - 2];
+    return `${secondLastItem}/${lastItem.split(".")[0]}`;
+  } catch (e) {
+    return null;
+  }
+};
+
 export const editDpProfile = async (user_id, address, profileImgLocalPath) => {
   let profileImgUrl = null;
 
@@ -2276,8 +2288,14 @@ export const editDpProfile = async (user_id, address, profileImgLocalPath) => {
 
   const dpProfile = await DpDetail.findOne({ user_id });
   if (!dpProfile) {
+    if (profileImgUrl) {
+      const publicId = getPublicIdFromUrl(profileImgUrl);
+      if (publicId) deleteFromCloudinary(publicId).catch(() => {});
+    }
     throw new ApiError(404, "DP Profile not found");
   }
+
+  const oldImgUrl = dpProfile.profile_img;
 
   if (address) {
     dpProfile.address = address;
@@ -2285,7 +2303,30 @@ export const editDpProfile = async (user_id, address, profileImgLocalPath) => {
   if (profileImgUrl) {
     dpProfile.profile_img = profileImgUrl;
   }
-  await dpProfile.save();
+
+  // Auto-correct any legacy corrupted enum values already in the database
+  if (dpProfile.document_approval) {
+    dpProfile.document_approval = dpProfile.document_approval.toLowerCase();
+  }
+
+  try {
+    await dpProfile.save();
+  } catch (error) {
+    if (profileImgUrl) {
+      const publicId = getPublicIdFromUrl(profileImgUrl);
+      if (publicId) deleteFromCloudinary(publicId).catch(() => {});
+    }
+    throw error;
+  }
+
+  if (profileImgUrl && oldImgUrl && oldImgUrl !== profileImgUrl) {
+    const oldPublicId = getPublicIdFromUrl(oldImgUrl);
+    if (oldPublicId) {
+      deleteFromCloudinary(oldPublicId).catch((err) =>
+        console.warn("Failed to delete old DP profile image:", err.message)
+      );
+    }
+  }
 
   return dpProfile;
 };
@@ -2406,9 +2447,6 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       argumnet2: false,
       argumnet3: false,
       argumnet4: false,
-      argumnet5: false,
-      argumnet6: false,
-      argumnet7: false,
       message: "dp document or details are not submit yet",
       document_status: documentStatus,
     };
@@ -2422,9 +2460,6 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       argumnet2: true,
       argumnet3: true,
       argumnet4: true,
-      argumnet5: true,
-      argumnet6: true,
-      argumnet7: true,
       message: "go to home page",
       document_status: documentStatus,
     };
@@ -2434,9 +2469,6 @@ export const getDocumentVerificationStatus = async (dp_id) => {
   let argumnet2 = false;
   let argumnet3 = false;
   let argumnet4 = false;
-  let argumnet5 = false;
-  let argumnet6 = false;
-  let argumnet7 = false;
 
   if (dpDetail.profile_img) {
     argumnet1 = true;
@@ -2444,15 +2476,6 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       argumnet2 = true;
       if (dpDocument.reference2_name) {
         argumnet3 = true;
-      }
-      if (dpDocument.insurance_document) {
-        argumnet5 = true;
-      }
-      if (dpDocument.emission_certificate_document) {
-        argumnet6 = true;
-      }
-      if (dpDocument.permit_document) {
-        argumnet7 = true;
       }
       if (dpDetail.document_approval === DOCUMENT_APPROVAL_STATUS.APPROVED) {
         argumnet4 = true;
@@ -2466,9 +2489,6 @@ export const getDocumentVerificationStatus = async (dp_id) => {
     argumnet2,
     argumnet3,
     argumnet4,
-    argumnet5,
-    argumnet6,
-    argumnet7,
     dp,
     message: "document verify page",
     document_status: documentStatus,

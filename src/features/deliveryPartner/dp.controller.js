@@ -1042,7 +1042,8 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
           order.receiver_longitude,
           mode,
         );
-        const distToReceiverValue = parseFloat(String(distToReceiver).replace(/[^0-9.]/g, '')) || 0;
+        const distToReceiverValue =
+          mapsService.parseDistanceTextToKm(distToReceiver) || 0;
 
         const distanceValue = distanceKm;
         const fraction =
