@@ -205,7 +205,7 @@ export const minBroadcast = asyncHandler(async (req, res) => {
       Number(lon),
     );
 
-    const distanceValue = parseFloat(chkDistance) || 0;
+    const distanceValue = mapsService.parseDistanceTextToKm(chkDistance) || 0;
 
     return res.json(
       ApiResponse.success({
@@ -489,7 +489,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
       pdcObj.longitude,
       mode,
     );
-    const distanceValue = parseFloat(distance) || 0;
+    const distanceValue = mapsService.parseDistanceTextToKm(distance) || 0;
 
     const distToReceiver = await mapsService.distanceBetween(
       pdcObj.latitude,
@@ -498,7 +498,7 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
       order.receiver_longitude,
       mode,
     );
-    const distToReceiverValue = parseFloat(distToReceiver) || 0;
+    const distToReceiverValue = mapsService.parseDistanceTextToKm(distToReceiver) || 0;
 
     const allPayouts = await mongoose
       .model("DpPayout")
@@ -866,7 +866,7 @@ export const deliverPdc = asyncHandler(async (req, res) => {
         pdc.latitude,
         pdc.longitude,
       );
-      const distanceValue = parseFloat(distance) || 0;
+      const distanceValue = mapsService.parseDistanceTextToKm(distance) || 0;
 
       const broadcast = await Broadcast.create(
         [
@@ -1106,7 +1106,7 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
             order.receiver_latitude,
             order.receiver_longitude,
           );
-          const broadcastDistanceVal = parseFloat(broadcastDistance) || 0;
+          const broadcastDistanceVal = mapsService.parseDistanceTextToKm(broadcastDistance) || 0;
 
           const createdBroadcast = await Broadcast.create(
             [

@@ -56,3 +56,30 @@ export const createAddressSchema = Joi.object({
       'any.required': 'Phone number is required'
     })
 });
+
+
+export const recommendVehicleSchema = Joi.object({
+  vehicle_type: Joi.string().required().messages({
+    'string.empty': 'Vehicle type is required',
+    'any.required': 'Vehicle type is required'
+  }),
+  weight: Joi.number().required().messages({
+    'number.base': 'Weight must be a number',
+    'any.required': 'Weight is required'
+  }),
+  length: Joi.number().required().messages({
+    'number.base': 'Length must be a number',
+    'any.required': 'Length is required'
+  }),
+  width: Joi.number().required().messages({
+    'number.base': 'Width must be a number',
+    'any.required': 'Width is required'
+  }),
+  height: Joi.number().required().messages({
+    'number.base': 'Height must be a number',
+    'any.required': 'Height is required'
+  }),
+  dimension_unit: Joi.string().valid('cm', 'm', 'ft', 'inch').default('cm').messages({
+    'any.only': 'Dimension unit must be one of cm, m, ft, inch'
+  })
+});

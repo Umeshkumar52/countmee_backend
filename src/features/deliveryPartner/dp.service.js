@@ -376,7 +376,7 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
             broadcast.pickup_latitude,
             broadcast.pickup_longitude,
           );
-          if (parseFloat(String(dist).replace(/[^0-9.]/g, '')) <= maxDistanceInKm) {
+          if (mapsService.parseDistanceTextToKm(dist) <= maxDistanceInKm) {
             isAuthorized = true;
           }
         }
@@ -460,7 +460,8 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
   if (broadcastObj) {
     const mode = order.mode_of_transport === "By Hand" ? "walking" : "driving";
     const distToReceiver =
-      parseFloat(String(await mapsService.distanceBetween(
+      mapsService.parseDistanceTextToKm(
+        await mapsService.distanceBetween(
           jsonOrder.pickup_lat,
           jsonOrder.pickup_lon,
           order.receiver_latitude,
@@ -546,7 +547,7 @@ export const getNewOrders = async (user_id) => {
         broadcast.pickup_latitude,
         broadcast.pickup_longitude,
       );
-      if (parseFloat(String(dist).replace(/[^0-9.]/g, '')) <= maxDistanceInKm) {
+      if (mapsService.parseDistanceTextToKm(dist) <= maxDistanceInKm) {
         validBroadcasts.add(broadcast._id.toString());
       }
     });
@@ -666,60 +667,61 @@ export const getNewOrders = async (user_id) => {
       const mode =
         order.mode_of_transport === "By Hand" ? "walking" : "driving";
       const distToReceiver =
-        parseFloat(String(await mapsService.distanceBetween(
+        mapsService.parseDistanceTextToKm(
+          await mapsService.distanceBetween(
             jsonOrder.pickup_lat,
             jsonOrder.pickup_lon,
             order.receiver_latitude,
             order.receiver_longitude,
             mode,
           )).replace(/[^0-9.]/g, '')) || 0;
-      remaining_distance = Math.round(distToReceiver * 1000) / 1000;
-    }
+  remaining_distance = Math.round(distToReceiver * 1000) / 1000;
+}
 
-    jsonOrder.remaining_distance = remaining_distance;
-    jsonOrder.per_km_amount =
-      remaining_distance > 0
-        ? Math.round((remainingPot / remaining_distance) * 100) / 100
-        : 0;
+jsonOrder.remaining_distance = remaining_distance;
+jsonOrder.per_km_amount =
+  remaining_distance > 0
+    ? Math.round((remainingPot / remaining_distance) * 100) / 100
+    : 0;
 
-    // Convert _id objects to string for final output like .toJSON() did
-    // Convert _id objects to string for final output like .toJSON() did
-    if (jsonOrder._id) jsonOrder._id = jsonOrder._id.toString();
+// Convert _id objects to string for final output like .toJSON() did
+// Convert _id objects to string for final output like .toJSON() did
+if (jsonOrder._id) jsonOrder._id = jsonOrder._id.toString();
 
-    return jsonOrder;
+return jsonOrder;
   });
 
-  const ordersWithPickup = await Promise.all(ordersWithPickupPromises);
+const ordersWithPickup = await Promise.all(ordersWithPickupPromises);
 
-  // Fetch pending OrderBundles for this DP
-  const activeBundles = await OrderBundle.find({
-    status: BROADCAST_STATUS.BROADCASTING,
-    notified_dps: user_id,
-    accepted_dps: { $ne: user_id },
-    rejected_dps: { $ne: user_id },
+// Fetch pending OrderBundles for this DP
+const activeBundles = await OrderBundle.find({
+  status: BROADCAST_STATUS.BROADCASTING,
+  notified_dps: user_id,
+  accepted_dps: { $ne: user_id },
+  rejected_dps: { $ne: user_id },
+})
+  .populate({
+    path: "orders",
+    populate: { path: "package_id" },
   })
-    .populate({
-      path: "orders",
-      populate: { path: "package_id" },
-    })
-    .lean();
+  .lean();
 
-  const formattedBundles = activeBundles.map((bundle) => ({
-    type: "bundle",
-    bundle_id: bundle.bundle_id,
-    created_at: bundle.created_at,
-    orders: bundle.orders.map((order) => ({
-      order_id: order._id,
-      pickup_location: order.pickup_location,
-      drop_location: order.drop_location,
-      charges: order.charges?.toString() || "0",
-      distance: order.distance?.toString() || "0",
-      product_description: order.package_id?.product_description || "",
-      no_of_items: order.package_id?.no_of_items?.toString() || "1",
-    })),
-  }));
+const formattedBundles = activeBundles.map((bundle) => ({
+  type: "bundle",
+  bundle_id: bundle.bundle_id,
+  created_at: bundle.created_at,
+  orders: bundle.orders.map((order) => ({
+    order_id: order._id,
+    pickup_location: order.pickup_location,
+    drop_location: order.drop_location,
+    charges: order.charges?.toString() || "0",
+    distance: order.distance?.toString() || "0",
+    product_description: order.package_id?.product_description || "",
+    no_of_items: order.package_id?.no_of_items?.toString() || "1",
+  })),
+}));
 
-  return [...ordersWithPickup, ...formattedBundles];
+return [...ordersWithPickup, ...formattedBundles];
 };
 
 export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
@@ -1034,11 +1036,11 @@ export const orderAccept = async (orderIds, status, user_id) => {
           if (orderRequest.request_type === "broadcast_dp") {
             let travel = oldOrderRequest
               ? await Travel.findOne({
-                  order_id: order._id,
-                  user_id: oldOrderRequest.accepted_by,
-                })
-                  .sort({ created_at: -1 })
-                  .session(session)
+                order_id: order._id,
+                user_id: oldOrderRequest.accepted_by,
+              })
+                .sort({ created_at: -1 })
+                .session(session)
               : null;
 
             if (!travel && oldOrderRequest) {
@@ -1080,8 +1082,8 @@ export const orderAccept = async (orderIds, status, user_id) => {
 
             const oldDpDetail = oldOrderRequest
               ? await DpDetail.findOne({
-                  user_id: oldOrderRequest.accepted_by,
-                }).session(session)
+                user_id: oldOrderRequest.accepted_by,
+              }).session(session)
               : null;
 
             if (travel && oldOrderRequest && oldDpDetail) {
@@ -1094,9 +1096,10 @@ export const orderAccept = async (orderIds, status, user_id) => {
                 oldDpDetail.longitude,
                 mode,
               );
-              distance = parseFloat(String(chkDistance).replace(/[^0-9.]/g, '')) || 0;
+              distance = mapsService.parseDistanceTextToKm(chkDistance) || 0;
               const distToReceiver =
-                parseFloat(String(await mapsService.distanceBetween(
+                mapsService.parseDistanceTextToKm(
+                  await mapsService.distanceBetween(
                     oldDpDetail.latitude,
                     oldDpDetail.longitude,
                     order.receiver_latitude,
@@ -1165,7 +1168,8 @@ export const orderAccept = async (orderIds, status, user_id) => {
               activeBroadcast?.pickup_location || order.pickup_location;
 
             const distToReceiver =
-              parseFloat(String(await mapsService.distanceBetween(
+              mapsService.parseDistanceTextToKm(
+                await mapsService.distanceBetween(
                   pickupLatitude,
                   pickupLongitude,
                   order.receiver_latitude,
@@ -1173,7 +1177,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
                   mode,
                 )).replace(/[^0-9.]/g, '')) || 0;
 
-            const pickupToDrop = parseFloat(String(activeBroadcast?.distance).replace(/[^0-9.]/g, '')) || 0;
+            const pickupToDrop = mapsService.parseDistanceTextToKm(activeBroadcast?.distance) || 0;
             const fraction =
               pickupToDrop + distToReceiver > 0
                 ? pickupToDrop / (pickupToDrop + distToReceiver)
@@ -1852,7 +1856,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
         order.receiver_longitude,
         mode,
       );
-      const distanceValue = parseFloat(String(distance).replace(/[^0-9.]/g, '')) || 0;
+      const distanceValue = mapsService.parseDistanceTextToKm(distance) || 0;
 
       let earning = 0;
 
@@ -2050,7 +2054,7 @@ export const getOrderHistory = async (user_id) => {
       : false;
     jsonOrder.waiting_charge_settled = payout
       ? payout.waiting_charge_settled === PAYOUT_STATUS.COMPLETED ||
-        payout.waiting_charge_settled === 1
+      payout.waiting_charge_settled === 1
       : false;
     // Status for waiting charge visibility
     if (jsonOrder.waiting_charge_settled) {
@@ -2615,8 +2619,8 @@ export const findNearestPdc = async (
   }
 
   results.sort((a, b) => {
-    const distA = parseFloat(String(a.distance).replace(/[^0-9.]/g, '')) || 0;
-    const distB = parseFloat(String(b.distance).replace(/[^0-9.]/g, '')) || 0;
+    const distA = mapsService.parseDistanceTextToKm(a.distance) || 0;
+    const distB = mapsService.parseDistanceTextToKm(b.distance) || 0;
     return distA - distB;
   });
 

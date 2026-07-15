@@ -43,6 +43,26 @@ export const distanceBetween = async (lat1, lon1, lat2, lon2, mode = 'walking') 
 };
 
 /**
+ * Robustly parses Google Maps distance text into numeric kilometers
+ * @param {string} distanceStr - e.g., '2,129 km', '500 m'
+ * @returns {number} Distance in kilometers
+ */
+export const parseDistanceTextToKm = (distanceStr) => {
+  if (!distanceStr || typeof distanceStr !== "string") return 0;
+  // Remove all commas
+  const cleanedStr = distanceStr.replace(/,/g, "");
+  const val = parseFloat(cleanedStr);
+  if (isNaN(val)) return 0;
+  
+  // If the result is explicitly in meters, convert to kilometers
+  const lowerStr = cleanedStr.toLowerCase();
+  if (lowerStr.includes(" m") && !lowerStr.includes("km")) {
+    return val / 1000;
+  }
+  return val;
+};
+
+/**
  * Filters PDCs along a route from origin to destination
  * @param {Array<object>} pdcs - List of online PDCs
  * @param {string} origin - 'lat,lon' of origin

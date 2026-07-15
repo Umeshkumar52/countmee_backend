@@ -164,16 +164,29 @@ export const orderHistory = asyncHandler(async (req, res) => {
 });
 
 export const readNotifications = asyncHandler(async (req, res) => {
-  const id = req.body.id;
-  const notification = await Notification.findByIdAndUpdate(
-    id,
-    { read_at: new Date() },
-    { new: true },
-  );
+  const { id, read_notification } = req.body;
+  const userId = req.user.id;
 
-  if (notification) {
-    return res.json(ApiResponse.success("notification_marked_as_read"));
+  if (read_notification === "all") {
+    await Notification.updateMany(
+      { notifiable_id: userId, read_at: null },
+      { read_at: new Date() }
+    );
+    return res.json(ApiResponse.success("all_notifications_marked_as_read"));
   }
+
+  if (id) {
+    const notification = await Notification.findByIdAndUpdate(
+      id,
+      { read_at: new Date() },
+      { new: true },
+    );
+
+    if (notification) {
+      return res.json(ApiResponse.success("notification_marked_as_read"));
+    }
+  }
+
   throw new ApiError(404, "notification_not_found");
 });
 
