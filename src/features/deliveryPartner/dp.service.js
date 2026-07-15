@@ -7,6 +7,7 @@ import {
   ORDER_REQUEST_COMPLETE_STATUS,
   ACTIVE_ORDER_STATUSES,
   USER_ACTION_STATUS,
+  DOCUMENT_APPROVAL_STATUS,
 } from "../../constants/index.js";
 import { User } from "../users/user.model.js";
 import { Order } from "../orders/order.model.js";
@@ -375,7 +376,7 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
             broadcast.pickup_latitude,
             broadcast.pickup_longitude,
           );
-          if (parseFloat(dist) <= maxDistanceInKm) {
+          if (parseFloat(String(dist).replace(/[^0-9.]/g, '')) <= maxDistanceInKm) {
             isAuthorized = true;
           }
         }
@@ -459,15 +460,13 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
   if (broadcastObj) {
     const mode = order.mode_of_transport === "By Hand" ? "walking" : "driving";
     const distToReceiver =
-      parseFloat(
-        await mapsService.distanceBetween(
+      parseFloat(String(await mapsService.distanceBetween(
           jsonOrder.pickup_lat,
           jsonOrder.pickup_lon,
           order.receiver_latitude,
           order.receiver_longitude,
           mode,
-        ),
-      ) || 0;
+        )).replace(/[^0-9.]/g, '')) || 0;
     remaining_distance = Math.round(distToReceiver * 1000) / 1000;
   }
 
@@ -547,7 +546,7 @@ export const getNewOrders = async (user_id) => {
         broadcast.pickup_latitude,
         broadcast.pickup_longitude,
       );
-      if (parseFloat(dist) <= maxDistanceInKm) {
+      if (parseFloat(String(dist).replace(/[^0-9.]/g, '')) <= maxDistanceInKm) {
         validBroadcasts.add(broadcast._id.toString());
       }
     });
@@ -667,15 +666,13 @@ export const getNewOrders = async (user_id) => {
       const mode =
         order.mode_of_transport === "By Hand" ? "walking" : "driving";
       const distToReceiver =
-        parseFloat(
-          await mapsService.distanceBetween(
+        parseFloat(String(await mapsService.distanceBetween(
             jsonOrder.pickup_lat,
             jsonOrder.pickup_lon,
             order.receiver_latitude,
             order.receiver_longitude,
             mode,
-          ),
-        ) || 0;
+          )).replace(/[^0-9.]/g, '')) || 0;
       remaining_distance = Math.round(distToReceiver * 1000) / 1000;
     }
 
@@ -1097,17 +1094,15 @@ export const orderAccept = async (orderIds, status, user_id) => {
                 oldDpDetail.longitude,
                 mode,
               );
-              distance = parseFloat(chkDistance) || 0;
+              distance = parseFloat(String(chkDistance).replace(/[^0-9.]/g, '')) || 0;
               const distToReceiver =
-                parseFloat(
-                  await mapsService.distanceBetween(
+                parseFloat(String(await mapsService.distanceBetween(
                     oldDpDetail.latitude,
                     oldDpDetail.longitude,
                     order.receiver_latitude,
                     order.receiver_longitude,
                     mode,
-                  ),
-                ) || 0;
+                  )).replace(/[^0-9.]/g, '')) || 0;
 
               const fraction =
                 distance + distToReceiver > 0
@@ -1170,17 +1165,15 @@ export const orderAccept = async (orderIds, status, user_id) => {
               activeBroadcast?.pickup_location || order.pickup_location;
 
             const distToReceiver =
-              parseFloat(
-                await mapsService.distanceBetween(
+              parseFloat(String(await mapsService.distanceBetween(
                   pickupLatitude,
                   pickupLongitude,
                   order.receiver_latitude,
                   order.receiver_longitude,
                   mode,
-                ),
-              ) || 0;
+                )).replace(/[^0-9.]/g, '')) || 0;
 
-            const pickupToDrop = parseFloat(activeBroadcast?.distance) || 0;
+            const pickupToDrop = parseFloat(String(activeBroadcast?.distance).replace(/[^0-9.]/g, '')) || 0;
             const fraction =
               pickupToDrop + distToReceiver > 0
                 ? pickupToDrop / (pickupToDrop + distToReceiver)
@@ -1859,7 +1852,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
         order.receiver_longitude,
         mode,
       );
-      const distanceValue = parseFloat(distance) || 0;
+      const distanceValue = parseFloat(String(distance).replace(/[^0-9.]/g, '')) || 0;
 
       let earning = 0;
 
@@ -2364,6 +2357,12 @@ export const getDocuments = async (user_id) => {
       bank_reject_reason: null,
       rv_status: DOCUMENT_APPROVAL_STATUS.PENDING,
       rv_reject_reason: null,
+      insurance_status: DOCUMENT_APPROVAL_STATUS.PENDING,
+      insurance_reject_reason: null,
+      emission_status: DOCUMENT_APPROVAL_STATUS.PENDING,
+      emission_reject_reason: null,
+      permit_status: DOCUMENT_APPROVAL_STATUS.PENDING,
+      permit_reject_reason: null,
     };
   }
 
@@ -2378,6 +2377,12 @@ export const getDocuments = async (user_id) => {
     bank_reject_reason: doc.bank_reject_reason || null,
     rv_status: doc.rv_status || DOCUMENT_APPROVAL_STATUS.PENDING,
     rv_reject_reason: doc.rv_reject_reason || null,
+    insurance_status: doc.insurance_status || DOCUMENT_APPROVAL_STATUS.PENDING,
+    insurance_reject_reason: doc.insurance_reject_reason || null,
+    emission_status: doc.emission_status || DOCUMENT_APPROVAL_STATUS.PENDING,
+    emission_reject_reason: doc.emission_reject_reason || null,
+    permit_status: doc.permit_status || DOCUMENT_APPROVAL_STATUS.PENDING,
+    permit_reject_reason: doc.permit_reject_reason || null,
   };
 };
 
@@ -2397,6 +2402,9 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       argumnet2: false,
       argumnet3: false,
       argumnet4: false,
+      argumnet5: false,
+      argumnet6: false,
+      argumnet7: false,
       message: "dp document or details are not submit yet",
       document_status: documentStatus,
     };
@@ -2410,6 +2418,9 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       argumnet2: true,
       argumnet3: true,
       argumnet4: true,
+      argumnet5: true,
+      argumnet6: true,
+      argumnet7: true,
       message: "go to home page",
       document_status: documentStatus,
     };
@@ -2419,6 +2430,9 @@ export const getDocumentVerificationStatus = async (dp_id) => {
   let argumnet2 = false;
   let argumnet3 = false;
   let argumnet4 = false;
+  let argumnet5 = false;
+  let argumnet6 = false;
+  let argumnet7 = false;
 
   if (dpDetail.profile_img) {
     argumnet1 = true;
@@ -2426,6 +2440,15 @@ export const getDocumentVerificationStatus = async (dp_id) => {
       argumnet2 = true;
       if (dpDocument.reference2_name) {
         argumnet3 = true;
+      }
+      if (dpDocument.insurance_document) {
+        argumnet5 = true;
+      }
+      if (dpDocument.emission_certificate_document) {
+        argumnet6 = true;
+      }
+      if (dpDocument.permit_document) {
+        argumnet7 = true;
       }
       if (dpDetail.document_approval === DOCUMENT_APPROVAL_STATUS.APPROVED) {
         argumnet4 = true;
@@ -2439,6 +2462,9 @@ export const getDocumentVerificationStatus = async (dp_id) => {
     argumnet2,
     argumnet3,
     argumnet4,
+    argumnet5,
+    argumnet6,
+    argumnet7,
     dp,
     message: "document verify page",
     document_status: documentStatus,
@@ -2589,8 +2615,8 @@ export const findNearestPdc = async (
   }
 
   results.sort((a, b) => {
-    const distA = parseFloat(a.distance) || 0;
-    const distB = parseFloat(b.distance) || 0;
+    const distA = parseFloat(String(a.distance).replace(/[^0-9.]/g, '')) || 0;
+    const distB = parseFloat(String(b.distance).replace(/[^0-9.]/g, '')) || 0;
     return distA - distB;
   });
 

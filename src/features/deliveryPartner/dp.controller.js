@@ -5,6 +5,7 @@ import {
   ORDER_STATUS,
   ORDER_REQUEST_STATUS,
   ORDER_REQUEST_COMPLETE_STATUS,
+  DOCUMENT_APPROVAL_STATUS,
 } from "../../constants/index.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
@@ -278,118 +279,118 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
 
   // If broadcast_id is not provided, create a new broadcast point (Legacy logic restored)
   const order = await Order.findById(order_id);
-    if (!order) throw new ApiError(404, "Order not found");
+  if (!order) throw new ApiError(404, "Order not found");
 
-    if (order.status_completed === "delivered to pdc") {
-      throw new ApiError(400, "Already Delivered to PDC");
-    }
+  if (order.status_completed === "delivered to pdc") {
+    throw new ApiError(400, "Already Delivered to PDC");
+  }
 
-    const travel = await dpService.findTravelByOrderAndUser(order_id, user_id);
+  const travel = await dpService.findTravelByOrderAndUser(order_id, user_id);
 
-    let broadcastObj = await Broadcast.findOne({ order_id: order_id }).sort({
-      created_at: -1,
+  let broadcastObj = await Broadcast.findOne({ order_id: order_id }).sort({
+    created_at: -1,
+  });
+
+  if (!broadcastObj) {
+    const distance =
+      (await mapsService.haversineGreatCircleDistance(
+        Number(latitude),
+        Number(longitude),
+        order.receiver_latitude,
+        order.receiver_longitude,
+      )) / 1000;
+
+    broadcastObj = await Broadcast.create({
+      order_id,
+      broadcasted_by: user_id,
+      status: "Broadcasting", // Fix: Visibility bug (was Pending)
+      pickup_location: location,
+      pickup_latitude: Number(latitude),
+      pickup_longitude: Number(longitude),
+      drop_location: order.drop_location,
+      drop_latitude: order.receiver_latitude,
+      drop_longitude: order.receiver_longitude,
+      distance,
+      pickup_otp: Math.floor(1000 + Math.random() * 9000),
+      drop_otp: Math.floor(1000 + Math.random() * 9000),
     });
+  } else {
+    // Fix: Visibility bug when reusing after a cancellation
+    broadcastObj.status = BROADCAST_STATUS.BROADCASTING;
+    await broadcastObj.save();
+  }
 
-    if (!broadcastObj) {
-      const distance =
-        (await mapsService.haversineGreatCircleDistance(
-          Number(latitude),
-          Number(longitude),
-          order.receiver_latitude,
-          order.receiver_longitude,
-        )) / 1000;
+  const minBroadcast = await mongoose
+    .model("MinBroadcastDist")
+    .findOne({ role: "DP" });
+  const searchRadius = minBroadcast
+    ? minBroadcast.minimum_broadcast_distance * 1000
+    : Number(radius) || 1000;
 
-      broadcastObj = await Broadcast.create({
-        order_id,
-        broadcasted_by: user_id,
-        status: "Broadcasting", // Fix: Visibility bug (was Pending)
-        pickup_location: location,
-        pickup_latitude: Number(latitude),
-        pickup_longitude: Number(longitude),
-        drop_location: order.drop_location,
-        drop_latitude: order.receiver_latitude,
-        drop_longitude: order.receiver_longitude,
-        distance,
-        pickup_otp: Math.floor(1000 + Math.random() * 9000),
-        drop_otp: Math.floor(1000 + Math.random() * 9000),
-      });
-    } else {
-      // Fix: Visibility bug when reusing after a cancellation
-      broadcastObj.status = BROADCAST_STATUS.BROADCASTING;
-      await broadcastObj.save();
-    }
+  // This calls the highly optimized checkNearbyDps function we just built
+  const nearestDps = await dpService.checkNearbyDps(
+    searchRadius,
+    broadcastObj._id,
+    user_id,
+  );
 
-    const minBroadcast = await mongoose
-      .model("MinBroadcastDist")
-      .findOne({ role: "DP" });
-    const searchRadius = minBroadcast
-      ? minBroadcast.minimum_broadcast_distance * 1000
-      : Number(radius) || 1000;
-
-    // This calls the highly optimized checkNearbyDps function we just built
-    const nearestDps = await dpService.checkNearbyDps(
-      searchRadius,
-      broadcastObj._id,
-      user_id,
+  if (!nearestDps.length) {
+    return res.json(
+      ApiResponse.success({ status: ORDER_REQUEST_STATUS.PENDING }, "no dp found in this area"),
     );
+  }
 
-    if (!nearestDps.length) {
-      return res.json(
-        ApiResponse.success({ status: ORDER_REQUEST_STATUS.PENDING }, "no dp found in this area"),
-      );
-    }
+  let orderReq = await OrderRequest.findOne({
+    order_id: order_id,
+    request_type: "broadcast_dp",
+    broadcast_id: broadcastObj._id,
+    notified_ids: { $all: nearestDps },
+  });
 
-    let orderReq = await OrderRequest.findOne({
+  if (!orderReq) {
+    orderReq = await OrderRequest.create({
       order_id: order_id,
+      requested_by: user_id,
+      notified_ids: nearestDps,
       request_type: "broadcast_dp",
       broadcast_id: broadcastObj._id,
-      notified_ids: { $all: nearestDps },
     });
 
-    if (!orderReq) {
-      orderReq = await OrderRequest.create({
-        order_id: order_id,
-        requested_by: user_id,
-        notified_ids: nearestDps,
-        request_type: "broadcast_dp",
-        broadcast_id: broadcastObj._id,
-      });
+    order.delivery_type = "broadcast";
+    order.broadcast_id = broadcastObj._id;
+    order.status_completed = "broadcasted";
+    order.status = ORDER_STATUS.ACCEPTED;
+    await order.save();
+  }
 
-      order.delivery_type = "broadcast";
-      order.broadcast_id = broadcastObj._id;
-      order.status_completed = "broadcasted";
-      order.status = ORDER_STATUS.ACCEPTED;
-      await order.save();
-    }
+  const dps = await DpDetail.find({ user_id: { $in: nearestDps } });
 
-    const dps = await DpDetail.find({ user_id: { $in: nearestDps } });
+  // Schedule Agenda job to expire this broadcast in 10 minutes
+  const agenda = getAgenda();
+  if (agenda) {
+    // Prevent Race Condition: Cancel any previous expiration timers for this specific broadcast
+    await agenda.cancel({
+      name: "expire-broadcast",
+      "data.broadcast_id": broadcastObj._id.toString()
+    });
 
-    // Schedule Agenda job to expire this broadcast in 10 minutes
-    const agenda = getAgenda();
-    if (agenda) {
-      // Prevent Race Condition: Cancel any previous expiration timers for this specific broadcast
-      await agenda.cancel({ 
-        name: "expire-broadcast", 
-        "data.broadcast_id": broadcastObj._id.toString() 
-      });
+    await agenda.schedule("in 10 minutes", "expire-broadcast", {
+      broadcast_id: broadcastObj._id.toString(),
+      order_id: order_id.toString(),
+      pdc_id: user_id.toString(), // DP who triggered the broadcast
+    });
+  }
 
-      await agenda.schedule("in 10 minutes", "expire-broadcast", {
-        broadcast_id: broadcastObj._id.toString(),
-        order_id: order_id.toString(),
-        pdc_id: user_id.toString(), // DP who triggered the broadcast
-      });
-    }
+  const data = {
+    dp: dps,
+    broadcast_id: broadcastObj._id,
+    broadcast: broadcastObj,
+    orderRequest: orderReq,
+    status: ORDER_REQUEST_STATUS.PENDING,
+  };
 
-    const data = {
-      dp: dps,
-      broadcast_id: broadcastObj._id,
-      broadcast: broadcastObj,
-      orderRequest: orderReq,
-      status: ORDER_REQUEST_STATUS.PENDING,
-    };
-
-    return res.json(ApiResponse.success(data, "dp"));
-  });
+  return res.json(ApiResponse.success(data, "dp"));
+});
 
 export const getMinBroadcastPoint = asyncHandler(async (req, res) => {
   const result = await dpService.getMinBroadcastPoint();
@@ -1019,21 +1020,39 @@ export const pdcDeliveryOtp = asyncHandler(async (req, res) => {
           .findOne({ vehicle_type: order.mode_of_transport })
           .session(session);
 
-        const deliveryChargePerKm =
+        const percentage =
           vehicleCharge && vehicleCharge.dp_commission != null
-            ? vehicleCharge.dp_commission
-            : 0;
-        const vehicleChargePerKm = vehicleCharge
-          ? vehicleCharge.per_km_price
-          : 0;
+            ? vehicleCharge.dp_commission / 100
+            : 0.7;
+        const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
 
-        const earning =
-          Math.round(
-            (Math.round(distanceKm * 1000) / 1000) *
-            vehicleChargePerKm *
-            (deliveryChargePerKm / 100) *
-            100,
-          ) / 100;
+        const allPayouts = await mongoose
+          .model("DpPayout")
+          .find({ order_id: order._id })
+          .session(session);
+        const sumPrev = allPayouts
+          .filter((p) => String(p.travel_id) !== String(travel._id))
+          .reduce((acc, curr) => acc + curr.earnings, 0);
+
+        const mode = order.mode_of_transport === "By Hand" ? "walking" : "driving";
+        const distToReceiver = await mapsService.distanceBetween(
+          pdc.latitude,
+          pdc.longitude,
+          order.receiver_latitude,
+          order.receiver_longitude,
+          mode,
+        );
+        const distToReceiverValue = parseFloat(String(distToReceiver).replace(/[^0-9.]/g, '')) || 0;
+
+        const distanceValue = distanceKm;
+        const fraction =
+          distanceValue + distToReceiverValue > 0
+            ? distanceValue / (distanceValue + distToReceiverValue)
+            : 0;
+        const cappedFraction = Math.min(fraction, 1);
+        const remainingPot = Math.max(0, totalDpPot - sumPrev);
+
+        const earning = Math.round(remainingPot * cappedFraction * 100) / 100;
 
         travel.drop_location = pdc.address;
         travel.drop_latitude = pdc.latitude;

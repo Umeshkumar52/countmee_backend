@@ -4,6 +4,7 @@ import {
   ORDER_STATUS,
   ACTIVE_ORDER_STATUSES,
   ORDER_REQUEST_COMPLETE_STATUS,
+  DOCUMENT_APPROVAL_STATUS,
 } from "../../constants/index.js";
 import { sendOTPViaSMS } from "../notifications/sms.service.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";

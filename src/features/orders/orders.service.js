@@ -5,6 +5,7 @@ import {
   ORDER_REQUEST_STATUS,
   ORDER_REQUEST_COMPLETE_STATUS,
   USER_ACTION_STATUS,
+  DOCUMENT_APPROVAL_STATUS,
 } from "../../constants/index.js";
 import { User } from "../users/user.model.js";
 import { Order } from "./order.model.js";
