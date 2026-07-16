@@ -27,4 +27,7 @@ const paymentSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+paymentSchema.index({ cf_order_id: 1, status: 1 });
+paymentSchema.index({ order_id: 1, status: 1 });
+
 export const Payment = mongoose.model("Payment", paymentSchema);

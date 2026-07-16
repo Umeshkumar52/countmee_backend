@@ -16,6 +16,7 @@ import axios from "axios";
 import mongoose from "mongoose";
 import ApiError from "../../common/utils/ApiError.js";
 import { Payment } from "./payment.model.js";
+import { randomBytes } from "crypto";
 
 const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID;
 const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY;
@@ -25,6 +26,25 @@ const CASHFREE_BASE_URL =
   CASHFREE_ENV === "production"
     ? "https://api.cashfree.com/pg/orders"
     : "https://sandbox.cashfree.com/pg/orders";
+
+const createCashfreeOrderId = (prefix, referenceId) =>
+  `${prefix}_${referenceId}_${Date.now()}_${randomBytes(4).toString("hex")}`;
+
+const getCashfreeCustomerPhone = (phone) => {
+  const digits = String(phone || "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "9999999999";
+};
+
+const getCashfreeErrorMessage = (error, fallbackMessage) => {
+  const data = error.response?.data;
+  const message =
+    data?.message ||
+    data?.error_description ||
+    data?.error ||
+    (typeof data === "string" ? data : null);
+
+  return message ? `Cashfree Error: ${message}` : fallbackMessage;
+};
 
 // Razorpay payment
 
@@ -372,7 +392,7 @@ export const initiateCashfreePayment = async (user_id, amount) => {
     throw new Error("User not found");
   }
 
-  const orderId = `WAL_${user._id}_${Date.now()}`;
+  const orderId = createCashfreeOrderId("WAL", user._id);
 
   const postData = {
     order_id: orderId,
@@ -381,7 +401,7 @@ export const initiateCashfreePayment = async (user_id, amount) => {
     customer_details: {
       customer_id: String(user._id),
       customer_email: user.email || "customer@countmee.in",
-      customer_phone: user.phone,
+      customer_phone: getCashfreeCustomerPhone(user.phone),
     },
     order_meta: {
       return_url: `https://countmee.in/payment-status?order_id=${orderId}`,
@@ -429,11 +449,11 @@ export const initiateCashfreePayment = async (user_id, amount) => {
     }
     throw new Error("Failed to retrieve payment_session_id from Cashfree API");
   } catch (error) {
-    console.error(
-      "Cashfree Initiate Error:",
-      error.response ? error.response.data : error.message,
+    const cashfreeError = error.response ? error.response.data : error.message;
+    console.error("Cashfree Initiate Error:", cashfreeError);
+    throw new Error(
+      getCashfreeErrorMessage(error, "Failed to create Cashfree order"),
     );
-    throw new Error("Failed to create Cashfree order");
   }
 };
 
@@ -511,7 +531,7 @@ export const initiateOrderPayment = async (user_id, order_id) => {
     throw new Error("Order is not pending payment or is already paid");
   }
 
-  const cf_order_id = `DIR_${order_id}_${Date.now()}`;
+  const cf_order_id = createCashfreeOrderId("DIR", order_id);
   const amount = order.charges;
 
   const postData = {
@@ -521,7 +541,7 @@ export const initiateOrderPayment = async (user_id, order_id) => {
     customer_details: {
       customer_id: String(user._id),
       customer_email: user.email || "customer@countmee.in",
-      customer_phone: user.phone,
+      customer_phone: getCashfreeCustomerPhone(user.phone),
     },
     order_meta: {
       return_url: `https://countmee.in/payment-status?order_id=${order_id}&cf_order_id=${cf_order_id}`,
@@ -550,8 +570,8 @@ export const initiateOrderPayment = async (user_id, order_id) => {
         status: PAYMENT_STATUS.ACTIVE,
         payment_mode: "Cashfree Direct",
       });
-      // order.payment_id = pay?._id;
-      // order.save();
+      order.payment_id = pay._id;
+      await order.save();
       return {
         cf_order_id,
         payment_session_id: result.payment_session_id,
@@ -559,11 +579,14 @@ export const initiateOrderPayment = async (user_id, order_id) => {
     }
     throw new Error("Failed to retrieve payment_session_id from Cashfree API");
   } catch (error) {
-    console.error(
-      "Cashfree Initiate Error (Direct):",
-      error.response ? error.response.data : error.message,
+    const cashfreeError = error.response ? error.response.data : error.message;
+    console.error("Cashfree Initiate Error (Direct):", cashfreeError);
+    throw new Error(
+      getCashfreeErrorMessage(
+        error,
+        "Failed to create Cashfree order for direct payment",
+      ),
     );
-    throw new Error("Failed to create Cashfree order for direct payment");
   }
 };
 
@@ -584,14 +607,21 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
       const session = await mongoose.startSession();
       session.startTransaction();
       try {
-        const payment = await Payment.findOneAndUpdate(
+        let payment = await Payment.findOneAndUpdate(
           { cf_order_id, status: PAYMENT_STATUS.ACTIVE },
           { status: PAYMENT_STATUS.SUCCESS },
           { new: true, session },
         );
 
+        if (!payment) {
+          payment = await Payment.findOne({
+            cf_order_id,
+            status: PAYMENT_STATUS.SUCCESS,
+          }).session(session);
+        }
+
         if (payment) {
-          const order = await Order.findById(order_id).session(session);
+          const order = await Order.findById(payment.order_id).session(session);
           if (
             order &&
             [ORDER_STATUS.CREATED, ORDER_STATUS.SCHEDULED].includes(
@@ -725,7 +755,7 @@ export const initiateWaitingChargePayment = async (user_id, order_id) => {
   const amount = waitChargeDoc.total_waiting_charge;
   if (amount <= 0) throw new Error("Waiting charge amount is zero");
 
-  const cf_order_id = `WAIT_${order_id}_${Date.now()}`;
+  const cf_order_id = createCashfreeOrderId("WAIT", order_id);
 
   const postData = {
     order_id: cf_order_id,
@@ -734,7 +764,7 @@ export const initiateWaitingChargePayment = async (user_id, order_id) => {
     customer_details: {
       customer_id: String(user._id),
       customer_email: user.email || "customer@countmee.in",
-      customer_phone: user.phone,
+      customer_phone: getCashfreeCustomerPhone(user.phone),
     },
     order_meta: {
       return_url: `https://countmee.in/payment-status?order_id=${order_id}&cf_order_id=${cf_order_id}&payment_for=waiting_charge`,
@@ -771,9 +801,13 @@ export const initiateWaitingChargePayment = async (user_id, order_id) => {
     }
     throw new Error("Failed to retrieve payment_session_id from Cashfree API");
   } catch (error) {
-    console.error("Cashfree Initiate Error (Waiting Charge):", error);
+    const cashfreeError = error.response ? error.response.data : error.message;
+    console.error("Cashfree Initiate Error (Waiting Charge):", cashfreeError);
     throw new Error(
-      "Failed to create Cashfree order for waiting charge payment",
+      getCashfreeErrorMessage(
+        error,
+        "Failed to create Cashfree order for waiting charge payment",
+      ),
     );
   }
 };

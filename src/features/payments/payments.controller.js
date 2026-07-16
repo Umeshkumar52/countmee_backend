@@ -5,6 +5,7 @@ import { validate } from "../../common/utils/validationHelper.js";
 import * as paymentsValidation from "./payments.validation.js";
 
 export const cashfreeWebhookController = asyncHandler(async (req, res) => {
+  console.log(`[PAYMENT WEBHOOK] Received webhook payload:`, req.body);
   await paymentsService.cashfreeWebhook(req.body);
   return res.status(200).send("OK");
 });
@@ -86,6 +87,8 @@ export const initiateOrderPayment = asyncHandler(async (req, res) => {
     req.body,
   );
 
+  console.log(`[PAYMENT API] Initiating payment - User: ${userId}, For: ${payment_for}, Method: ${payment_method}, Order: ${order_id}, Amount: ${amount}`);
+
   let result;
 
   if (payment_for === "order_payment") {
@@ -114,6 +117,8 @@ export const verifyOrderPayment = asyncHandler(async (req, res) => {
     paymentsValidation.verifyOrderPaymentSchema,
     req.body,
   );
+
+  console.log(`[PAYMENT API] Verifying payment - For: ${payment_for}, CF_Order: ${cf_order_id}, Order: ${order_id}`);
 
   let result;
   let message;
