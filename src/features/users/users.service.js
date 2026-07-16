@@ -2,8 +2,8 @@ import * as usersRepository from './users.repository.js';
 import { uploadToCloudinary } from '../../common/services/cloudinary.service.js';
 import { DeliverCharge } from '../orders/deliverCharge.model.js';
 
-export const editProfile = async (user_id, address, profilePicLocalPath) => {
-  let profilePicUrl = null;
+export const editProfile = async (user_id, address, profilePicLocalPath, profilePicBodyUrl) => {
+  let profilePicUrl = profilePicBodyUrl !== undefined ? profilePicBodyUrl : null;
 
   if (profilePicLocalPath) {
     const uploadResult = await uploadToCloudinary(profilePicLocalPath, 'customer_profiles');
@@ -21,9 +21,14 @@ export const editProfile = async (user_id, address, profilePicLocalPath) => {
       profile_pic: profilePicUrl
     });
   } else {
-    profile.address = address;
-    if (profilePicUrl) {
+    if (address !== undefined) {
+      profile.address = address;
+    }
+    if (profilePicUrl !== undefined && profilePicUrl !== null) {
       profile.profile_pic = profilePicUrl;
+    } else if (profilePicBodyUrl === null || profilePicBodyUrl === "") {
+      // Allow clearing the profile picture by explicitly passing null or empty string
+      profile.profile_pic = null;
     }
     await profile.save();
   }
@@ -114,4 +119,19 @@ export const recommendVehicle = async (vehicle_type, weight, length, width, heig
     is_upgrade: true,
     message: "Recommended upgrade due to package size."
   };
+};
+
+export const deleteAddress = async (address_id, user_id) => {
+  const address = await usersRepository.findAddressById(address_id);
+  
+  if (!address) {
+    throw new Error("Address not found");
+  }
+
+  // Ensure the address belongs to the authenticated user
+  if (address.customer_id.toString() !== user_id.toString()) {
+    throw new Error("Unauthorized to delete this address");
+  }
+
+  return await usersRepository.deleteAddressById(address_id);
 };

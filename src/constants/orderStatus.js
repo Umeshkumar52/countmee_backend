@@ -60,11 +60,12 @@ export const DOCUMENT_APPROVAL_STATUS = {
   APPROVED: "approved",
   REJECTED: "rejected",
 };
-
 export const PAYMENT_STATUS = {
-  ACTIVE: "active",
-  COMPLETED: "completed",
-  PAID: "paid",
-  SUCCESS: "success",
-  FAILED: "failed",
+  ACTIVE: "ACTIVE",
+  PAID: "PAID",
+  SUCCESS: "SUCCESS",
+  FAILED: "FAILED",
+  REFUNDED: "REFUNDED",
+  EXPIRED: "EXPIRED",
+  TERMINATED: "TERMINATED",
 };

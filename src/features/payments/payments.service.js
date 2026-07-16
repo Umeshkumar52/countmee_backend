@@ -4,7 +4,12 @@ import { User } from "../users/user.model.js";
 import { Wallet } from "./wallet.model.js";
 import { WalletTransaction } from "./walletTransaction.model.js";
 import { sendNotification } from "../../common/utils/sendNotification.js";
-import { ROLES, ORDER_STATUS, PAYOUT_STATUS, PAYMENT_STATUS } from "../../constants/index.js";
+import {
+  ROLES,
+  ORDER_STATUS,
+  PAYOUT_STATUS,
+  PAYMENT_STATUS,
+} from "../../constants/index.js";
 import { broadcastOrderToNearbyDPs } from "../orders/orders.service.js";
 import { PackageDetail } from "../orders/packageDetail.model.js";
 import axios from "axios";
@@ -122,8 +127,11 @@ export const cashfreeWebhook = async (data) => {
           );
 
           if (payment) {
-            const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
-            const waitChargeDoc = await OrderWaitCharge.findOne({ order_id: payment.order_id }).session(session);
+            const { OrderWaitCharge } =
+              await import("../orders/orderWaitCharge.model.js");
+            const waitChargeDoc = await OrderWaitCharge.findOne({
+              order_id: payment.order_id,
+            }).session(session);
             if (waitChargeDoc && waitChargeDoc.payment_status === "unpaid") {
               waitChargeDoc.payment_status = "paid";
               waitChargeDoc.payment_method = "cashfree";
@@ -304,9 +312,11 @@ export const recharge = async (
     wallet = await paymentsRepository.createWallet({ user_id, balance: 0 });
   }
 
-  const isSuccessful = [PAYMENT_STATUS.PAID, PAYMENT_STATUS.SUCCESS, PAYMENT_STATUS.COMPLETED].includes(
-    status.toUpperCase(),
-  );
+  const isSuccessful = [
+    PAYMENT_STATUS.PAID,
+    PAYMENT_STATUS.SUCCESS,
+    PAYMENT_STATUS.COMPLETED,
+  ].includes(status.toUpperCase());
 
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -531,7 +541,7 @@ export const initiateOrderPayment = async (user_id, order_id) => {
 
     const result = response.data;
     if (result.payment_session_id) {
-      await Payment.create({
+      const pay = await Payment.create({
         user_id,
         order_id,
         cf_order_id,
@@ -540,7 +550,8 @@ export const initiateOrderPayment = async (user_id, order_id) => {
         status: PAYMENT_STATUS.ACTIVE,
         payment_mode: "Cashfree Direct",
       });
-
+      // order.payment_id = pay?._id;
+      // order.save();
       return {
         cf_order_id,
         payment_session_id: result.payment_session_id,
@@ -575,7 +586,7 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
       try {
         const payment = await Payment.findOneAndUpdate(
           { cf_order_id, status: PAYMENT_STATUS.ACTIVE },
-          { status: "SUCCESS" },
+          { status: PAYMENT_STATUS.SUCCESS },
           { new: true, session },
         );
 
@@ -634,8 +645,13 @@ export const verifyOrderPayment = async (cf_order_id, order_id) => {
 };
 
 export const payWaitingChargeFromWallet = async (user_id, order_id) => {
-  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
-  const waitChargeDoc = await OrderWaitCharge.findOne({ order_id, user_id, payment_status: "unpaid" });
+  const { OrderWaitCharge } =
+    await import("../orders/orderWaitCharge.model.js");
+  const waitChargeDoc = await OrderWaitCharge.findOne({
+    order_id,
+    user_id,
+    payment_status: "unpaid",
+  });
   if (!waitChargeDoc) {
     throw new Error("No unpaid waiting charge found for this order");
   }
@@ -654,15 +670,18 @@ export const payWaitingChargeFromWallet = async (user_id, order_id) => {
     wallet.balance -= amount;
     await wallet.save({ session });
 
-    await paymentsRepository.createWalletTransaction({
-      wallet_id: wallet._id,
-      amount,
-      type: "debit",
-      description: `Manual payment for waiting charges of Order #${order_id}`,
-      transaction_type: "waiting_charge",
-      reference_id: order_id,
-      status: "completed",
-    }, session);
+    await paymentsRepository.createWalletTransaction(
+      {
+        wallet_id: wallet._id,
+        amount,
+        type: "debit",
+        description: `Manual payment for waiting charges of Order #${order_id}`,
+        transaction_type: "waiting_charge",
+        reference_id: order_id,
+        status: "completed",
+      },
+      session,
+    );
 
     waitChargeDoc.payment_status = "paid";
     waitChargeDoc.payment_method = "wallet";
@@ -689,11 +708,16 @@ export const payWaitingChargeFromWallet = async (user_id, order_id) => {
 };
 
 export const initiateWaitingChargePayment = async (user_id, order_id) => {
-  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+  const { OrderWaitCharge } =
+    await import("../orders/orderWaitCharge.model.js");
   const user = await User.findById(user_id);
   if (!user) throw new Error("User not found");
 
-  const waitChargeDoc = await OrderWaitCharge.findOne({ order_id, user_id, payment_status: "unpaid" });
+  const waitChargeDoc = await OrderWaitCharge.findOne({
+    order_id,
+    user_id,
+    payment_status: "unpaid",
+  });
   if (!waitChargeDoc) {
     throw new Error("No unpaid waiting charge found for this order");
   }
@@ -748,12 +772,15 @@ export const initiateWaitingChargePayment = async (user_id, order_id) => {
     throw new Error("Failed to retrieve payment_session_id from Cashfree API");
   } catch (error) {
     console.error("Cashfree Initiate Error (Waiting Charge):", error);
-    throw new Error("Failed to create Cashfree order for waiting charge payment");
+    throw new Error(
+      "Failed to create Cashfree order for waiting charge payment",
+    );
   }
 };
 
 export const verifyWaitingChargePayment = async (cf_order_id, order_id) => {
-  const { OrderWaitCharge } = await import("../orders/orderWaitCharge.model.js");
+  const { OrderWaitCharge } =
+    await import("../orders/orderWaitCharge.model.js");
   try {
     const response = await axios.get(`${CASHFREE_BASE_URL}/${cf_order_id}`, {
       headers: {
@@ -777,7 +804,9 @@ export const verifyWaitingChargePayment = async (cf_order_id, order_id) => {
         );
 
         if (payment) {
-          const waitChargeDoc = await OrderWaitCharge.findOne({ order_id }).session(session);
+          const waitChargeDoc = await OrderWaitCharge.findOne({
+            order_id,
+          }).session(session);
           if (waitChargeDoc && waitChargeDoc.payment_status === "unpaid") {
             waitChargeDoc.payment_status = "paid";
             waitChargeDoc.payment_method = "cashfree";
@@ -794,7 +823,10 @@ export const verifyWaitingChargePayment = async (cf_order_id, order_id) => {
           }
           await session.commitTransaction();
           session.endSession();
-          return { success: true, message: "Waiting charge payment verified successfully" };
+          return {
+            success: true,
+            message: "Waiting charge payment verified successfully",
+          };
         } else {
           await session.abortTransaction();
           session.endSession();
@@ -812,4 +844,3 @@ export const verifyWaitingChargePayment = async (cf_order_id, order_id) => {
     throw new Error("Waiting charge payment verification failed");
   }
 };
-

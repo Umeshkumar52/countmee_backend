@@ -31,7 +31,10 @@ export const getDashboard = async (req, res, next) => {
 
 export const getDeliveryPartnerPage = async (req, res, next) => {
   try {
-    const result = await adminService.getDpList();
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || "";
+    const result = await adminService.getDpList(page, limit, search);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);
@@ -141,7 +144,10 @@ export const deleteDp = async (req, res, next) => {
 
 export const getCustomerPage = async (req, res, next) => {
   try {
-    const result = await adminService.getCustomersList();
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || "";
+    const result = await adminService.getCustomersList(page, limit, search);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);

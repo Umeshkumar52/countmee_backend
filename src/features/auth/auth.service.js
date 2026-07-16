@@ -100,7 +100,7 @@ export const registerCustomer = async (name, phone, email, dob) => {
 
   // Send OTP
   const message = `Your CountMee Courier verification code is ${otp}`;
-  
+
   ///// ORIGINAL CODE /////
   // sendOTPViaSMS(phone, message).catch((err) =>
   //   console.error("SMS Failed:", err.message),
@@ -137,7 +137,7 @@ export const loginCustomer = async (phone) => {
 
   // For Testing
   const otp = "1234";
-  
+
   ///// ORIGINAL CODE /////
   // const otp = Math.floor(1000 + Math.random() * 9000).toString();
   // const redisClient = getRedisClient();
@@ -146,7 +146,7 @@ export const loginCustomer = async (phone) => {
   /////////////////////////
 
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
-  
+
   ///// ORIGINAL CODE /////
   // sendOTPViaSMS(phone, message).catch((err) =>
   //   console.error("SMS Failed:", err.message),
@@ -198,7 +198,7 @@ export const resendOtp = async (phone) => {
   }
   // For Testing
   const otp = "1234";
-  
+
   ///// ORIGINAL CODE /////
   // const otp = Math.floor(1000 + Math.random() * 9000).toString();
   /////////////////////////
@@ -249,7 +249,7 @@ export const registerDp = async (name, phone, email, dob) => {
   /////////////////////////
 
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
-  
+
   ///// ORIGINAL CODE /////
   // sendOTPViaSMS(phone, message).catch((err) =>
   //   console.error("SMS Failed:", err.message),
@@ -299,7 +299,7 @@ export const loginDp = async (phone) => {
   /////////////////////////
 
   const message = `Welcome to CountMee, your OTP for the login is ${otp} to the CountMee.`;
-  
+
   ///// ORIGINAL CODE /////
   // sendOTPViaSMS(dp.phone, message).catch((err) =>
   //   console.error("SMS Failed:", err.message),
@@ -471,7 +471,7 @@ export const deleteAccount = async (userId) => {
       // We do not await in the transaction loop to save time, but map them to Promises
       const deletePromises = imageUrlsToClean.map((url) => {
         const publicId = extractCloudinaryPublicId(url);
-        if (publicId) return deleteFromCloudinary(publicId).catch(() => { });
+        if (publicId) return deleteFromCloudinary(publicId).catch(() => {});
         return Promise.resolve();
       });
       await Promise.all(deletePromises);
@@ -604,7 +604,7 @@ export const resetPassword = async (identifier, otp, newPassword) => {
   //   throw new Error("OTP has expired or does not exist");
   // }
   /////////////////////////
-  
+
   if (storedOtp !== otp) {
     throw new Error("Invalid OTP");
   }

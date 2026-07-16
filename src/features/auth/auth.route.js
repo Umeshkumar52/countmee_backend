@@ -48,4 +48,5 @@ router.post("/fcm-token", authenticate, updateFcmToken);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
 
+router.post("/read-notification", authenticate, pdcController.readNotifications);
 export default router;
