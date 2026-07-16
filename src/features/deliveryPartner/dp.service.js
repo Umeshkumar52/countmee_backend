@@ -8,6 +8,8 @@ import {
   ACTIVE_ORDER_STATUSES,
   USER_ACTION_STATUS,
   DOCUMENT_APPROVAL_STATUS,
+  BROADCAST_STATUS,
+  PAYOUT_STATUS,
 } from "../../constants/index.js";
 import { User } from "../users/user.model.js";
 import { Order } from "../orders/order.model.js";
@@ -234,6 +236,8 @@ export const updateBankDetail = async (user_id, bankData, files) => {
     bank_name: bankData.bank_name,
     bank_acc_number: bankData.bank_acc_number,
     bank_ifsc: bankData.bank_ifsc,
+    bank_status: null,
+    bank_reject_reason: null,
   };
 
   if (bank_imagefront) updateFields.bank_imagefront = bank_imagefront;
@@ -917,6 +921,8 @@ export const markArrival = async (
         },
         { upsert: true, session },
       );
+
+
     } else {
       order.dp_drop_arrival_time = new Date();
       sendOTPViaSMS(
@@ -936,6 +942,8 @@ export const markArrival = async (
         },
         { upsert: true, session },
       );
+
+
     }
 
     await order.save({ session });
@@ -1132,6 +1140,17 @@ export const orderAccept = async (orderIds, status, user_id) => {
               travel.earnings = earnings;
               await travel.save({ session });
 
+              let oldDpWaitEarning = 0;
+              const waitChargeDocOld = await OrderWaitCharge.findOne({ order_id: travel.order_id }).session(session);
+              if (waitChargeDocOld) {
+                if (String(waitChargeDocOld.pickup_dp_id) === String(travel.user_id)) {
+                  oldDpWaitEarning += (waitChargeDocOld.pickup_waiting_charge || 0);
+                }
+                if (String(waitChargeDocOld.delivery_dp_id) === String(travel.user_id)) {
+                  oldDpWaitEarning += (waitChargeDocOld.drop_waiting_charge || 0);
+                }
+              }
+
               await DpPayout.findOneAndUpdate(
                 { travel_id: travel._id },
                 {
@@ -1139,6 +1158,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
                   order_id: travel.order_id,
                   broadcast_id: oldOrderRequest.broadcast_id || null,
                   earnings,
+                  waiting_charge_earning: oldDpWaitEarning
                 },
                 { upsert: true, session },
               );
@@ -1211,6 +1231,17 @@ export const orderAccept = async (orderIds, status, user_id) => {
               currentTravel = currentTravel[0];
             }
 
+            let newDpWaitEarning = 0;
+            const newDpWaitDoc = await OrderWaitCharge.findOne({ order_id: order._id }).session(session);
+            if (newDpWaitDoc) {
+              if (String(newDpWaitDoc.pickup_dp_id) === String(user_id)) {
+                newDpWaitEarning += (newDpWaitDoc.pickup_waiting_charge || 0);
+              }
+              if (String(newDpWaitDoc.delivery_dp_id) === String(user_id)) {
+                newDpWaitEarning += (newDpWaitDoc.drop_waiting_charge || 0);
+              }
+            }
+
             await DpPayout.findOneAndUpdate(
               { travel_id: currentTravel._id },
               {
@@ -1218,6 +1249,7 @@ export const orderAccept = async (orderIds, status, user_id) => {
                 order_id: order._id,
                 broadcast_id: orderRequest.broadcast_id,
                 earnings: currentDpEarnings,
+                waiting_charge_earning: newDpWaitEarning
               },
               { upsert: true, session },
             );
@@ -1459,8 +1491,6 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
   try {
     const order = await Order.findById(order_id).session(session);
     if (!order) {
-      await session.abortTransaction();
-      session.endSession();
       throw new Error("Order not found");
     }
 
@@ -1520,14 +1550,6 @@ export const pickupOrderImageUpload = async (order_id, user_id, files) => {
         { upsert: true, session },
       );
 
-      // Credit 100% of pickup waiting charge to this DP's payout (use $inc to safely accumulate)
-      if (waitingCharge > 0) {
-        await DpPayout.findOneAndUpdate(
-          { order_id: order._id, dp_auth_id: user_id },
-          { $inc: { waiting_charge_earning: waitingCharge } },
-          { upsert: false, session },
-        );
-      }
     }
 
     if (orderRequest.request_type === "direct") {
@@ -1717,14 +1739,6 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
         { upsert: true, session },
       );
 
-      // Credit 100% of drop waiting charge to THIS drop DP's payout (use $inc to safely accumulate)
-      if (dropWaitingCharge > 0) {
-        await DpPayout.findOneAndUpdate(
-          { order_id: order._id, dp_auth_id: user_id },
-          { $inc: { waiting_charge_earning: dropWaitingCharge } },
-          { upsert: false, session },
-        );
-      }
     }
 
     // Process Wallet Deduction and Payment Status
@@ -1786,9 +1800,12 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
           });
         }
       } else {
-        waitChargeDoc.payment_status = "paid";
+        await OrderWaitCharge.deleteOne({ _id: waitChargeDoc._id }).session(session);
       }
-      await waitChargeDoc.save({ session });
+      
+      if (totalCharge > 0) {
+        await waitChargeDoc.save({ session });
+      }
     }
 
     order.delivery_dp_id = user_id;
@@ -1890,6 +1907,17 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
       travel.earnings = earning;
       await travel.save({ session });
 
+      let myWaitEarning = 0;
+      const waitChargeDocFinal = await OrderWaitCharge.findOne({ order_id: order._id }).session(session);
+      if (waitChargeDocFinal) {
+        if (String(waitChargeDocFinal.pickup_dp_id) === String(travel.user_id)) {
+          myWaitEarning += (waitChargeDocFinal.pickup_waiting_charge || 0);
+        }
+        if (String(waitChargeDocFinal.delivery_dp_id) === String(travel.user_id)) {
+          myWaitEarning += (waitChargeDocFinal.drop_waiting_charge || 0);
+        }
+      }
+
       await DpPayout.findOneAndUpdate(
         { travel_id: travel._id },
         {
@@ -1897,6 +1925,7 @@ export const dropOrderToCustomer = async (order_id, user_id, drop_otp) => {
           order_id: order._id,
           broadcast_id: order.broadcast_id || null,
           earnings: earning,
+          waiting_charge_earning: myWaitEarning
         },
         { upsert: true, session },
       );
@@ -2028,7 +2057,7 @@ export const getOrderHistory = async (user_id) => {
 
   const orderIds = Array.from(new Set(reqs.map((r) => r.order_id)));
 
-  const orders = await Order.find({ _id: { $in: orderIds } });
+  const orders = await Order.find({ _id: { $in: orderIds } }).sort({ created_at: -1 });
 
   const ordersWithEarning = [];
   for (const order of orders) {

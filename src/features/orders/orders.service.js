@@ -825,7 +825,7 @@ export const rateDp = async (
 };
 
 export const getMyDues = async (user_id) => {
-  return await OrderWaitCharge.find({ user_id, payment_status: "unpaid" }).sort(
+  return await OrderWaitCharge.find({ user_id, payment_status: "unpaid", total_waiting_charge: { $gt: 0 } }).sort(
     { created_at: -1 },
   );
 };

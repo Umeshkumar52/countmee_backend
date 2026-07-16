@@ -28,14 +28,6 @@ export const dpDetailsSchema = Joi.object({
 });
 
 export const dpBankDetailsSchema = Joi.object({
-  user_id: Joi.string()
-    .regex(objectIdRegex)
-    .required()
-    .messages({
-      'string.empty': 'User ID cannot be empty',
-      'string.pattern.base': 'Invalid User ID format',
-      'any.required': 'User ID is required'
-    }),
   bank_name: Joi.string()
     .trim()
     .required()

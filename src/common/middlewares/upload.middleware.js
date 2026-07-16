@@ -21,8 +21,11 @@ const storage = multer.diskStorage({
 
 // File validation filter
 const fileFilter = (req, file, cb) => {
-  const isImage = file.mimetype.startsWith('image/');
-  const isPdf = file.mimetype === 'application/pdf' && path.extname(file.originalname).toLowerCase() === '.pdf';
+  const ext = path.extname(file.originalname).toLowerCase();
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'];
+  
+  const isImage = file.mimetype.startsWith('image/') || imageExtensions.includes(ext);
+  const isPdf = (file.mimetype === 'application/pdf' || file.mimetype === 'application/octet-stream') && ext === '.pdf';
 
   if (isImage || isPdf) {
     return cb(null, true);

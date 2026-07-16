@@ -170,5 +170,8 @@ export const rateDp = asyncHandler(async (req, res) => {
 export const myDues = asyncHandler(async (req, res) => {
   const { _id } = req.user;
   const dues = await ordersService.getMyDues(_id);
-  return res.json(ApiResponse.success({ dues }, "Customer Dues"));
+  
+  const totalAmountOfDue = dues.reduce((sum, item) => sum + (item.total_waiting_charge || 0), 0);
+  
+  return res.json(ApiResponse.success({ dues, totalAmountOfDue }, "Customer Dues"));
 });

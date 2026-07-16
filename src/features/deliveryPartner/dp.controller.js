@@ -13,7 +13,9 @@ import { validate } from "../../common/utils/validationHelper.js";
 import * as dpValidation from "./dp.validation.js";
 import { ApiError } from "../../common/utils/ApiError.js";
 import { Order } from "../orders/order.model.js";
+import { OrderWaitCharge } from "../orders/orderWaitCharge.model.js";
 import { DpDocument } from "./dpDocument.model.js";
+import { DpPayout } from "./dpPayout.model.js";
 import { DpDetail } from "./dpDetail.model.js";
 import { Broadcast } from "../orders/broadcast.model.js";
 import { getAgenda } from "../../common/services/agenda.service.js";
@@ -523,13 +525,30 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
     travel.earnings = earning;
     await travel.save({ session });
 
-    await dpService.createPayout({
-      dp_auth_id: user_id,
-      order_id: order._id,
-      broadcast_id: order.broadcast_id || null,
-      travel_id: travel._id,
-      earnings: earning,
-    });
+    let myWaitEarning = 0;
+    const waitChargeDocFinal = await OrderWaitCharge.findOne({ order_id: order._id }).session(session);
+    if (waitChargeDocFinal) {
+      if (String(waitChargeDocFinal.pickup_dp_id) === String(user_id)) {
+        myWaitEarning += (waitChargeDocFinal.pickup_waiting_charge || 0);
+      }
+      if (String(waitChargeDocFinal.delivery_dp_id) === String(user_id)) {
+        myWaitEarning += (waitChargeDocFinal.drop_waiting_charge || 0);
+      }
+    }
+
+    await DpPayout.findOneAndUpdate(
+      { travel_id: travel._id },
+      {
+        $set: {
+          dp_auth_id: user_id,
+          order_id: order._id,
+          broadcast_id: order.broadcast_id || null,
+          earnings: earning,
+          waiting_charge_earning: myWaitEarning
+        }
+      },
+      { upsert: true, session }
+    );
 
     const admin = await User.findOne({ role: ROLES.ADMIN }).session(session);
     const dpUser = await User.findById(user_id).session(session);

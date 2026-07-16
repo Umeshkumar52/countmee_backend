@@ -125,8 +125,9 @@ export const submit_pdc_documents_form = asyncHandler(async (req, res) => {
 
   try {
     await pdcService.submitDocuments(userId, req.body, req.files);
+    const pdcDocument = await pdcService.getPdcDocument(userId);
     return res.json(
-      ApiResponse.success(null, "Documents updated successfully"),
+      ApiResponse.success({ document: pdcDocument }, "Documents updated successfully"),
     );
   } catch (error) {
     throw new ApiError(400, "Failed to update documents: " + error.message);

@@ -27,9 +27,10 @@ export const registerCustomer = asyncHandler(async (req, res) => {
 });
 
 export const loginCustomer = asyncHandler(async (req, res) => {
+  console.log(`[Port: ${process.env.PORT || 8000}] loginCustomer API called with body:`, req.body);
   const { phone } = validate(authValidation.loginCustomerSchema, req.body);
   const result = await authService.loginCustomer(phone);
-  console.log("result", result);
+  console.log(`[Port: ${process.env.PORT || 8000}] loginCustomer result:`, result);
   const data = {
     user: {
       id: result._id,
@@ -46,8 +47,10 @@ export const loginCustomer = asyncHandler(async (req, res) => {
 });
 
 export const verifyOtp = asyncHandler(async (req, res) => {
+  console.log(`[Port: ${process.env.PORT || 8000}] verifyOtp API called with body:`, req.body);
   const { user_id, otp } = validate(authValidation.verifyOtpSchema, req.body);
   const result = await authService.verifyOtp(user_id, otp);
+  console.log(`[Port: ${process.env.PORT || 8000}] verifyOtp result:`, result);
   return res.json(ApiResponse.success(result, "OTP verified successfully"));
 });
 

@@ -156,19 +156,19 @@ export const submitDocuments = async (userId, bodyData, files) => {
         uploadResults[field] = uploadResult.secure_url;
 
         if (field === "aadhar_front_image" || field === "aadhar_back_image") {
-          statusResets.aadhar_status = "Pending";
+          statusResets.aadhar_status = "pending";
           statusResets.aadhar_reject_reason = null;
         }
         if (field === "pancard_image") {
-          statusResets.pan_status = "Pending";
+          statusResets.pan_status = "pending";
           statusResets.pan_reject_reason = null;
         }
         if (field === "gst_doc") {
-          statusResets.gst_status = "Pending";
+          statusResets.gst_status = "pending";
           statusResets.gst_reject_reason = null;
         }
         if (field === "passbook_image") {
-          statusResets.bank_status = "Pending";
+          statusResets.bank_status = "pending";
           statusResets.bank_reject_reason = null;
         }
       }
@@ -176,7 +176,7 @@ export const submitDocuments = async (userId, bodyData, files) => {
   }
 
   if (Object.keys(statusResets).length > 0) {
-    statusResets.status = "Pending";
+    statusResets.status = "pending";
   }
 
   // Strictly require latitude and longitude from the frontend
