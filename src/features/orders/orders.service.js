@@ -97,7 +97,8 @@ export const getCharges = async (
 
   const calc = calculateFinalCharges(deliverCharge, distanceValue);
 
-  const itemsMultiplier = no_of_items || 1;
+  // const itemsMultiplier = no_of_items || 1;
+  const itemsMultiplier = 1;
   const netPrice = calc.net_price * itemsMultiplier;
   const exactPrice = Math.round(netPrice * 100) / 100;
   const exactGst = Math.round(exactPrice * 0.05 * 100) / 100; // 5% GST
@@ -148,9 +149,12 @@ export const broadcastOrderToNearbyDPs = async (
       (deliverCharge.dp_commission / 100)
     ).toFixed(2);
 
-    const eligibleVehicleTypes = [order.mode_of_transport];
-    if (order.mode_of_transport === "Two Wheeler") {
-      eligibleVehicleTypes.push("By Hand");
+    let eligibleVehicleTypes = [order.mode_of_transport];
+    if (
+      order.mode_of_transport === "Two Wheeler" ||
+      order.mode_of_transport === "By Hand"
+    ) {
+      eligibleVehicleTypes = ["Two Wheeler", "By Hand"];
     }
 
     // 4. Geo-filter Active DPs whose vehicle matches using Aggregation
@@ -723,9 +727,12 @@ export const notifyDp = async (orderId, packageDetailsId) => {
     return null;
   }
 
-  const eligibleVehicleTypes = [order.mode_of_transport];
-  if (order.mode_of_transport === "Two Wheeler") {
-    eligibleVehicleTypes.push("By Hand");
+  let eligibleVehicleTypes = [order.mode_of_transport];
+  if (
+    order.mode_of_transport === "Two Wheeler" ||
+    order.mode_of_transport === "By Hand"
+  ) {
+    eligibleVehicleTypes = ["Two Wheeler", "By Hand"];
   }
 
   // Busy DPs who have already accepted another active order
@@ -844,7 +851,9 @@ export const rateDp = async (
 };
 
 export const getMyDues = async (user_id) => {
-  return await OrderWaitCharge.find({ user_id, payment_status: "unpaid", total_waiting_charge: { $gt: 0 } }).sort(
-    { created_at: -1 },
-  );
+  return await OrderWaitCharge.find({
+    user_id,
+    payment_status: "unpaid",
+    total_waiting_charge: { $gt: 0 },
+  }).sort({ created_at: -1 });
 };

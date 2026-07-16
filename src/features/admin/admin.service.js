@@ -2170,9 +2170,12 @@ export const findNearestDpsForOrders = async (orderIds) => {
   if (!orderTransportMode) {
     throw new Error("Order does not specify a valid vehicle type");
   }
-  const eligibleVehicleTypes = [orderTransportMode];
-  if (orderTransportMode === "Two Wheeler") {
-    eligibleVehicleTypes.push("By Hand");
+  let eligibleVehicleTypes = [orderTransportMode];
+  if (
+    orderTransportMode === "Two Wheeler" ||
+    orderTransportMode === "By Hand"
+  ) {
+    eligibleVehicleTypes = ["Two Wheeler", "By Hand"];
   }
 
   const aggregatedDps = await DpDetail.aggregate([

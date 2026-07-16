@@ -1,3 +1,4 @@
+import fs from "fs";
 import * as adminService from "./admin.service.js";
 import { validate } from "../../common/utils/validationHelper.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
@@ -111,6 +112,18 @@ export const postBulkAddDp = async (req, res, next) => {
     return res.json(ApiResponse.success(result));
   } catch (err) {
     if (err.errors) {
+      if (req.files) {
+        const filesToDelete = Array.isArray(req.files)
+          ? req.files
+          : Object.values(req.files).flat();
+        filesToDelete.forEach((file) => {
+          fs.unlink(file.path, (unlinkErr) => {
+            if (unlinkErr && unlinkErr.code !== 'ENOENT') {
+              console.warn(`Cleanup failed for ${file.path}:`, unlinkErr.message);
+            }
+          });
+        });
+      }
       return res.status(400).json({
         success: false,
         message: "Validation Failed",

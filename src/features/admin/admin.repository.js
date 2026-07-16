@@ -93,9 +93,23 @@ export const findAllDpDetails = async (page = 1, limit = 10, search = "") => {
   const total = await DpDetail.countDocuments(query);
   const totalPages = Math.ceil(total / limit);
 
+  const detailUserIds = details.map((d) => d.user_id._id || d.user_id);
+  const dpDocuments = await DpDocument.find({ user_id: { $in: detailUserIds } });
+  
+  const dpDocMap = new Map();
+  dpDocuments.forEach((doc) => {
+    dpDocMap.set(doc.user_id.toString(), doc);
+  });
+
   const dpList = details.map((d) => {
     const obj = d.toObject();
     obj.user = obj.user_id;
+    
+    const doc = dpDocMap.get((obj.user_id._id || obj.user_id).toString());
+    if (doc) {
+      obj.vehicle_type = doc.vehicle_type;
+    }
+    
     return obj;
   });
 
@@ -182,6 +196,34 @@ export const findAllCustomers = async (page = 1, limit = 10, search = "") => {
   });
 
   return { customers: customerList, total, page, totalPages };
+};
+
+export const findAllCustomersUnpaginated = async (search = "") => {
+  const query = { role: ROLES.USER };
+  
+  if (search) {
+    const searchRegex = new RegExp(search, "i");
+    query.$or = [
+      { name: searchRegex },
+      { email: searchRegex },
+      { phone: searchRegex },
+    ];
+  }
+
+  const users = await User.find(query).sort({ createdAt: -1 });
+
+  const customers = await Customer.find({});
+  const customerMap = new Map(
+    customers.map((c) => [c.user_id ? c.user_id.toString() : "", c]),
+  );
+
+  const customerList = users.map((user) => {
+    const userObj = user.toObject();
+    userObj.customer = customerMap.get(user._id.toString()) || null;
+    return userObj;
+  });
+
+  return customerList;
 };
 
 export const findCustomerByUserId = async (userId) => {
