@@ -1,6 +1,6 @@
 import * as authService from "./auth.service.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
-import { ROLES } from '../../constants/index.js';
+import { ROLES } from "../../constants/index.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
 import { validate } from "../../common/utils/validationHelper.js";
 import * as authValidation from "./auth.validation.js";
@@ -81,7 +81,7 @@ export const dpOtp = asyncHandler(async (req, res) => {
 });
 
 export const deleteAccount = asyncHandler(async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.user?._id;
   const message = await authService.deleteAccount(userId);
   return res.json(ApiResponse.success(null, message));
 });
@@ -103,17 +103,22 @@ export const updateFcmToken = asyncHandler(async (req, res) => {
 });
 
 export const forgotPassword = asyncHandler(async (req, res) => {
-  const { identifier } = validate(authValidation.forgotPasswordSchema, req.body);
+  const { identifier } = validate(
+    authValidation.forgotPasswordSchema,
+    req.body,
+  );
   const result = await authService.forgotPassword(identifier);
   return res.json(ApiResponse.success(result, result.message));
 });
 
 export const resetPassword = asyncHandler(async (req, res) => {
-  const { identifier, otp, newPassword, confirmPassword } = validate(authValidation.resetPasswordSchema, req.body);
+  const { identifier, otp, newPassword, confirmPassword } = validate(
+    authValidation.resetPasswordSchema,
+    req.body,
+  );
   if (newPassword !== confirmPassword) {
-    throw new ApiError(400, 'Passwords do not match');
+    throw new ApiError(400, "Passwords do not match");
   }
   const result = await authService.resetPassword(identifier, otp, newPassword);
   return res.json(ApiResponse.success(result, result.message));
 });
-

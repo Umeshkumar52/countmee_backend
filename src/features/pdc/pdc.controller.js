@@ -104,7 +104,7 @@ export const register_inner_form = asyncHandler(async (req, res) => {
       userId,
       name,
       email,
-      phone
+      phone,
     );
     return res.json(
       ApiResponse.success({ document }, "Records Updated Successfully"),
@@ -164,13 +164,13 @@ export const orderHistory = asyncHandler(async (req, res) => {
 });
 
 export const readNotifications = asyncHandler(async (req, res) => {
-  const { id, read_notification } = req.body;
+  const { id = "", read_notification } = req.body;
   const userId = req.user.id;
 
   if (read_notification === "all") {
     await Notification.updateMany(
-      { notifiable_id: userId, read_at: null },
-      { read_at: new Date() }
+      { notifiable_id: userId, is_read: false },
+      { read_at: new Date(), is_read: true },
     );
     return res.json(ApiResponse.success("all_notifications_marked_as_read"));
   }
@@ -178,7 +178,7 @@ export const readNotifications = asyncHandler(async (req, res) => {
   if (id) {
     const notification = await Notification.findByIdAndUpdate(
       id,
-      { read_at: new Date() },
+      { read_at: new Date(), is_read: true },
       { new: true },
     );
 
@@ -194,7 +194,11 @@ export const reloadPartial = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const notifications = await Notification.find({
     notifiable_id: userId,
-  }).sort({ created_at: -1 }).limit(100);
+    read_at: null,
+    is_read: false,
+  })
+    .sort({ created_at: -1 })
+    .limit(100);
   return res.json(ApiResponse.success({ notifications }));
 });
 
@@ -280,7 +284,7 @@ export const actionDrop = asyncHandler(async (req, res) => {
   const { order_id, action } = req.body;
   const pdcId = req.user.id || req.user._id;
 
-  if (!['accept', 'reject'].includes(action)) {
+  if (!["accept", "reject"].includes(action)) {
     throw new ApiError(400, "Invalid action. Use 'accept' or 'reject'.");
   }
 
@@ -298,13 +302,26 @@ export const broadcastOrder = asyncHandler(async (req, res) => {
   const pdcId = req.user.id || req.user._id;
 
   try {
-    const nearByDpsCount = await pdcService.triggerManualBroadcast(order_id, pdcId);
+    const nearByDpsCount = await pdcService.triggerManualBroadcast(
+      order_id,
+      pdcId,
+    );
 
     if (nearByDpsCount === 0) {
-      return res.json(ApiResponse.success(null, "Broadcast started! The 10-minute window is open. Waiting for delivery partners to come online or drive nearby."));
+      return res.json(
+        ApiResponse.success(
+          null,
+          "Broadcast started! The 10-minute window is open. Waiting for delivery partners to come online or drive nearby.",
+        ),
+      );
     }
 
-    return res.json(ApiResponse.success(null, `Broadcast started! Notified ${nearByDpsCount} nearby partners. The window will remain open for 10 minutes.`));
+    return res.json(
+      ApiResponse.success(
+        null,
+        `Broadcast started! Notified ${nearByDpsCount} nearby partners. The window will remain open for 10 minutes.`,
+      ),
+    );
   } catch (error) {
     throw new ApiError(400, error.message);
   }

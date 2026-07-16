@@ -759,6 +759,7 @@ export const myNotifications = asyncHandler(async (req, res) => {
   const notifications = await Notification.find({
     notifiable_id: userId,
     read_at: null,
+    is_read: false,
   }).sort({ created_at: -1 });
 
   return res.json(

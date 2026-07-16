@@ -5,6 +5,7 @@ import {
   ORDER_REQUEST_STATUS,
   ORDER_REQUEST_COMPLETE_STATUS,
   USER_ACTION_STATUS,
+  DOCUMENT_APPROVAL_STATUS,
 } from "../../constants/index.js";
 import { User } from "../users/user.model.js";
 import { Order } from "./order.model.js";
@@ -147,6 +148,11 @@ export const broadcastOrderToNearbyDPs = async (
       (deliverCharge.dp_commission / 100)
     ).toFixed(2);
 
+    const eligibleVehicleTypes = [order.mode_of_transport];
+    if (order.mode_of_transport === "Two Wheeler") {
+      eligibleVehicleTypes.push("By Hand");
+    }
+
     // 4. Geo-filter Active DPs whose vehicle matches using Aggregation
     const targetDps = await DpDetail.aggregate([
       {
@@ -158,7 +164,10 @@ export const broadcastOrderToNearbyDPs = async (
           distanceField: "distance_meters",
           maxDistance: maxDistanceMeters,
           spherical: true,
-          query: { online: true, document_approval: DOCUMENT_APPROVAL_STATUS.APPROVED },
+          query: {
+            online: true,
+            document_approval: DOCUMENT_APPROVAL_STATUS.APPROVED,
+          },
         },
       },
       // Join Vehicle Document to filter by mode_of_transport
@@ -173,7 +182,7 @@ export const broadcastOrderToNearbyDPs = async (
       { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
       {
         $match: {
-          "dpDocument.vehicle_type": order.mode_of_transport,
+          "dpDocument.vehicle_type": { $in: eligibleVehicleTypes },
         },
       },
       // Join User details for FCM token
@@ -518,7 +527,7 @@ export const cancelOrder = async (order_id, cancel_order_reason) => {
           transaction_type: "order_payment",
           type: "debit",
         });
-        console.log("Wallet Transaction for Refund:", wTx);
+
         if (wTx) {
           const wallet = await Wallet.findById(wTx.wallet_id);
           if (wallet) {
@@ -599,7 +608,11 @@ export const getTrackingDetails = async (userId, orderId) => {
     throw new Error("User details not found");
   }
 
-  const orderDoc = await Order.findById(orderId);
+  const orderDoc = await Order.findById(orderId)
+    .populate("payment_id")
+    .populate("wallet_transaction_id")
+    .populate("delivery_dp_id");
+
   let order_details = null;
   if (orderDoc) {
     const orderObj = orderDoc.toObject();
@@ -710,6 +723,11 @@ export const notifyDp = async (orderId, packageDetailsId) => {
     return null;
   }
 
+  const eligibleVehicleTypes = [order.mode_of_transport];
+  if (order.mode_of_transport === "Two Wheeler") {
+    eligibleVehicleTypes.push("By Hand");
+  }
+
   // Busy DPs who have already accepted another active order
   const activeRequests = await OrderRequest.find({
     status: ORDER_REQUEST_STATUS.ACCEPTED,
@@ -724,7 +742,7 @@ export const notifyDp = async (orderId, packageDetailsId) => {
     user_id: { $nin: busyDpIds },
   }).populate({
     path: "dpDocument",
-    match: { vehicle_type: order.mode_of_transport },
+    match: { vehicle_type: { $in: eligibleVehicleTypes } },
   });
 
   // Filter DPs where matching vehicle document exists
@@ -752,9 +770,11 @@ export const notifyDp = async (orderId, packageDetailsId) => {
 };
 
 export const getMyNotifications = async (userId) => {
-  return await Notification.find({ notifiable_id: userId, read_at: null }).sort(
-    { created_at: -1 },
-  );
+  return await Notification.find({
+    notifiable_id: userId,
+    read_at: null,
+    is_read: false,
+  }).sort({ created_at: -1 });
 };
 
 export const getCustomerRating = async (userId) => {

@@ -16,6 +16,10 @@ const notificationSchema = new mongoose.Schema(
       required: true,
       ref: "User",
     },
+    is_read: {
+      type: Boolean,
+      default: false,
+    },
     title: { type: String, required: true },
     message: { type: String, required: true },
     read_at: { type: Date, default: null },
@@ -35,7 +39,6 @@ notificationSchema.index({ created_at: 1 }, { expireAfterSeconds: 2592000 });
 
 notificationSchema.post("save", function (doc) {
   try {
-    console.log("notification save method has been called");
     // 1. Send via Socket.io (Real-time online users)
     const payload = {
       id: doc._id,
@@ -55,15 +58,17 @@ notificationSchema.post("save", function (doc) {
     User.findById(doc.notifiable_id)
       .select("+fcm_tokens")
       .lean()
-      .then(user => {
+      .then((user) => {
         if (user && user.fcm_tokens && user.fcm_tokens.length > 0) {
           sendPushNotification(user.fcm_tokens, doc.title, doc.message, {
             notification_id: doc._id.toString(),
             order_id: doc.order_id ? doc.order_id.toString() : "",
-          }).catch(err => console.error("[FCM Push Background Error]:", err.message));
+          }).catch((err) =>
+            console.error("[FCM Push Background Error]:", err.message),
+          );
         }
       })
-      .catch(err => console.error("[FCM User Lookup Error]:", err.message));
+      .catch((err) => console.error("[FCM User Lookup Error]:", err.message));
   } catch (error) {
     console.error(
       "[Notification Hook Error] Failed to broadcast notification:",

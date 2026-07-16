@@ -73,6 +73,7 @@ const orderSchema = new mongoose.Schema(
       enum: ["normal", "scheduled"],
       default: "normal",
     },
+
     schedule_date: { type: String, default: null },
     schedule_time: { type: String, default: null },
     broadcast_id: {
@@ -119,7 +120,7 @@ orderSchema.pre("save", async function (next) {
       const counter = await Counter.findOneAndUpdate(
         { id: "orderNumber" },
         { $inc: { seq: 1 } },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
       );
       this.orderNumber = `order_${counter.seq}`;
       next();

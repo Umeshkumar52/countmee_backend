@@ -17,7 +17,11 @@ import { uploadToCloudinary } from "../../common/services/cloudinary.service.js"
 import { getLatLongFromAddress } from "../tracking/maps.service.js";
 import { PackageDetail } from "../orders/packageDetail.model.js";
 import { User } from "../users/user.model.js";
-import { sendNotificationToUser } from "../../common/services/socket.service.js";
+
+import {
+  broadcastToAdmins,
+  sendNotificationToUser,
+} from "../../common/services/socket.service.js";
 import { sendPushNotification } from "../../common/services/firebase.service.js";
 import { AdminSetting } from "./adminSetting.model.js";
 import { DpCancellation } from "../deliveryPartner/dpCancellation.model.js";
@@ -111,9 +115,9 @@ export const getDashboardStats = async () => {
   };
 };
 
-export const getDpList = async () => {
-  const dpList = await adminRepository.findAllDpDetails();
-  return { dpList };
+export const getDpList = async (page = 1, limit = 10, search = "") => {
+  const result = await adminRepository.findAllDpDetails(page, limit, search);
+  return result;
 };
 
 export const getDpDetails = async (id) => {
@@ -132,13 +136,6 @@ export const updateDpDocumentStatus = async (
   status,
   reason,
 ) => {
-  const DpDocument = await adminRepository.findDpDocumentByUserId(document_id); // Wait, in the controller: doc = await DpDocument.findById(document_id);
-  const DpDocModel = mongoose.default.model("DpDocument");
-  const DpDetailModel = mongoose.default.model("DpDetail");
-
-  const doc = await DpDocModel.findById(document_id);
-  if (!doc) throw new Error("Document not found");
-
   const fieldMap = {
     aadhar: "adhar_status",
     dl: "dl_status",
@@ -166,8 +163,11 @@ export const updateDpDocumentStatus = async (
 
   if (!statusField) throw new Error("Invalid document type");
 
+  const doc = await adminRepository.findDpDocumentById(document_id);
+  if (!doc) throw new Error("Document not found");
+
   doc[statusField] = status;
-  if (status === "Reject") {
+  if (status === "rejected") {
     doc[rejectField] = reason || "";
   } else {
     doc[rejectField] = null;
@@ -191,27 +191,33 @@ export const updateDpDocumentStatus = async (
   let anyPending = false;
 
   for (const f of allFields) {
-    if (doc[f] !== "Accept") allVerified = false;
-    if (doc[f] === "Reject") atLeastOneRejected = true;
+    if (doc[f] !== "approved") allVerified = false;
+    if (doc[f] === "rejected") atLeastOneRejected = true;
     if (doc[f] === null || doc[f] === undefined) anyPending = true;
   }
 
-  let overallStatus = "Pending";
+  let overallStatus = "pending";
   if (atLeastOneRejected) overallStatus = DOCUMENT_APPROVAL_STATUS.REJECTED;
   else if (allVerified) overallStatus = "Verified";
   else if (anyPending) overallStatus = DOCUMENT_APPROVAL_STATUS.PENDING;
 
-  await DpDetailModel.updateOne(
-    { user_id: doc.user_id },
-    { status: overallStatus },
-  );
+  await DpDetail.updateOne({ user_id: doc.user_id }, { status: overallStatus });
 
   return { message: "Document status updated successfully" };
 };
 
 export const updateDpDocumentApproval = async (userId, document_approval) => {
-  const DpDetailModel = mongoose.default.model("DpDetail");
-  await DpDetailModel.findByIdAndUpdate(userId, { document_approval });
+  let overallStatus = "pending";
+  if (document_approval === "approved") {
+    overallStatus = "Verified";
+  } else if (document_approval === "rejected") {
+    overallStatus = DOCUMENT_APPROVAL_STATUS.REJECTED;
+  }
+
+  await DpDetail.updateOne(
+    { _id: userId },
+    { document_approval, status: overallStatus }
+  );
   return { message: `Approval status updated to ${document_approval}` };
 };
 
@@ -300,7 +306,7 @@ export const addDp = async (body, files) => {
     address,
     profile_img: uploadResults.profile_img || null,
     online: false,
-    document_approval: { $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"] },
+    document_approval: "approved",
     status: "Verified",
   });
 
@@ -345,14 +351,14 @@ export const addDp = async (body, files) => {
     emission_certificate_document:
       uploadResults.emission_certificate_document || null,
     permit_document: uploadResults.permit_document || null,
-    adhar_status: "Accept",
-    rc_status: "Accept",
-    dl_status: "Accept",
-    bank_status: "Accept",
-    rv_status: "Accept",
-    insurance_status: "Accept",
-    emission_status: "Accept",
-    permit_status: "Accept",
+    adhar_status: "approved",
+    rc_status: "approved",
+    dl_status: "approved",
+    bank_status: "approved",
+    rv_status: "approved",
+    insurance_status: "approved",
+    emission_status: "approved",
+    permit_status: "approved",
   });
 
   return { message: "Delivery Partner registered successfully" };
@@ -508,9 +514,7 @@ export const bulkAddDp = async (dps, files) => {
         address: dp.address || "",
         profile_img: uploadResults.profile_img || dp.profile_img || null,
         online: false,
-        document_approval: {
-          $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
-        },
+        document_approval: "approved",
         status: "Verified",
       });
 
@@ -565,14 +569,14 @@ export const bulkAddDp = async (dps, files) => {
         permit_document:
           uploadResults.permit_document || dp.permit_document || null,
         status: "Verified",
-        adhar_status: "Accept",
-        rc_status: "Accept",
-        dl_status: "Accept",
-        bank_status: "Accept",
-        rv_status: "Accept",
-        insurance_status: "Accept",
-        emission_status: "Accept",
-        permit_status: "Accept",
+        adhar_status: "approved",
+        rc_status: "approved",
+        dl_status: "approved",
+        bank_status: "approved",
+        rv_status: "approved",
+        insurance_status: "approved",
+        emission_status: "approved",
+        permit_status: "approved",
       });
       successCount++;
     } catch (err) {
@@ -772,9 +776,8 @@ export const deleteDp = async (id) => {
   return { message: "Delivery Partner Deleted Successfully" };
 };
 
-export const getCustomersList = async () => {
-  const customers = await adminRepository.findAllCustomers();
-  return { customers };
+export const getCustomersList = async (page, limit, search) => {
+  return await adminRepository.findAllCustomers(page, limit, search);
 };
 
 export const editCustomer = async (id, body, file) => {
@@ -916,11 +919,11 @@ export const addPdc = async (body, files) => {
         ? { type: "Point", coordinates: [lng, lat] }
         : { type: "Point", coordinates: [0, 0] },
     status: DOCUMENT_APPROVAL_STATUS.APPROVED,
-    aadhar_status: "Accept",
-    pan_status: "Accept",
-    pancard_status: "Accept",
-    gst_status: "Accept",
-    bank_status: "Accept",
+    aadhar_status: "approved",
+    pan_status: "approved",
+    pancard_status: "approved",
+    gst_status: "approved",
+    bank_status: "approved",
   });
 
   return { message: "PDC Added Successfully" };
@@ -1007,11 +1010,11 @@ export const deletePdc = async (id) => {
 export const activatePdc = async (id) => {
   await adminRepository.updatePdcDocument(id, {
     status: DOCUMENT_APPROVAL_STATUS.APPROVED,
-    aadhar_status: "Accept",
-    pan_status: "Accept",
-    pancard_status: "Accept",
-    gst_status: "Accept",
-    bank_status: "Accept",
+    aadhar_status: "approved",
+    pan_status: "approved",
+    pancard_status: "approved",
+    gst_status: "approved",
+    bank_status: "approved",
   });
   return { message: "PDC Activated Successfully" };
 };
@@ -1019,11 +1022,11 @@ export const activatePdc = async (id) => {
 export const deactivatePdc = async (id) => {
   await adminRepository.updatePdcDocument(id, {
     status: DOCUMENT_APPROVAL_STATUS.PENDING,
-    aadhar_status: "Reject",
-    pan_status: "Reject",
-    pancard_status: "Reject",
-    gst_status: "Reject",
-    bank_status: "Reject",
+    aadhar_status: "rejected",
+    pan_status: "rejected",
+    pancard_status: "rejected",
+    gst_status: "rejected",
+    bank_status: "rejected",
   });
   return { message: "PDC Deactivated Successfully" };
 };
@@ -1036,31 +1039,31 @@ export const updatePdcLocation = async (pdc_id, latitude, longitude) => {
 export const updatePdcDocStatus = async (user, field, value) => {
   const updates = { [field]: value };
 
-  if (field === "aadhar_status" && value === "Accept") {
+  if (field === "aadhar_status" && value === "approved") {
     updates.aadhar_reject_reason = null;
   } else if (field === "aadhar_reject_reason") {
-    updates.aadhar_status = "Reject";
+    updates.aadhar_status = "rejected";
   } else if (field === "pan_status") {
     updates.pancard_status = value;
-    if (value === "Accept") {
+    if (value === "approved") {
       updates.pan_reject_reason = null;
     }
   } else if (field === "pancard_status") {
     updates.pan_status = value;
-    if (value === "Accept") {
+    if (value === "approved") {
       updates.pan_reject_reason = null;
     }
   } else if (field === "pan_reject_reason") {
-    updates.pan_status = "Reject";
-    updates.pancard_status = "Reject";
-  } else if (field === "gst_status" && value === "Accept") {
+    updates.pan_status = "rejected";
+    updates.pancard_status = "rejected";
+  } else if (field === "gst_status" && value === "approved") {
     updates.gst_reject_reason = null;
   } else if (field === "gst_reject_reason") {
-    updates.gst_status = "Reject";
-  } else if (field === "bank_status" && value === "Accept") {
+    updates.gst_status = "rejected";
+  } else if (field === "bank_status" && value === "approved") {
     updates.bank_reject_reason = null;
   } else if (field === "bank_reject_reason") {
-    updates.bank_status = "Reject";
+    updates.bank_status = "rejected";
   }
 
   await adminRepository.updatePdcDocument(user, updates);
@@ -1195,7 +1198,15 @@ export const getScheduledOrderStats = async () => {
     }),
     Order.countDocuments({
       order_type: "scheduled",
-      status: ORDER_STATUS.SCHEDULED,
+      status: {
+        $nin: [
+          ORDER_STATUS.DELIVERED,
+          ORDER_STATUS.CANCELLED,
+          ORDER_STATUS.FAILED,
+          ORDER_STATUS.RETURNED,
+          ORDER_STATUS.REFUNDED
+        ]
+      },
     }),
     Order.countDocuments({
       order_type: "scheduled",
@@ -1301,7 +1312,7 @@ export const getAssignOrdersSelect = async (orderId) => {
         query: {
           online: true,
           document_approval: {
-            $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
+            $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "approved"],
           },
           active_order_ids: { $size: 0 },
         },
@@ -2083,7 +2094,7 @@ export const editVehicleSubcategory = async (id, body) => {
       await DpDocument.findOneAndUpdate(
         { user_id: subcat.requested_by },
         {
-          rv_status: "Rejected",
+          rv_status: "rejected",
           rv_reject_reason: `Your custom vehicle type '${rejectedName}' was rejected. Please select a valid vehicle type.`,
         },
       );
@@ -2142,12 +2153,6 @@ export const findNearestDpsForOrders = async (orderIds) => {
     maxHeight = Math.max(maxHeight, parseFloat(pkg.product_height || 0));
   }
 
-  // 3. Vehicle Filter
-  const eligibleVehicleTypes = [orders[0].mode_of_transport];
-  if (eligibleVehicleTypes.length === 0 || !eligibleVehicleTypes[0]) {
-    throw new Error("Order does not specify a valid vehicle type");
-  }
-
   // 4. Broadcast Range
   const { distancesByRole } = await getBroadcastDistance();
   const maxDistanceStr = distancesByRole[ROLES.DP] || "100"; // fallback
@@ -2162,6 +2167,13 @@ export const findNearestDpsForOrders = async (orderIds) => {
   }
 
   const orderTransportMode = orders[0].mode_of_transport;
+  if (!orderTransportMode) {
+    throw new Error("Order does not specify a valid vehicle type");
+  }
+  const eligibleVehicleTypes = [orderTransportMode];
+  if (orderTransportMode === "Two Wheeler") {
+    eligibleVehicleTypes.push("By Hand");
+  }
 
   const aggregatedDps = await DpDetail.aggregate([
     {
@@ -2176,7 +2188,7 @@ export const findNearestDpsForOrders = async (orderIds) => {
         query: {
           online: true,
           document_approval: {
-            $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
+            $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "approved"],
           },
           $or: [
             { active_order_ids: { $size: 0 } },
@@ -2197,9 +2209,7 @@ export const findNearestDpsForOrders = async (orderIds) => {
     { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
     {
       $match: {
-        "dpDocument.vehicle_type": {
-          $regex: new RegExp(`^${orderTransportMode}$`, "i"),
-        },
+        "dpDocument.vehicle_type": { $in: eligibleVehicleTypes },
       },
     },
     // Get full user details
@@ -2580,7 +2590,7 @@ export const getBundleSummary = async (orderIds) => {
             query: {
               online: true,
               document_approval: {
-                $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "Approved"],
+                $in: [DOCUMENT_APPROVAL_STATUS.APPROVED, "approved"],
               },
               $or: [
                 { active_order_ids: { $exists: false } },

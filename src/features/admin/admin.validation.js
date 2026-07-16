@@ -39,15 +39,15 @@ export const updateDocStatusSchema = Joi.object({
         "Document type must be one of: aadhar, dl, bank, rc, rv, insurance, emission, permit",
       "any.required": "Document type is required",
     }),
-  status: Joi.string().valid("Accept", "Reject").required().messages({
+  status: Joi.string().valid("approved", "rejected").required().messages({
     "string.empty": "Status is required",
-    "any.only": "Status must be Accept or Reject",
+    "any.only": "Status must be approved or rejected",
     "any.required": "Status is required",
   }),
   reason: Joi.string()
     .trim()
     .when("status", {
-      is: "Reject",
+      is: "rejected",
       then: Joi.required(),
       otherwise: Joi.optional().allow("", null),
     })
@@ -445,5 +445,5 @@ export const editVehicleSubcategorySchema = Joi.object({
     }),
   sub_vehicle_type: Joi.string().trim().optional(),
   is_active: Joi.boolean().optional(),
-  status: Joi.string().valid("Approved", "Pending", "Rejected").optional(),
+  status: Joi.string().valid("approved", "pending", "rejected").optional(),
 });

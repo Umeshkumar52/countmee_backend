@@ -64,14 +64,42 @@ export const findRecentOrders = async (limit) => {
   return await Order.find().sort({ createdAt: -1 }).limit(limit);
 };
 
-export const findAllDpDetails = async () => {
-  const details = await DpDetail.find().populate("user_id");
+export const findAllDpDetails = async (page = 1, limit = 10, search = "") => {
+  let userIds = [];
+  if (search) {
+    const users = await User.find({
+      $or: [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+      ],
+    }).select("_id");
+    userIds = users.map((u) => u._id);
+  }
 
-  return details.map((d) => {
+  const query = {};
+  if (search) {
+    query.user_id = { $in: userIds };
+  }
+
+  const skip = (page - 1) * limit;
+
+  const details = await DpDetail.find(query)
+    .populate("user_id")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  const total = await DpDetail.countDocuments(query);
+  const totalPages = Math.ceil(total / limit);
+
+  const dpList = details.map((d) => {
     const obj = d.toObject();
     obj.user = obj.user_id;
     return obj;
   });
+
+  return { dpList, total, page, totalPages };
 };
 
 export const findDpDetailById = async (id) => {
@@ -104,6 +132,10 @@ export const findDpDocumentByUserId = async (userId) => {
   return await DpDocument.findOne({ user_id: userId });
 };
 
+export const findDpDocumentById = async (id) => {
+  return await DpDocument.findById(id);
+};
+
 export const createDpDocument = async (data) => {
   return await DpDocument.create(data);
 };
@@ -116,18 +148,40 @@ export const deleteDpDocumentByUserId = async (userId) => {
   return await DpDocument.deleteOne({ user_id: userId });
 };
 
-export const findAllCustomers = async () => {
-  const users = await User.find({ role: ROLES.USER });
+export const findAllCustomers = async (page = 1, limit = 10, search = "") => {
+  const query = { role: ROLES.USER };
+  
+  if (search) {
+    const searchRegex = new RegExp(search, "i");
+    query.$or = [
+      { name: searchRegex },
+      { email: searchRegex },
+      { phone: searchRegex },
+    ];
+  }
+
+  const skip = (page - 1) * limit;
+
+  const users = await User.find(query)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  const total = await User.countDocuments(query);
+  const totalPages = Math.ceil(total / limit);
+
   const customers = await Customer.find({});
   const customerMap = new Map(
     customers.map((c) => [c.user_id ? c.user_id.toString() : "", c]),
   );
 
-  return users.map((user) => {
+  const customerList = users.map((user) => {
     const userObj = user.toObject();
     userObj.customer = customerMap.get(user._id.toString()) || null;
     return userObj;
   });
+
+  return { customers: customerList, total, page, totalPages };
 };
 
 export const findCustomerByUserId = async (userId) => {
@@ -170,10 +224,8 @@ export const findAllPdcs = async (page = 1, limit = 10, search = "") => {
   const skip = (page - 1) * limit;
 
   const docs = await PdcDocument.find(query)
-    .populate(
-      "user_id",
-      "-password -otp -refreshToken -fcm_tokens -fcm_token"
-    )
+    .populate("user_id", "-password -otp -refreshToken -fcm_tokens -fcm_token")
+    .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit);
 
