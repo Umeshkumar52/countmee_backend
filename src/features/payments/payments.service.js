@@ -531,14 +531,14 @@ export const initiateOrderPayment = async (user_id, order_id) => {
     throw new Error("Order is not pending payment or is already paid");
   }
 
-  // const cf_order_id = createCashfreeOrderId("DIR", order_id);
+  const cf_order_id = createCashfreeOrderId("DIR", order_id);
   // Abort any abandoned/old payment attempts for this order to avoid DB bloat
   await Payment.updateMany(
     { order_id: order_id, status: PAYMENT_STATUS.ACTIVE },
     { $set: { status: PAYMENT_STATUS.FAILED } },
   );
 
-  const cf_order_id = `DIR_${order_id}_${Date.now()}`;
+  // const cf_order_id = `DIR_${order_id}_${Date.now()}`;
   const amount = order.charges;
 
   const postData = {
