@@ -76,7 +76,7 @@ export const findOrderHistoryByUserId = async (user_id, order_type) => {
   if (order_type === "scheduled") {
     query.order_type = order_type;
   } else {
-    query.status = { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED] };
+    // query.status = { $in: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED] };
     if (order_type) {
       query.order_type = order_type;
     }
