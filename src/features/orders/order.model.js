@@ -18,6 +18,7 @@ const orderSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+
     package_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "PackageDetail",

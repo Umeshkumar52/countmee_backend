@@ -54,9 +54,11 @@ export const postCreditMass = async (req, res, next) => {
 
 export const getWallets = async (req, res, next) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
     const searchQuery = req.query.search || '';
     const balanceRange = req.query.balance_range || '';
-    const result = await adminWalletService.getWalletsList(searchQuery, balanceRange);
+    const result = await adminWalletService.getWalletsList(searchQuery, balanceRange, page, limit);
     return res.json(ApiResponse.success(result));
   } catch (err) {
     next(err);

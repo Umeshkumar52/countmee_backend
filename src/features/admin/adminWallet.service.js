@@ -26,7 +26,7 @@ const verifyVerificationToken = (token, expectedAction, expectedAmount) => {
   }
 };
 
-export const getWalletsList = async (searchQuery, balanceRange) => {
+export const getWalletsList = async (searchQuery, balanceRange, page = 1, limit = 10) => {
   const config = await adminRepository.findWalletConfig();
   const configHistory = await adminRepository.findWalletConfigHistory();
   const massCreditLogs = await adminRepository.findMassCreditLogs();
@@ -39,7 +39,7 @@ export const getWalletsList = async (searchQuery, balanceRange) => {
     ];
   }
 
-  const allCustomers = await adminRepository.findAllCustomers();
+  const allCustomers = await adminRepository.findAllCustomersUnpaginated();
   const allWallets = await adminRepository.findAllWallets();
   const walletMap = new Map(allWallets.map(w => [w.user_id ? w.user_id.toString() : '', w]));
   
@@ -64,7 +64,12 @@ export const getWalletsList = async (searchQuery, balanceRange) => {
     });
   }
 
-  const customersData = filteredCustomers.map(cust => {
+  const total = filteredCustomers.length;
+  const totalPages = Math.ceil(total / limit);
+  const skip = (page - 1) * limit;
+  const paginatedCustomers = filteredCustomers.slice(skip, skip + limit);
+
+  const customersData = paginatedCustomers.map(cust => {
     const wallet = walletMap.get(cust._id.toString());
     return {
       ...cust,
@@ -91,6 +96,9 @@ export const getWalletsList = async (searchQuery, balanceRange) => {
   return {
     joiningBonus,
     customers: customersData,
+    total,
+    page,
+    totalPages,
     configHistory: formattedHistory,
     massCreditLogs: formattedLogs
   };

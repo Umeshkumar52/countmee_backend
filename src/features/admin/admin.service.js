@@ -1418,6 +1418,7 @@ import {
   getExpiryCutoffDate,
   getLateRevenueCutoffDate,
 } from "../../common/utils/waitingChargeStatus.js";
+import { sendNotification } from "../../common/utils/sendNotification.js";
 
 export const getAdminWaitingCharges = async (status) => {
   const mongoose = await import("mongoose");
@@ -2170,9 +2171,12 @@ export const findNearestDpsForOrders = async (orderIds) => {
   if (!orderTransportMode) {
     throw new Error("Order does not specify a valid vehicle type");
   }
-  const eligibleVehicleTypes = [orderTransportMode];
-  if (orderTransportMode === "Two Wheeler") {
-    eligibleVehicleTypes.push("By Hand");
+  let eligibleVehicleTypes = [orderTransportMode];
+  if (
+    orderTransportMode === "Two Wheeler" ||
+    orderTransportMode === "By Hand"
+  ) {
+    eligibleVehicleTypes = ["Two Wheeler", "By Hand"];
   }
 
   const aggregatedDps = await DpDetail.aggregate([
@@ -2576,6 +2580,20 @@ export const getBundleSummary = async (orderIds) => {
     const lat = parseFloat(firstOrder.sender_latitude);
     const orderTransportMode = firstOrder.mode_of_transport;
 
+    // Build dynamic array of allowed vehicle types
+    let allowedVehicleTypes = [];
+    if (recommendedVehicle && recommendedVehicle.vehicle_type) {
+      const recType = recommendedVehicle.vehicle_type;
+      if (/two wheeler/i.test(recType) || /by hand/i.test(recType)) {
+        allowedVehicleTypes = [/^two wheeler$/i, /^by hand$/i, /^bike$/i];
+      } else {
+        allowedVehicleTypes = [new RegExp(`^${recType}$`, "i")];
+      }
+    } else {
+      // Fallback to original order transport mode if no recommended vehicle matched
+      allowedVehicleTypes = [new RegExp(`^${orderTransportMode}$`, "i")];
+    }
+
     if (!isNaN(lng) && !isNaN(lat)) {
       const targetDps = await DpDetail.aggregate([
         {
@@ -2611,7 +2629,7 @@ export const getBundleSummary = async (orderIds) => {
         { $unwind: { path: "$dpDocument", preserveNullAndEmptyArrays: false } },
         {
           $match: {
-            "dpDocument.vehicle_type": orderTransportMode,
+            "dpDocument.vehicle_type": { $in: allowedVehicleTypes },
           },
         },
         // Get full user details
@@ -2711,7 +2729,7 @@ export const processManualRefund = async (order_id, amount, reason) => {
       amount: refundAmount,
       type: "credit",
       description: reason
-        ? `Admin Refund: ${reason}`
+        ? `Admin Refund: ${reason}. This payment refund is for Order #${order._id}`
         : `Admin Refund for Order #${order._id}`,
       transaction_type: "refund",
       reference_id: order._id,
