@@ -14,6 +14,7 @@ export const createOrder = asyncHandler(async (req, res) => {
   const unpaidCharges = await OrderWaitCharge.findOne({
     user_id: _id,
     payment_status: "unpaid",
+    total_waiting_charge: { $gt: 0 },
   });
   if (unpaidCharges) {
     throw new ApiError(

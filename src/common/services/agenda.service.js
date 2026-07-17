@@ -7,7 +7,7 @@ import { ROLES } from "../../constants/index.js";
 import { PdcDocument } from "../../features/pdc/pdcDocument.model.js";
 import { Broadcast } from "../../features/orders/broadcast.model.js";
 import { getAllCachedDpLocations } from "./redis.service.js";
-import { BROADCAST_STATUS, ORDER_STATUS } from "../../constants/orderStatus.js";
+import { BROADCAST_STATUS, ORDER_STATUS } from "../../constants/index.js";
 import { PackageDetail } from "../../features/orders/packageDetail.model.js";
 import { broadcastOrderToNearbyDPs } from "../../features/orders/orders.service.js";
 import { OrderBundle } from "../../features/orders/orderBundle.model.js";
@@ -69,7 +69,7 @@ export const initAgenda = async () => {
       const broadcast = await Broadcast.findById(broadcast_id);
       if (broadcast && broadcast.status === BROADCAST_STATUS.BROADCASTING) {
         // The 10-minute window has closed and no DP accepted it
-        broadcast.status = ORDER_STATUS.PENDING;
+        broadcast.status = BROADCAST_STATUS.PENDING;
         broadcast.pickup_otp = null;
         await broadcast.save();
 
@@ -184,6 +184,42 @@ export const initAgenda = async () => {
       }
     } catch (error) {
       console.error("[Agenda] Error in expire-bundle-broadcast job:", error);
+    }
+  });
+
+  agenda.define("check-otp-wait", async (job) => {
+    const { order_id, location_type } = job.attrs.data;
+    try {
+      const order = await Order.findById(order_id);
+      if (!order) return;
+
+      if (location_type === "pickup") {
+        // If pickup time is still null, it means OTP has not been verified yet
+        if (!order.dp_pickup_time) {
+          await sendNotification({
+            role: ROLES.USER,
+            userId: order.user_id,
+            title: "Pickup Wait Reminder",
+            message: "Your Delivery Partner has been waiting at the pickup location for 5 minutes. Waiting charges may apply.",
+            orderId: order_id,
+          });
+          console.log(`[Agenda] Sent 5 min pickup wait reminder for order ${order_id}`);
+        }
+      } else if (location_type === "drop") {
+        // If deliver time is still null, it means drop OTP has not been verified yet
+        if (!order.dp_deliver_time) {
+          await sendNotification({
+            role: ROLES.USER,
+            userId: order.user_id,
+            title: "Drop Wait Reminder",
+            message: "Your Delivery Partner has been waiting at the drop location for 5 minutes. Waiting charges may apply.",
+            orderId: order_id,
+          });
+          console.log(`[Agenda] Sent 5 min drop wait reminder for order ${order_id}`);
+        }
+      }
+    } catch (error) {
+      console.error("[Agenda] Error in check-otp-wait job:", error);
     }
   });
 

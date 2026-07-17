@@ -6,6 +6,7 @@ import {
   ORDER_REQUEST_STATUS,
   ORDER_REQUEST_COMPLETE_STATUS,
   DOCUMENT_APPROVAL_STATUS,
+  BROADCAST_STATUS,
 } from "../../constants/index.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { ApiResponse } from "../../common/utils/responseFormatter.js";
@@ -26,6 +27,10 @@ import { User } from "../users/user.model.js";
 import mongoose from "mongoose";
 import { OrderRequest } from "../orders/orderRequest.model.js";
 import { Notification } from "../notifications/notification.model.js";
+import { sendNotificationToUser } from "../../common/services/socket.service.js";
+import { sendPushNotification } from "../../common/services/firebase.service.js";
+import { PackageDetail } from "../orders/packageDetail.model.js";
+import { DeliverCharge } from "../orders/deliverCharge.model.js";
 
 export const dpDetails = asyncHandler(async (req, res) => {
   const { gender, address } = validate(dpValidation.dpDetailsSchema, req.body);
@@ -270,6 +275,105 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
         ApiResponse.success(data, "Nearby delivery partner found"),
       );
     } else {
+      // --- INCREMENTAL NOTIFICATION LOGIC FOR POLLING ---
+      try {
+        const broadcastObj = await Broadcast.findById(broadcast_id);
+        if (broadcastObj && broadcastObj.status === BROADCAST_STATUS.BROADCASTING) {
+          const minBroadcast = await mongoose.model("MinBroadcastDist").findOne({ role: "DP" });
+          const searchRadius = minBroadcast ? minBroadcast.minimum_broadcast_distance * 1000 : Number(radius) || 1000;
+
+          const nearByDps = await dpService.checkNearbyDps(searchRadius, broadcast_id, user_id);
+
+          if (nearByDps.length > 0) {
+            let orderReq = await OrderRequest.findOne({
+              order_id: order_id,
+              broadcast_id: broadcast_id,
+              request_type: "broadcast_dp",
+            });
+
+            let newDpsToNotify = [];
+            
+            // Edge Case: First creation found 0 DPs, so OrderRequest was never created.
+            if (!orderReq) {
+              newDpsToNotify = nearByDps;
+              orderReq = await OrderRequest.create({
+                order_id: order_id,
+                requested_by: user_id,
+                notified_ids: nearByDps,
+                request_type: "broadcast_dp",
+                broadcast_id: broadcast_id,
+              });
+
+              const order = await Order.findById(order_id);
+              if (order && order.status_completed !== "broadcasted") {
+                order.delivery_type = "broadcast";
+                order.broadcast_id = broadcast_id;
+                order.status_completed = "broadcasted";
+                order.status = ORDER_STATUS.ACCEPTED;
+                await order.save();
+              }
+            } else {
+              const existingNotified = orderReq.notified_ids.map((id) => id.toString());
+              newDpsToNotify = nearByDps.filter((dpId) => !existingNotified.includes(dpId.toString()));
+
+              if (newDpsToNotify.length > 0) {
+                await OrderRequest.updateOne(
+                  { _id: orderReq._id },
+                  { $addToSet: { notified_ids: { $each: newDpsToNotify } } }
+                );
+              }
+            }
+
+            if (newDpsToNotify.length > 0) {
+              const order = await Order.findById(order_id);
+              
+              if (order) {
+                const packageDetail = order.package_id ? await PackageDetail.findById(order.package_id) : null;
+                const deliverCharge = await DeliverCharge.findOne({ vehicle_type: order.mode_of_transport });
+
+                let dp_earning = 0;
+                if (deliverCharge && deliverCharge.dp_commission != null) {
+                  dp_earning = (order.charges * (deliverCharge.dp_commission / 100)).toFixed(2);
+                } else {
+                  dp_earning = (order.charges * 0.7).toFixed(2);
+                }
+
+                const usersToNotify = await User.find({ _id: { $in: newDpsToNotify } }).select("+fcm_tokens");
+                const userMap = new Map(usersToNotify.map((u) => [u._id.toString(), u]));
+
+                for (const dpId of newDpsToNotify) {
+                  const payload = {
+                    type: "NEW_ORDER_BROADCAST",
+                    order_id: order._id.toString(),
+                    pickup_location: broadcastObj.pickup_location || order.pickup_location,
+                    drop_location: broadcastObj.drop_location || order.drop_location,
+                    distance: broadcastObj.distance?.toString() || order.distance?.toString() || "0",
+                    dp_earning: Number(dp_earning),
+                    product_description: packageDetail?.product_description || "",
+                    no_of_items: packageDetail?.no_of_items?.toString() || "1",
+                  };
+
+                  sendNotificationToUser(dpId.toString(), payload);
+
+                  const userObj = userMap.get(dpId.toString());
+                  if (userObj && userObj.fcm_tokens && userObj.fcm_tokens.length > 0) {
+                    await sendPushNotification(
+                      userObj.fcm_tokens,
+                      "New Order Request!",
+                      `Pickup: ${payload.pickup_location}`,
+                      payload
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[brodcastForFindDp] Error in incremental polling:", err.message);
+      }
+
+      // DO NOT CHANGE ORIGINAL RESPONSE
       return res.json(
         ApiResponse.success(
           { status: ORDER_REQUEST_STATUS.PENDING },
@@ -305,7 +409,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     broadcastObj = await Broadcast.create({
       order_id,
       broadcasted_by: user_id,
-      status: "Broadcasting", // Fix: Visibility bug (was Pending)
+      status: BROADCAST_STATUS.BROADCASTING, // Fix: Visibility bug (was Pending)
       pickup_location: location,
       pickup_latitude: Number(latitude),
       pickup_longitude: Number(longitude),
@@ -336,18 +440,15 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     user_id,
   );
 
-  if (!nearestDps.length) {
-    return res.json(
-      ApiResponse.success({ status: ORDER_REQUEST_STATUS.PENDING }, "no dp found in this area"),
-    );
-  }
+  // The early exit was removed here to allow zero-DP broadcasts to start the 10-minute active radar.
 
   let orderReq = await OrderRequest.findOne({
     order_id: order_id,
     request_type: "broadcast_dp",
     broadcast_id: broadcastObj._id,
-    notified_ids: { $all: nearestDps },
   });
+
+  const dps = await DpDetail.find({ user_id: { $in: nearestDps } });
 
   if (!orderReq) {
     orderReq = await OrderRequest.create({
@@ -363,9 +464,59 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     order.status_completed = "broadcasted";
     order.status = ORDER_STATUS.ACCEPTED;
     await order.save();
-  }
 
-  const dps = await DpDetail.find({ user_id: { $in: nearestDps } });
+    // -- FIRE NOTIFICATIONS TO NEARBY DPs --
+    if (nearestDps.length > 0) {
+      try {
+        const packageDetail = order.package_id
+          ? await PackageDetail.findById(order.package_id)
+          : null;
+
+        const deliverCharge = await DeliverCharge.findOne({
+          vehicle_type: order.mode_of_transport,
+        });
+
+        let dp_earning = 0;
+        if (deliverCharge && deliverCharge.dp_commission != null) {
+          dp_earning = (order.charges * (deliverCharge.dp_commission / 100)).toFixed(2);
+        } else {
+          dp_earning = (order.charges * 0.7).toFixed(2);
+        }
+
+        const usersToNotify = await User.find({ _id: { $in: nearestDps } }).select("+fcm_tokens");
+        const userMap = new Map(usersToNotify.map((u) => [u._id.toString(), u]));
+
+        for (const dpId of nearestDps) {
+          const payload = {
+            type: "NEW_ORDER_BROADCAST",
+            order_id: order._id.toString(),
+            pickup_location: broadcastObj.pickup_location || order.pickup_location,
+            drop_location: broadcastObj.drop_location || order.drop_location,
+            distance: broadcastObj.distance?.toString() || order.distance?.toString() || "0",
+            dp_earning: Number(dp_earning),
+            product_description: packageDetail?.product_description || "",
+            no_of_items: packageDetail?.no_of_items?.toString() || "1",
+          };
+
+          // Fire Socket
+          sendNotificationToUser(dpId.toString(), payload);
+
+          // Fire FCM Push
+          const userObj = userMap.get(dpId.toString());
+          if (userObj && userObj.fcm_tokens && userObj.fcm_tokens.length > 0) {
+            await sendPushNotification(
+              userObj.fcm_tokens,
+              "New Order Request!",
+              `Pickup: ${payload.pickup_location}`,
+              payload
+            );
+          }
+        }
+      } catch (err) {
+        console.error("[brodcastForFindDp] Error sending notifications:", err.message);
+      }
+    }
+  }
 
   // Schedule Agenda job to expire this broadcast in 10 minutes
   const agenda = getAgenda();
@@ -391,7 +542,11 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     status: ORDER_REQUEST_STATUS.PENDING,
   };
 
-  return res.json(ApiResponse.success(data, "dp"));
+  const message = nearestDps.length > 0 
+    ? "Nearby delivery partner found" 
+    : "No drivers found yet. Radar is active...";
+
+  return res.json(ApiResponse.success(data, message));
 });
 
 export const getMinBroadcastPoint = asyncHandler(async (req, res) => {

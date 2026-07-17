@@ -97,7 +97,8 @@ export const getCharges = async (
 
   const calc = calculateFinalCharges(deliverCharge, distanceValue);
 
-  const itemsMultiplier = no_of_items || 1;
+  // const itemsMultiplier = no_of_items || 1;
+  const itemsMultiplier = 1;
   const netPrice = calc.net_price * itemsMultiplier;
   const exactPrice = Math.round(netPrice * 100) / 100;
   const exactGst = Math.round(exactPrice * 0.05 * 100) / 100; // 5% GST

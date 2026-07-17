@@ -40,6 +40,7 @@ import mongoose from "mongoose";
 import { ApiError } from "../../common/utils/ApiError.js";
 import { AdminSetting } from "../admin/adminSetting.model.js";
 import { DpCancellation } from "./dpCancellation.model.js";
+import { getAgenda } from "../../common/services/agenda.service.js";
 
 export const findTravelByOrderAndUser = async (order_id, user_id) => {
   return await dpRepository.findTravelByOrderAndUser(order_id, user_id);
@@ -769,7 +770,7 @@ export const cancelAssignment = async (order_id, user_id, cancel_reason) => {
     order.pickup_dp_id = null;
     order.dp_accept_time = null;
     order.status_completed = null;
-    order.status = ORDER_STATUS.PENDING;
+    order.status = ORDER_STATUS.CONFIRMED;
     await order.save({ session });
 
     // Revert Broadcast if it was a broadcast
@@ -909,6 +910,22 @@ export const markArrival = async (
         `Your Delivery Partner has arrived at the pickup location. Please handover the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`,
       ).catch((err) => console.error("SMS Failed:", err.message));
 
+      sendNotification({
+        role: ROLES.USER,
+        userId: order.user_id,
+        title: "DP Arrived",
+        message: "Your Delivery Partner has arrived at the pickup location.",
+        orderId: order_id,
+      }).catch((err) => console.error("Pickup Notification Failed:", err));
+
+      const agenda = getAgenda();
+      if (agenda) {
+        agenda.schedule("in 5 minutes", "check-otp-wait", {
+          order_id: order_id.toString(),
+          location_type: "pickup",
+        }).catch((err) => console.error("Agenda Schedule Failed:", err));
+      }
+
       await OrderWaitCharge.findOneAndUpdate(
         { order_id },
         {
@@ -929,6 +946,22 @@ export const markArrival = async (
         order.receiver_phone,
         `Your Delivery Partner has arrived at the drop location. Please collect the parcel. Waiting charges apply after ${deliverCharge.grace_period} mins.`,
       ).catch((err) => console.error("SMS Failed:", err.message));
+
+      sendNotification({
+        role: ROLES.USER,
+        userId: order.user_id,
+        title: "DP Arrived",
+        message: "Your Delivery Partner has arrived at the drop location.",
+        orderId: order_id,
+      }).catch((err) => console.error("Drop Notification Failed:", err));
+
+      const agenda = getAgenda();
+      if (agenda) {
+        agenda.schedule("in 5 minutes", "check-otp-wait", {
+          order_id: order_id.toString(),
+          location_type: "drop",
+        }).catch((err) => console.error("Agenda Schedule Failed:", err));
+      }
 
       await OrderWaitCharge.findOneAndUpdate(
         { order_id },

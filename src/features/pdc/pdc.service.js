@@ -10,6 +10,7 @@ import { Order } from "../orders/order.model.js";
 import { OrderRequest } from "../orders/orderRequest.model.js";
 import { Broadcast } from "../orders/broadcast.model.js";
 import { PackageDetail } from "../orders/packageDetail.model.js";
+import { DeliverCharge } from "../orders/deliverCharge.model.js";
 import { Rating } from "../deliveryPartner/rating.model.js";
 import { DpDetail } from "../deliveryPartner/dpDetail.model.js";
 import { Notification } from "../notifications/notification.model.js";
@@ -23,11 +24,14 @@ import {
   ROLES,
   ORDER_STATUS,
   ORDER_REQUEST_STATUS,
+  BROADCAST_STATUS,
   DOCUMENT_APPROVAL_STATUS,
 } from "../../constants/index.js";
 import * as dpService from "../deliveryPartner/dp.service.js";
 import * as adminService from "../admin/admin.service.js";
 import { getAgenda } from "../../common/services/agenda.service.js";
+import { sendNotificationToUser } from "../../common/services/socket.service.js";
+import { sendPushNotification } from "../../common/services/firebase.service.js";
 
 export const register = async (name, email, phone, password, fcmToken) => {
   const existingUser = await pdcRepository.findUserByPhone(phone);
@@ -1068,15 +1072,63 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
     }
   }
 
-  // Send push notifications ONLY to newly discovered DPs
-  for (const dpId of newDpsToNotify) {
-    await sendNotification({
-      role: ROLES.DP,
-      userId: dpId,
+  if (newDpsToNotify.length > 0) {
+    const packageDetail = order.package_id
+      ? await PackageDetail.findById(order.package_id)
+      : null;
+    const deliverCharge = await DeliverCharge.findOne({
+      vehicle_type: order.mode_of_transport,
+    });
+    const commissionPercent =
+      deliverCharge && deliverCharge.dp_commission != null
+        ? deliverCharge.dp_commission
+        : 70;
+    const dpEarning = Number(
+      (order.charges * (commissionPercent / 100)).toFixed(2),
+    );
+    const usersToNotify = await User.find({
+      _id: { $in: newDpsToNotify },
+    }).select("+fcm_tokens");
+    const userMap = new Map(usersToNotify.map((u) => [u._id.toString(), u]));
+
+    const notifications = newDpsToNotify.map((dpId) => ({
+      notifiable_type: ROLES.DP,
+      notifiable_id: dpId,
       title: "New Pickup Available!",
       message: `A new parcel (Order #${order._id}) is ready for pickup at a nearby PDC hub.`,
-      orderId: order._id,
-    });
+      order_id: order._id,
+    }));
+
+    // Persist notification rows without invoking the generic Notification save hook,
+    // because this broadcast needs the mobile app's NEW_ORDER_BROADCAST payload.
+    await Notification.insertMany(notifications, { ordered: false });
+
+    for (const dpId of newDpsToNotify) {
+      const payload = {
+        type: "NEW_ORDER_BROADCAST",
+        order_id: order._id.toString(),
+        pickup_location:
+          broadcast.pickup_location || pdcDoc?.address || order.pickup_location,
+        drop_location: broadcast.drop_location || order.drop_location,
+        distance:
+          broadcast.distance?.toString() || order.distance?.toString() || "0",
+        dp_earning: dpEarning,
+        product_description: packageDetail?.product_description || "",
+        no_of_items: packageDetail?.no_of_items?.toString() || "1",
+      };
+
+      sendNotificationToUser(dpId, payload);
+
+      const user = userMap.get(dpId.toString());
+      if (user?.fcm_tokens?.length > 0) {
+        await sendPushNotification(
+          user.fcm_tokens,
+          "New Pickup Available!",
+          `Pickup: ${payload.pickup_location}`,
+          payload,
+        );
+      }
+    }
   }
 
   return nearByDps.length;

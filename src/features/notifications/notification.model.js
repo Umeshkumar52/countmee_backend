@@ -51,7 +51,7 @@ notificationSchema.post("save", function (doc) {
       order_id: doc.order_id,
       created_at: doc.createdAt || doc.created_at,
     };
-    // sendNotificationToUser(doc.notifiable_id, payload);
+    sendNotificationToUser(doc.notifiable_id, payload);
 
     // 2. Send via Firebase Cloud Messaging (Background push notifications)
     // Fire and forget without blocking the event loop
