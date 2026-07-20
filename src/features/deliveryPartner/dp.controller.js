@@ -440,6 +440,7 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     // Fix: Regenerate OTPs if they were cleared by a previous expiry
     broadcastObj.status = BROADCAST_STATUS.BROADCASTING;
     if (!broadcastObj.pickup_otp) broadcastObj.pickup_otp = Math.floor(1000 + Math.random() * 9000);
+    if (!broadcastObj.drop_otp) broadcastObj.drop_otp = Math.floor(1000 + Math.random() * 9000);
     await broadcastObj.save();
   }
 
@@ -799,8 +800,6 @@ export const dropOrderToPdc = asyncHandler(async (req, res) => {
           pickup_latitude: pdcObj.latitude,
           pickup_longitude: pdcObj.longitude,
           distance: distToReceiverValue,
-          pickup_otp: Math.floor(1000 + Math.random() * 9000),
-          drop_otp: Math.floor(1000 + Math.random() * 9000),
         },
       ],
       { session },

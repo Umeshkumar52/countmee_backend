@@ -1010,9 +1010,10 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
   // We NO LONGER return 0 if nearByDps is empty.
   // We must open the 10-minute broadcasting window regardless!
 
-  // Update status to Broadcasting and generate the pickup OTP for the DP
+  // Update status to Broadcasting and generate the OTPs for the DP
   broadcast.status = BROADCAST_STATUS.BROADCASTING;
   if (!broadcast.pickup_otp) broadcast.pickup_otp = Math.floor(1000 + Math.random() * 9000);
+  if (!broadcast.drop_otp) broadcast.drop_otp = Math.floor(1000 + Math.random() * 9000);
   await broadcast.save();
 
   // Send real-time socket notification to update PDC Dashboard UI
