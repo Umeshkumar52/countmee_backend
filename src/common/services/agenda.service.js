@@ -63,7 +63,9 @@ export const initAgenda = async () => {
   });
 
   agenda.define("expire-broadcast", async (job) => {
-    const { broadcast_id, order_id, pdc_id } = job.attrs.data;
+    const { broadcast_id, order_id, pdc_id, user_id, role } = job.attrs.data;
+    const targetUserId = user_id || pdc_id;
+    const targetRole = role || ROLES.PDC;
 
     try {
       const broadcast = await Broadcast.findById(broadcast_id);
@@ -71,19 +73,20 @@ export const initAgenda = async () => {
         // The 10-minute window has closed and no DP accepted it
         broadcast.status = BROADCAST_STATUS.PENDING;
         broadcast.pickup_otp = null;
+        broadcast.drop_otp = null;
         await broadcast.save();
 
-        // Send a notification to trigger a dashboard refresh for the PDC
+        // Send a notification to trigger a dashboard refresh for the initiator
         await sendNotification({
-          role: ROLES.PDC,
-          userId: pdc_id,
+          role: targetRole,
+          userId: targetUserId,
           title: "Broadcast Expired",
           message: `The 10-minute broadcast window for order #${order_id} has expired. Please broadcast again.`,
           orderId: order_id,
         });
 
         console.log(
-          `[Agenda] Expired broadcast ${broadcast_id} for order ${order_id}`,
+          `[Agenda] Expired broadcast ${broadcast_id} for order ${order_id} (Target: ${targetRole})`,
         );
       }
     } catch (error) {

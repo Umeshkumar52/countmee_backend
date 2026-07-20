@@ -41,6 +41,10 @@ router.post('/login', adminController.postLogin);
 
 // Protected Admin REST API routes
 router.use(authenticate);
+
+// Routes accessible by multiple roles
+router.get('/vehicleTypes', authorize([ROLES.ADMIN, ROLES.DP]), adminController.getVehicleTypes);
+
 router.use(authorize([ROLES.ADMIN]));
 
 router.get('/dashboard', adminController.getDashboard);
@@ -128,7 +132,6 @@ router.post('/deliver_charge', adminController.postUpdateDeliverCharge);
 
 /////////////////////////////////////////////////////////
 // 2nd Phase New Api= Vehicle Subcategories configuration
-router.get('/vehicleTypes', adminController.getVehicleTypes);
 router.post('/vehicle_subcategories', adminController.postAddVehicleSubcategory);
 router.put('/vehicle_subcategories/:id', adminController.postEditVehicleSubcategory);
 router.delete('/vehicle_subcategories/:id', adminController.deleteVehicleSubcategory);

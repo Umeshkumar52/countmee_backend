@@ -1012,7 +1012,7 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
 
   // Update status to Broadcasting and generate the pickup OTP for the DP
   broadcast.status = BROADCAST_STATUS.BROADCASTING;
-  broadcast.pickup_otp = Math.floor(1000 + Math.random() * 9000);
+  if (!broadcast.pickup_otp) broadcast.pickup_otp = Math.floor(1000 + Math.random() * 9000);
   await broadcast.save();
 
   // Send real-time socket notification to update PDC Dashboard UI
@@ -1036,7 +1036,8 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
     await agenda.schedule("in 10 minutes", "expire-broadcast", {
       broadcast_id: broadcast._id.toString(),
       order_id: orderId.toString(),
-      pdc_id: pdcId.toString(),
+      user_id: pdcId.toString(),
+      role: ROLES.PDC, // Explicitly route notification to PDC
     });
   }
   // Create or Update OrderRequest
@@ -1058,18 +1059,12 @@ export const triggerManualBroadcast = async (orderId, pdcId) => {
       broadcast_id: broadcast._id,
     });
   } else {
-    // It exists from a previous 10-minute broadcast run. Find who is new!
-    const existingNotified = pdcBroadcastOrderRequest.notified_ids.map((id) =>
-      id.toString(),
-    );
-    newDpsToNotify = nearByDps.filter(
-      (dpId) => !existingNotified.includes(dpId.toString()),
-    );
-
-    if (newDpsToNotify.length > 0) {
-      pdcBroadcastOrderRequest.notified_ids.push(...newDpsToNotify);
-      await pdcBroadcastOrderRequest.save();
-    }
+    // Rebroadcast reuse: Reset notified IDs and clear rejected_by so DPs get a fresh chance
+    // Note: We intentionally do NOT mutate created_at to preserve historical sorting.
+    newDpsToNotify = nearByDps; // Ping everyone in the radius again!
+    pdcBroadcastOrderRequest.notified_ids = nearByDps;
+    pdcBroadcastOrderRequest.rejected_by = [];
+    await pdcBroadcastOrderRequest.save();
   }
 
   if (newDpsToNotify.length > 0) {

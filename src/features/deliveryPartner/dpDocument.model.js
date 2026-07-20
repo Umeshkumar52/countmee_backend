@@ -34,7 +34,11 @@ const dpDocumentSchema = new mongoose.Schema({
   reference2_phone: { type: String, default: null },
   vehicle_number: { type: String, default: null },
   vehicle_img: { type: String, default: null },
-  vehicle_type: { type: String, default: null },
+  vehicle_type: { 
+    type: String, 
+    enum: ["By Hand", "Two Wheeler", "Three Wheeler", "Four Wheeler"],
+    default: null 
+  },
   sub_vehicle_type: { type: String, default: null },
   other_vehicle_details: { type: String, default: null },
   vehicle_min_capacity: { type: Number, default: null },

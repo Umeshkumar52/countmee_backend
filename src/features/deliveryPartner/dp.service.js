@@ -106,10 +106,12 @@ export const getVehicleSubcategories = async (vehicleType) => {
     .select("sub_vehicle_type")
     .lean();
 
-  const subCategoryList = subcategories.map((s) => s.sub_vehicle_type);
-  if (!subCategoryList.includes("Other")) {
-    subCategoryList.push("Other");
-  }
+  let subCategoryList = subcategories.map((s) => s.sub_vehicle_type);
+  
+  // Ensure "Other" is always at the very end of the list
+  subCategoryList = subCategoryList.filter(type => type !== "Other");
+  subCategoryList.push("Other");
+
   return subCategoryList;
 };
 
@@ -157,6 +159,11 @@ export const saveDocuments = async (user_id, docData, files) => {
         parsedStates = docData.travel_permit_states;
       }
     }
+  }
+
+  // Auto-correct for mobile app if it sends other_vehicle_details without sub_vehicle_type
+  if (docData.other_vehicle_details && (!docData.sub_vehicle_type || docData.sub_vehicle_type.trim() === "")) {
+    docData.sub_vehicle_type = "Other";
   }
 
   await DpDocument.findOneAndUpdate(
@@ -302,7 +309,10 @@ export const documentsReupload = async (user_id, files, body) => {
     const textFields = [
       "aadhar_number", "rc_number", "dl_number", "dl_expiry_date",
       "bank_name", "bank_acc_number", "bank_ifsc", "vehicle_number",
-      "insurance_expiry_date", "emission_expiry_date", "permit_expiry"
+      "insurance_expiry_date", "emission_expiry_date", "permit_expiry",
+      "vehicle_type", "sub_vehicle_type", "other_vehicle_details",
+      "vehicle_min_capacity", "vehicle_max_capacity", 
+      "is_new_vehicle", "vehicle_registration_date"
     ];
     for (const tf of textFields) {
       if (body[tf] !== undefined && body[tf] !== "") {
@@ -327,7 +337,18 @@ export const documentsReupload = async (user_id, files, body) => {
     }
   }
 
+  if (body && body.other_vehicle_details && (!body.sub_vehicle_type || body.sub_vehicle_type.trim() === "")) {
+    doc.sub_vehicle_type = "Other";
+  }
+
   await doc.save();
+
+  await sendNotification({
+    role: ROLES.ADMIN,
+    title: "Documents Re-uploaded",
+    message: `Delivery Partner (${dp.name || "Unknown"}) has re-uploaded their rejected documents for verification.`,
+  });
+
   return true;
 };
 
@@ -489,244 +510,6 @@ export const getNewOrderDetails = async (order_id, dp_id) => {
     chargeConfig?.pickup_geofence_radius || 100;
 
   return jsonOrder;
-};
-
-export const getNewOrders = async (user_id) => {
-  // Check if active accepted orders leg exists
-  const activeLeg = await OrderRequest.findOne({
-    accepted_by: user_id,
-    complete_status: ORDER_REQUEST_COMPLETE_STATUS.PENDING,
-  });
-
-  if (activeLeg) {
-    throw new Error("Please complete your current orders");
-  }
-
-  const oneMinuteAgo = new Date(Date.now() - 60 * 1000); // 1 minute window for direct orders
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000); // 10 minute window for broadcasts
-
-  // Find requests notifying this DP (direct) OR any active PDC broadcast
-  const allReqs = await OrderRequest.find({
-    status: ORDER_REQUEST_STATUS.PENDING,
-    rejected_by: { $ne: user_id },
-    $or: [
-      { notified_ids: user_id, created_at: { $gte: oneMinuteAgo } },
-      { request_type: "broadcast_pdc" },
-    ],
-  }).lean();
-
-  const dpLocation = await DpDetail.findOne({ user_id }).lean();
-
-  // 1. Fetch all broadcast PDC requirements at once to solve N+1
-  const broadcastIds = allReqs
-    .filter((req) => req.request_type === "broadcast_pdc" && req.broadcast_id)
-    .map((req) => req.broadcast_id);
-
-  const uniqueBroadcastIds = [...new Set(broadcastIds)];
-  let broadcasts = [];
-  let distancesByRole = null;
-
-  if (uniqueBroadcastIds.length > 0) {
-    broadcasts = await Broadcast.find({
-      _id: { $in: uniqueBroadcastIds },
-      status: BROADCAST_STATUS.BROADCASTING,
-      updatedAt: { $gte: tenMinutesAgo },
-    }).lean();
-
-    // Fetch dynamic radius from Admin Settings only once
-    const distanceConfig = await adminService.getBroadcastDistance();
-    distancesByRole = distanceConfig?.distancesByRole;
-  }
-
-  const broadcastMap = new Map(broadcasts.map((b) => [b._id.toString(), b]));
-  const maxDistanceInKm = distancesByRole?.pdc || 10;
-
-  // Parallelize the map distance checks for the PDC broadcasts
-  const validBroadcasts = new Set();
-
-  if (dpLocation && broadcasts.length > 0) {
-    const distancePromises = broadcasts.map(async (broadcast) => {
-      const dist = await mapsService.distanceBetween(
-        dpLocation.latitude,
-        dpLocation.longitude,
-        broadcast.pickup_latitude,
-        broadcast.pickup_longitude,
-      );
-      if (mapsService.parseDistanceTextToKm(dist) <= maxDistanceInKm) {
-        validBroadcasts.add(broadcast._id.toString());
-      }
-    });
-    await Promise.all(distancePromises);
-  }
-
-  const reqs = [];
-  for (const req of allReqs) {
-    if (req.request_type === "broadcast_pdc") {
-      // If we can't determine DP location, they should not see the broadcast
-      if (!dpLocation) continue;
-
-      const broadcast = broadcastMap.get(req.broadcast_id?.toString());
-      if (!broadcast) continue;
-
-      if (!validBroadcasts.has(broadcast._id.toString())) continue;
-    }
-    reqs.push(req);
-  }
-
-  const orderIds = reqs.map((r) => r.order_id);
-  const orders = await Order.find({ _id: { $in: orderIds } }).lean();
-
-  // 2. Pre-fetch all related data to prevent N+1 in the orders loop
-  const packageIds = orders.map((o) => o.package_id).filter(Boolean);
-  const broadcastIdsForOrders = orders
-    .map((o) => o.broadcast_id)
-    .filter(Boolean);
-
-  const [packages, allCharges, dpPayouts, orderBroadcasts] = await Promise.all([
-    PackageDetail.find({ _id: { $in: packageIds } }).lean(),
-    DeliverCharge.find({}).lean(),
-    DpPayout.find({ order_id: { $in: orderIds }, dp_auth_id: user_id }).lean(),
-    Broadcast.find({ _id: { $in: broadcastIdsForOrders } }).lean(),
-  ]);
-
-  const packageMap = new Map(packages.map((p) => [p._id.toString(), p]));
-  const chargeMap = new Map(allCharges.map((c) => [c.vehicle_type, c]));
-
-  const payoutMap = new Map();
-  for (const p of dpPayouts) {
-    const oId = p.order_id?.toString();
-    if (oId) {
-      if (!payoutMap.has(oId))
-        payoutMap.set(oId, { earnings: 0, waiting_charge_earning: 0 });
-      const entry = payoutMap.get(oId);
-      entry.earnings += p.earnings;
-      entry.waiting_charge_earning += p.waiting_charge_earning || 0;
-    }
-  }
-
-  const broadcastOrderMap = new Map(
-    orderBroadcasts.map((b) => [b._id.toString(), b]),
-  );
-
-  const broadcasterIds = orderBroadcasts
-    .map((b) => b.broadcasted_by)
-    .filter(Boolean);
-  const broadcasters = await User.find({ _id: { $in: broadcasterIds } }).lean();
-  const broadcasterMap = new Map(
-    broadcasters.map((u) => [u._id.toString(), u]),
-  );
-
-  // 3. Construct the response concurrently
-  const ordersWithPickupPromises = orders.map(async (order) => {
-    const jsonOrder = { ...order };
-    const packageDetail = packageMap.get(order.package_id?.toString()) || null;
-    const broadcast =
-      broadcastOrderMap.get(order.broadcast_id?.toString()) || null;
-
-    let broadcastObj = null;
-    if (broadcast) {
-      broadcastObj = { ...broadcast };
-      const broadcaster =
-        broadcasterMap.get(broadcast.broadcasted_by?.toString()) || null;
-      broadcastObj.broadcaster = broadcaster;
-    }
-
-    jsonOrder.packageDetail = packageDetail;
-    jsonOrder.broadcast = broadcastObj;
-
-    jsonOrder.pickup_name =
-      jsonOrder.broadcast?.broadcaster?.name || order.sender_name;
-    jsonOrder.pickup_loc =
-      jsonOrder.broadcast?.pickup_location || order.pickup_location;
-    jsonOrder.pickup_lat =
-      jsonOrder.broadcast?.pickup_latitude || order.sender_latitude;
-    jsonOrder.pickup_lon =
-      jsonOrder.broadcast?.pickup_longitude || order.sender_longitude;
-    jsonOrder.dist = jsonOrder.broadcast?.distance || `${order.distance} km`;
-
-    const chargeConfig = chargeMap.get(order.mode_of_transport);
-    const percentage =
-      chargeConfig && chargeConfig.dp_commission != null
-        ? chargeConfig.dp_commission / 100
-        : 0.7;
-
-    const totalDpPot = Math.round(order.charges * percentage * 100) / 100;
-    const payoutEntry = payoutMap.get(order._id?.toString()) || {
-      earnings: 0,
-      waiting_charge_earning: 0,
-    };
-    const sumEarnings = payoutEntry.earnings;
-    const remainingPot = Math.max(0, totalDpPot - sumEarnings);
-
-    jsonOrder.estimated_earnings = remainingPot;
-    // Waiting charge earned by this DP for this order (100% of their phase: pickup or drop)
-    jsonOrder.waiting_charge_earning = payoutEntry.waiting_charge_earning;
-    // Total earnings = base delivery commission + waiting charge earned
-    jsonOrder.total_earnings =
-      Math.round((remainingPot + payoutEntry.waiting_charge_earning) * 100) /
-      100;
-
-    let remaining_distance = order.distance;
-
-    if (broadcast) {
-      const mode =
-        order.mode_of_transport === "By Hand" ? "walking" : "driving";
-      const distToReceiver =
-        mapsService.parseDistanceTextToKm(
-          await mapsService.distanceBetween(
-            jsonOrder.pickup_lat,
-            jsonOrder.pickup_lon,
-            order.receiver_latitude,
-            order.receiver_longitude,
-            mode,
-          )) || 0;
-  remaining_distance = Math.round(distToReceiver * 1000) / 1000;
-}
-
-jsonOrder.remaining_distance = remaining_distance;
-jsonOrder.per_km_amount =
-  remaining_distance > 0
-    ? Math.round((remainingPot / remaining_distance) * 100) / 100
-    : 0;
-
-// Convert _id objects to string for final output like .toJSON() did
-// Convert _id objects to string for final output like .toJSON() did
-if (jsonOrder._id) jsonOrder._id = jsonOrder._id.toString();
-
-return jsonOrder;
-  });
-
-const ordersWithPickup = await Promise.all(ordersWithPickupPromises);
-
-// Fetch pending OrderBundles for this DP
-const activeBundles = await OrderBundle.find({
-  status: BROADCAST_STATUS.BROADCASTING,
-  notified_dps: user_id,
-  accepted_dps: { $ne: user_id },
-  rejected_dps: { $ne: user_id },
-})
-  .populate({
-    path: "orders",
-    populate: { path: "package_id" },
-  })
-  .lean();
-
-const formattedBundles = activeBundles.map((bundle) => ({
-  type: "bundle",
-  bundle_id: bundle.bundle_id,
-  created_at: bundle.created_at,
-  orders: bundle.orders.map((order) => ({
-    order_id: order._id,
-    pickup_location: order.pickup_location,
-    drop_location: order.drop_location,
-    charges: order.charges?.toString() || "0",
-    distance: order.distance?.toString() || "0",
-    product_description: order.package_id?.product_description || "",
-    no_of_items: order.package_id?.no_of_items?.toString() || "1",
-  })),
-}));
-
-return [...ordersWithPickup, ...formattedBundles];
 };
 
 export const cancelAssignment = async (order_id, user_id, cancel_reason) => {

@@ -2012,10 +2012,18 @@ export const getWalletConfigHistory = async () => {
 
 export const getVehicleSubcategories = async (type) => {
   const query = type ? { vehicle_type: type } : {};
-  const subcategories = await VehicleSubcategory.find(query).sort({
+  let subcategories = await VehicleSubcategory.find(query).sort({
     vehicle_type: 1,
     created_at: -1,
   });
+
+  // Sort to ensure "Other" is always at the very end of its respective vehicle_type list
+  subcategories = subcategories.sort((a, b) => {
+    if (a.sub_vehicle_type === "Other" && b.sub_vehicle_type !== "Other") return 1;
+    if (a.sub_vehicle_type !== "Other" && b.sub_vehicle_type === "Other") return -1;
+    return 0;
+  });
+
   return { subcategories };
 };
 

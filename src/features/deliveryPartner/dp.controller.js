@@ -88,6 +88,14 @@ export const getTravelStates = asyncHandler(async (req, res) => {
 
 export const dpDocuments = asyncHandler(async (req, res) => {
   const user_id = req.user.id;
+  
+  if (req.body.vehicle_type) {
+    const validTypes = ["By Hand", "Two Wheeler", "Three Wheeler", "Four Wheeler"];
+    if (!validTypes.includes(req.body.vehicle_type)) {
+      throw new ApiError(400, "Invalid vehicle type. Must be one of: " + validTypes.join(', '));
+    }
+  }
+
   await dpService.saveDocuments(user_id, req.body, req.files);
   return res.json(
     ApiResponse.success({ argumnet2: true }, "document submited"),
@@ -118,6 +126,14 @@ export const documents = asyncHandler(async (req, res) => {
 
 export const documentsReupload = asyncHandler(async (req, res) => {
   const user_id = req.user.id;
+  
+  if (req.body.vehicle_type) {
+    const validTypes = ["By Hand", "Two Wheeler", "Three Wheeler", "Four Wheeler"];
+    if (!validTypes.includes(req.body.vehicle_type)) {
+      throw new ApiError(400, "Invalid vehicle type. Must be one of: " + validTypes.join(', '));
+    }
+  }
+
   const success = await dpService.documentsReupload(user_id, req.files, req.body);
   if (success) {
     return res.json(ApiResponse.success(null, "documents uploaded"));
@@ -421,8 +437,9 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
       drop_otp: Math.floor(1000 + Math.random() * 9000),
     });
   } else {
-    // Fix: Visibility bug when reusing after a cancellation
+    // Fix: Regenerate OTPs if they were cleared by a previous expiry
     broadcastObj.status = BROADCAST_STATUS.BROADCASTING;
+    if (!broadcastObj.pickup_otp) broadcastObj.pickup_otp = Math.floor(1000 + Math.random() * 9000);
     await broadcastObj.save();
   }
 
@@ -464,57 +481,63 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     order.status_completed = "broadcasted";
     order.status = ORDER_STATUS.ACCEPTED;
     await order.save();
+  } else {
+    // Rebroadcast reuse: Reset notified IDs and clear rejected_by so DPs get a fresh chance
+    // Note: We intentionally do NOT mutate created_at to preserve historical sorting.
+    orderReq.notified_ids = nearestDps;
+    orderReq.rejected_by = [];
+    await orderReq.save();
+  }
 
-    // -- FIRE NOTIFICATIONS TO NEARBY DPs --
-    if (nearestDps.length > 0) {
-      try {
-        const packageDetail = order.package_id
-          ? await PackageDetail.findById(order.package_id)
-          : null;
+  // -- FIRE NOTIFICATIONS TO NEARBY DPs --
+  if (nearestDps.length > 0) {
+    try {
+      const packageDetail = order.package_id
+        ? await PackageDetail.findById(order.package_id)
+        : null;
 
-        const deliverCharge = await DeliverCharge.findOne({
-          vehicle_type: order.mode_of_transport,
-        });
+      const deliverCharge = await DeliverCharge.findOne({
+        vehicle_type: order.mode_of_transport,
+      });
 
-        let dp_earning = 0;
-        if (deliverCharge && deliverCharge.dp_commission != null) {
-          dp_earning = (order.charges * (deliverCharge.dp_commission / 100)).toFixed(2);
-        } else {
-          dp_earning = (order.charges * 0.7).toFixed(2);
-        }
-
-        const usersToNotify = await User.find({ _id: { $in: nearestDps } }).select("+fcm_tokens");
-        const userMap = new Map(usersToNotify.map((u) => [u._id.toString(), u]));
-
-        for (const dpId of nearestDps) {
-          const payload = {
-            type: "NEW_ORDER_BROADCAST",
-            order_id: order._id.toString(),
-            pickup_location: broadcastObj.pickup_location || order.pickup_location,
-            drop_location: broadcastObj.drop_location || order.drop_location,
-            distance: broadcastObj.distance?.toString() || order.distance?.toString() || "0",
-            dp_earning: Number(dp_earning),
-            product_description: packageDetail?.product_description || "",
-            no_of_items: packageDetail?.no_of_items?.toString() || "1",
-          };
-
-          // Fire Socket
-          sendNotificationToUser(dpId.toString(), payload);
-
-          // Fire FCM Push
-          const userObj = userMap.get(dpId.toString());
-          if (userObj && userObj.fcm_tokens && userObj.fcm_tokens.length > 0) {
-            await sendPushNotification(
-              userObj.fcm_tokens,
-              "New Order Request!",
-              `Pickup: ${payload.pickup_location}`,
-              payload
-            );
-          }
-        }
-      } catch (err) {
-        console.error("[brodcastForFindDp] Error sending notifications:", err.message);
+      let dp_earning = 0;
+      if (deliverCharge && deliverCharge.dp_commission != null) {
+        dp_earning = (order.charges * (deliverCharge.dp_commission / 100)).toFixed(2);
+      } else {
+        dp_earning = (order.charges * 0.7).toFixed(2);
       }
+
+      const usersToNotify = await User.find({ _id: { $in: nearestDps } }).select("+fcm_tokens");
+      const userMap = new Map(usersToNotify.map((u) => [u._id.toString(), u]));
+
+      for (const dpId of nearestDps) {
+        const payload = {
+          type: "NEW_ORDER_BROADCAST",
+          order_id: order._id.toString(),
+          pickup_location: broadcastObj.pickup_location || order.pickup_location,
+          drop_location: broadcastObj.drop_location || order.drop_location,
+          distance: broadcastObj.distance?.toString() || order.distance?.toString() || "0",
+          dp_earning: Number(dp_earning),
+          product_description: packageDetail?.product_description || "",
+          no_of_items: packageDetail?.no_of_items?.toString() || "1",
+        };
+
+        // Fire Socket
+        sendNotificationToUser(dpId.toString(), payload);
+
+        // Fire FCM Push
+        const userObj = userMap.get(dpId.toString());
+        if (userObj && userObj.fcm_tokens && userObj.fcm_tokens.length > 0) {
+          await sendPushNotification(
+            userObj.fcm_tokens,
+            "New Order Request!",
+            `Pickup: ${payload.pickup_location}`,
+            payload
+          );
+        }
+      }
+    } catch (err) {
+      console.error("[brodcastForFindDp] Error sending notifications:", err.message);
     }
   }
 
@@ -530,7 +553,8 @@ export const brodcastForFindDp = asyncHandler(async (req, res) => {
     await agenda.schedule("in 10 minutes", "expire-broadcast", {
       broadcast_id: broadcastObj._id.toString(),
       order_id: order_id.toString(),
-      pdc_id: user_id.toString(), // DP who triggered the broadcast
+      user_id: user_id.toString(), // The DP who triggered it
+      role: ROLES.DP, // Explicitly route notification to DP
     });
   }
 

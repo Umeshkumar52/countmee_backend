@@ -16,8 +16,8 @@ const vehicleSubcategorySchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Approved', 'Pending', 'Rejected'],
-    default: 'Approved'
+    enum: ['approved', 'pending', 'rejected'],
+    default: 'approved'
   },
   requested_by: {
     type: mongoose.Schema.Types.ObjectId,
