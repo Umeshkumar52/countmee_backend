@@ -10,11 +10,7 @@ const router = Router();
 router.use(authenticate);
 
 // Profile and Address Endpoints
-router.post(
-  "/editProfile",
-  uploadAny(),
-  usersController.editProfile,
-);
+router.post("/editProfile", uploadAny(), usersController.editProfile);
 router.get("/my-dues", ordersController.myDues);
 router.post("/createAddress", usersController.createAddress);
 router.get("/myAddress/:customer_id", usersController.myAddress);

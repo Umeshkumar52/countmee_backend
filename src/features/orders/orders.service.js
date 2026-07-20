@@ -645,8 +645,8 @@ export const getTrackingDetails = async (userId, orderId) => {
   }
 
   let dpAvgRating = 0;
-  if (assigned?.dp_user_id) {
-    const ratings = await Rating.find({ to_dp: assigned.dp_user_id });
+  if (assigned?.accepted_by) {
+    const ratings = await Rating.find({ to_dp: assigned.accepted_by });
     if (ratings.length) {
       const sum = ratings.reduce((acc, curr) => acc + curr.stars, 0);
       dpAvgRating = sum / ratings.length;

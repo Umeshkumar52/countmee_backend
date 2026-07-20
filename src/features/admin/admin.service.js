@@ -2321,7 +2321,8 @@ export const assignOrderBundle = async (orderIds, dpIds) => {
   // Update order statuses to processing
   await Order.updateMany(
     { _id: { $in: orderIds } },
-    { $set: { status: ORDER_STATUS.ACCEPTED } },
+    { $set: { status: ORDER_STATUS.PROCESSING } },
+    //  { $set: { status: ORDER_STATUS.ACCEPTED } },
   );
 
   return {
@@ -2652,21 +2653,30 @@ export const getBundleSummary = async (orderIds) => {
         { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } },
       ]);
 
-      capableDps = targetDps.map((dp) => ({
-        user_id: dp.user_id,
-        name: dp.user.name || "Unknown DP",
-        phone: dp.user.phone || "",
-        profile_pic: dp.profile_img || "",
-        vehicle_type: dp.dpDocument.vehicle_type,
-        vehicle_no: dp.dpDocument.rc_number || "N/A",
-        capacity: recommendedVehicle ? recommendedVehicle.max_weight : "N/A",
-        location: dp.location || dp.address || "Unknown Location",
-        latitude: dp.latitude,
-        longitude: dp.longitude,
-        status: dp.online ? "Available" : "On Trip",
-        rating: dp.user.rating || 4.5,
-        distance_km: (dp.distance_meters / 1000).toFixed(1), // Real calculated distance
-      }));
+      capableDps = targetDps.map((dp) => {
+        const dpVehicleTypeStr = dp.dpDocument?.vehicle_type || "";
+        const matchedVehicle = vehicleTypes.find(
+          (vt) =>
+            vt.vehicle_type?.toLowerCase() === dpVehicleTypeStr.toLowerCase(),
+        );
+        return {
+          user_id: dp.user_id,
+          name: dp.user.name || "Unknown DP",
+          phone: dp.user.phone || "",
+          profile_pic: dp.profile_img || "",
+          vehicle_type: dp.dpDocument.vehicle_type,
+          vehicle_no: dp.dpDocument.rc_number || "N/A",
+          capacity:
+            dp.dpDocument?.vehicle_max_capacity ||
+            (matchedVehicle ? matchedVehicle.max_weight : "N/A"),
+          location: dp.location || dp.address || "Unknown Location",
+          latitude: dp.latitude,
+          longitude: dp.longitude,
+          status: dp.online ? "Available" : "On Trip",
+          rating: dp.user.rating || 4.5,
+          distance_km: (dp.distance_meters / 1000).toFixed(1), // Real calculated distance
+        };
+      });
     }
   }
 
